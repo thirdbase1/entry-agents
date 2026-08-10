@@ -4,6 +4,7 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
   type SharedProviderModelId,
+  createLazySharedProvider,
   sharedProvider,
   type ProviderOptionsByProvider,
 } from "./models";
@@ -48,8 +49,19 @@ const callOptionsSchema = z.object({
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
 
-export const defaultModelLabel = "kimi-k3" as const;
-export const defaultModel = sharedProvider(defaultModelLabel);
+// Free-tier model -- kept working regardless of Opencode Zen billing
+// status (see apps/web/lib/model-availability.ts, which currently hides
+// kimi-k3/grok-4.5 from the picker for the same reason). This value is
+// only ever used as the ToolLoopAgent constructor's placeholder model;
+// prepareCall below always resolves the real per-request model from
+// call options and overrides it before any real request is made.
+export const defaultModelLabel = "ling-3.0-flash-free" as const;
+// Lazy: constructing a real sharedProvider() here at module scope would
+// throw immediately if GATEWAY_BASE_URL/GATEWAY_API_KEY aren't set yet,
+// which breaks Next.js's build-time page-data collection for any route
+// that transitively imports this module (env vars are only guaranteed to
+// exist at request time, not build time). See createLazySharedProvider.
+export const defaultModel = createLazySharedProvider(defaultModelLabel);
 
 function normalizeAgentModelSelection(
   selection: OpenAgentModelInput | undefined,

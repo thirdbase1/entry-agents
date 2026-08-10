@@ -203,6 +203,46 @@ export function getProviderOptionsForModel(
   return providerOptions;
 }
 
+/**
+ * Lazily-resolved LanguageModel -- defers the GATEWAY_BASE_URL/
+ * GATEWAY_API_KEY env check (and the real sharedProvider() construction)
+ * until something actually reads a property off the returned object,
+ * instead of doing it eagerly at call time. Needed for module-scope
+ * placeholders like `defaultModel` in open-agent.ts: those are
+ * immediately overridden per-request by `prepareCall`, but constructing
+ * them eagerly at import time crashes Next.js's build-time page-data
+ * collection (which imports route modules without any env configured
+ * yet, before the actual request handler runs).
+ */
+export function createLazySharedProvider(
+  modelId: SharedProviderModelId,
+  options: GatewayOptions = {},
+): LanguageModel {
+  // sharedProvider() always returns an actual model object (never the
+  // bare-string form of the LanguageModel union), so this narrowing is
+  // safe -- it just keeps the Proxy's target/get/has signatures in plain
+  // `object` terms instead of the full LanguageModel union.
+  let cached: object | undefined;
+  const resolve = (): object => {
+    if (!cached) {
+      cached = sharedProvider(modelId, options) as object;
+    }
+    return cached;
+  };
+
+  return new Proxy(
+    {},
+    {
+      get(_target, prop, receiver) {
+        return Reflect.get(resolve(), prop, receiver);
+      },
+      has(_target, prop) {
+        return Reflect.has(resolve(), prop);
+      },
+    },
+  ) as LanguageModel;
+}
+
 export function sharedProvider(
   modelId: SharedProviderModelId,
   options: GatewayOptions = {},

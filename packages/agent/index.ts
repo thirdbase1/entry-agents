@@ -2,6 +2,7 @@ export {
   type GatewayConfig,
   type GatewayOptions,
   type SharedProviderModelId,
+  createLazySharedProvider,
   sharedProvider,
   gateway,
 } from "./models";

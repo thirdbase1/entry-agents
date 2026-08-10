@@ -50,7 +50,8 @@
         "VITE_NEON_AUTH_URL"
       ],
       "outputs": [
-        "dist/**"
+        ".next/**",
+        "!.next/cache/**"
       ]
     },
     "dev": {

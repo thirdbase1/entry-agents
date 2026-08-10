@@ -6,7 +6,8 @@
         "^build"
       ],
       "env": [
-        "AI_GATEWAY_API_KEY",
+        "GATEWAY_API_KEY",
+        "GATEWAY_BASE_URL",
         "BETTER_AUTH_SECRET",
         "BLOB_READ_WRITE_TOKEN",
         "DATABASE_URL",

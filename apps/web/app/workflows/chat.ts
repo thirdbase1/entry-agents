@@ -49,7 +49,7 @@ import {
   sanitizeUserPreferencesForSession,
 } from "@/lib/model-access";
 import { getAllVariants } from "@/lib/model-variants";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import { APP_DEFAULT_MODEL_ID, type AvailableModel } from "@/lib/models";
 import type { Session as AuthSession } from "@/lib/session/types";
 import type {
   WorkflowRunStatus,
@@ -750,6 +750,7 @@ export async function runAgentWorkflow(options: Options) {
           modelId,
           agentOptions,
           step + 1,
+          modelCostCatalog,
         );
       } catch (error) {
         if (isStepTimingError(error)) {
@@ -1020,6 +1021,7 @@ const runAgentStep = async (
   modelId: string,
   agentOptions: OpenAgentCallOptions,
   stepNumber: number,
+  modelCostCatalog: AvailableModel[],
 ) => {
   "use step";
 

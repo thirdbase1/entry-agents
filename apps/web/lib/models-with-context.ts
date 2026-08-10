@@ -1,6 +1,5 @@
 import "server-only";
 
-import { gateway } from "ai";
 import { z } from "zod";
 import { filterDisabledModels } from "./model-availability";
 import type {
@@ -10,6 +9,10 @@ import type {
   GatewayAvailableModel,
 } from "./models";
 
+// Kept for the (currently unused, best-effort) models.dev context-window
+// enrichment below -- harmless no-op for our static catalog since none of
+// our model IDs match models.dev's namespacing, but left in place in case
+// Opencode Zen model IDs ever get added there.
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_TIMEOUT_MS = 750;
 
@@ -21,21 +24,6 @@ interface ModelsDevMetadata {
 }
 
 const recordSchema = z.object({}).catchall(z.unknown());
-
-const gatewayModelSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().nullish(),
-    modelType: z.string().nullish(),
-  })
-  .passthrough();
-
-const gatewayErrorSchema = z.object({
-  response: z.object({
-    models: z.array(z.unknown()),
-  }),
-});
 
 const modelsDevLimitSchema = z
   .object({
@@ -50,20 +38,6 @@ const modelsDevCostTierSchema = z
     cache_read: z.number().finite().optional(),
   })
   .passthrough();
-
-function getModelsFromGatewayError(error: unknown): GatewayModel[] | undefined {
-  const parsed = gatewayErrorSchema.safeParse(error);
-  if (!parsed.success) {
-    return undefined;
-  }
-
-  const models = parsed.data.response.models.flatMap((model) => {
-    const parsedModel = gatewayModelSchema.safeParse(model);
-    return parsedModel.success ? [parsedModel.data] : [];
-  });
-
-  return models.length > 0 ? models : undefined;
-}
 
 function getModelsDevCostTier(
   value: unknown,
@@ -201,18 +175,64 @@ function addModelsDevMetadata(
   return nextModel;
 }
 
-async function fetchGatewayModels(): Promise<GatewayModel[]> {
-  try {
-    const { models } = await gateway.getAvailableModels();
-    return models;
-  } catch (error) {
-    const models = getModelsFromGatewayError(error);
-    if (models) {
-      return models;
-    }
+const gatewayModelsResponseSchema = z.object({
+  data: z.array(
+    z
+      .object({
+        id: z.string(),
+        name: z.string().optional(),
+        description: z.string().nullish(),
+        modelType: z.string().nullish(),
+        context_window: z.number().finite().positive().optional(),
+        cost: z
+          .object({
+            input: z.number().finite().optional(),
+            output: z.number().finite().optional(),
+            cache_read: z.number().finite().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough(),
+  ),
+});
 
-    throw error;
+/**
+ * Fetches the live model list from Entry's self-hosted gateway
+ * (entry-gateway, deployed on Pxxl). This is intentionally a live network
+ * call, not a hardcoded catalog -- adding/removing a model is a config
+ * change on the gateway (GATEWAY env vars in its own dashboard), and this
+ * app picks it up automatically on the next fetch, no redeploy needed.
+ */
+async function fetchGatewayModels(): Promise<GatewayModel[]> {
+  const baseURL = process.env.GATEWAY_BASE_URL;
+  const apiKey = process.env.GATEWAY_API_KEY;
+
+  if (!baseURL || !apiKey) {
+    throw new Error(
+      "GATEWAY_BASE_URL / GATEWAY_API_KEY must be set to fetch the model list from Entry's self-hosted gateway.",
+    );
   }
+
+  const response = await fetch(`${baseURL.replace(/\/$/, "")}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    // Model list changes rarely; a short cache keeps this off the hot
+    // path without going fully stale for long.
+    next: { revalidate: 60 },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch models from gateway (${response.status}): ${await response.text()}`,
+    );
+  }
+
+  const parsed = gatewayModelsResponseSchema.parse(await response.json());
+  return parsed.data.map((model) => ({
+    ...model,
+    modelType: model.modelType ?? "language",
+    name: model.name ?? model.id,
+  }));
 }
 
 export async function fetchAvailableLanguageModels(): Promise<

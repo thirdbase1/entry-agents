@@ -301,7 +301,7 @@ export async function generatePullRequestContentFromSandbox(
   let prContent: z.infer<typeof prContentSchema>;
   try {
     const { output } = await generateText({
-      model: gateway("anthropic/claude-haiku-4.5"),
+      model: gateway("ling-3.0-flash-free"),
       output: Output.object({
         schema: prContentSchema,
       }),

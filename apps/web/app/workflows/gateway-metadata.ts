@@ -1,11 +1,16 @@
 import type { ProviderMetadata } from "ai";
+import {
+  estimateModelUsageCost,
+  type AvailableModelCost,
+} from "@/lib/models";
 
 /**
- * Shape of the Vercel AI Gateway entry in `providerMetadata`.
- *
- * The gateway surfaces per-step cost information alongside routing
- * diagnostics. We only care about the cost field here; everything else is
- * documented for reference.
+ * Shape of the (legacy) Vercel AI Gateway entry in `providerMetadata`.
+ * Kept only for backward compatibility -- our current shared provider is
+ * Entry's own entry-gateway (self-hosted on Pxxl), which does not emit
+ * this shape. Real cost accounting now comes from `estimateStepCost`
+ * below, using the static per-model pricing table fetched live from
+ * entry-gateway's /v1/models.
  */
 export interface GatewayProviderMetadata {
   gateway: {
@@ -29,9 +34,10 @@ function hasGatewayShape(
 }
 
 /**
- * Extract the gateway-reported cost for a single step.
- * Returns `undefined` when the step did not go through the gateway or the
- * gateway did not attach a cost (e.g. direct provider call).
+ * Extract the gateway-reported cost for a single step (legacy Vercel AI
+ * Gateway shape only). Returns `undefined` for any other provider,
+ * including our current shared provider -- that's expected, and
+ * `estimateStepCost` below is what actually prices real requests now.
  */
 export function extractGatewayCost(
   providerMetadata: ProviderMetadata | undefined,
@@ -45,4 +51,52 @@ export function extractGatewayCost(
   }
   const cost = Number.parseFloat(rawCost);
   return Number.isFinite(cost) ? cost : undefined;
+}
+
+export interface CatalogCostEntry {
+  id: string;
+  cost?: AvailableModelCost;
+}
+
+/**
+ * Combined cost estimate for a single step: prefers the legacy
+ * gateway-reported cost when present, otherwise computes cost from the
+ * static per-model pricing table (fetched live from entry-gateway's
+ * /v1/models) plus the step's real token usage. This is what actually
+ * prices every real request today.
+ */
+export function estimateStepCost(
+  providerMetadata: ProviderMetadata | undefined,
+  modelId: string,
+  usage:
+    | {
+        inputTokens?: number;
+        cachedInputTokens?: number;
+        outputTokens?: number;
+      }
+    | undefined,
+  catalog: CatalogCostEntry[],
+): number | undefined {
+  const gatewayCost = extractGatewayCost(providerMetadata);
+  if (gatewayCost !== undefined) {
+    return gatewayCost;
+  }
+
+  if (!usage) {
+    return undefined;
+  }
+
+  const model = catalog.find((m) => m.id === modelId);
+  if (!model?.cost) {
+    return undefined;
+  }
+
+  return estimateModelUsageCost(
+    {
+      inputTokens: usage.inputTokens ?? 0,
+      cachedInputTokens: usage.cachedInputTokens ?? 0,
+      outputTokens: usage.outputTokens ?? 0,
+    },
+    model.cost,
+  );
 }

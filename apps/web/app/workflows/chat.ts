@@ -13,7 +13,8 @@ import { getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
-import { extractGatewayCost } from "./gateway-metadata";
+import { estimateStepCost } from "./gateway-metadata";
+import { fetchAvailableLanguageModels } from "@/lib/models-with-context";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -654,6 +655,15 @@ export async function runAgentWorkflow(options: Options) {
   let selectedModelId = APP_DEFAULT_MODEL_ID;
   let modelId = APP_DEFAULT_MODEL_ID;
 
+  // Live pricing catalog from entry-gateway (see gateway-metadata.ts) --
+  // used to price every step below since our shared provider doesn't emit
+  // Vercel-Gateway-shaped cost metadata. Best-effort: if the gateway is
+  // briefly unreachable, cost tracking degrades to undefined for this
+  // turn rather than failing the whole chat request.
+  const modelCostCatalog = await fetchAvailableLanguageModels().catch(
+    () => [],
+  );
+
   let pendingAssistantResponse: WebAgentUIMessage =
     latestMessage.role === "assistant"
       ? {
@@ -1059,7 +1069,12 @@ const runAgentStep = async (
               ? addLanguageModelUsage(totalMessageUsage, streamPart.usage)
               : streamPart.usage;
           }
-          const stepCost = extractGatewayCost(streamPart.providerMetadata);
+          const stepCost = estimateStepCost(
+            streamPart.providerMetadata,
+            modelId,
+            streamPart.usage,
+            modelCostCatalog,
+          );
           if (stepCost !== undefined) {
             lastStepCost = stepCost;
             totalMessageCost = (totalMessageCost ?? 0) + stepCost;
@@ -1129,7 +1144,12 @@ const runAgentStep = async (
     }
 
     const stepsCost = steps.reduce<number | undefined>((sum, step) => {
-      const cost = extractGatewayCost(step.providerMetadata);
+      const cost = estimateStepCost(
+        step.providerMetadata,
+        modelId,
+        step.usage,
+        modelCostCatalog,
+      );
       if (cost === undefined) {
         return sum;
       }

@@ -8,10 +8,12 @@ import {
 } from "@/lib/model-variants";
 import type { Session } from "@/lib/session/types";
 
-const RESTRICTED_MODEL_PREFIXES = ["anthropic/claude-opus-"];
+// kimi-k3 is our priciest premium model ($15/MTok output) -- same role
+// Claude Opus played before the Vercel AI Gateway -> entry-gateway swap.
+const RESTRICTED_MODEL_PREFIXES = ["kimi-k3"];
 
 export const MANAGED_TEMPLATE_TRIAL_MODEL_ACCESS_ERROR =
-  "Claude Opus models are disabled in the hosted demo. Deploy your own copy to unlock full model access.";
+  "Kimi K3 is disabled in the hosted demo. Deploy your own copy to unlock full model access.";
 
 type SessionLike = Pick<Session, "authProvider" | "user"> | null | undefined;
 

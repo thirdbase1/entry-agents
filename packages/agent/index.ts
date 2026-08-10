@@ -1,4 +1,10 @@
-export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
+export {
+  type GatewayConfig,
+  type GatewayOptions,
+  type SharedProviderModelId,
+  sharedProvider,
+  gateway,
+} from "./models";
 export type {
   AgentModelSelection,
   AgentSandboxContext,

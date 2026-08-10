@@ -208,7 +208,7 @@ export const chats = pgTable(
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    modelId: text("model_id").default("anthropic/claude-haiku-4.5"),
+    modelId: text("model_id").default("ling-3.0-flash-free"),
     activeStreamId: text("active_stream_id"),
     lastAssistantMessageAt: timestamp("last_assistant_message_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -342,7 +342,7 @@ export const userPreferences = pgTable("user_preferences", {
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
   defaultModelId: text("default_model_id").default(
-    "anthropic/claude-haiku-4.5",
+    "ling-3.0-flash-free",
   ),
   defaultSubagentModelId: text("default_subagent_model_id"),
   defaultSandboxType: text("default_sandbox_type", {

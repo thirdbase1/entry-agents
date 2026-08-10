@@ -3,8 +3,8 @@ import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
-  type GatewayModelId,
-  gateway,
+  type SharedProviderModelId,
+  sharedProvider,
   type ProviderOptionsByProvider,
 } from "./models";
 
@@ -25,11 +25,11 @@ import {
 } from "./tools";
 
 export interface AgentModelSelection {
-  id: GatewayModelId;
+  id: SharedProviderModelId;
   providerOptionsOverrides?: ProviderOptionsByProvider;
 }
 
-export type OpenAgentModelInput = GatewayModelId | AgentModelSelection;
+export type OpenAgentModelInput = SharedProviderModelId | AgentModelSelection;
 
 export interface AgentSandboxContext {
   state: SandboxState;
@@ -48,12 +48,12 @@ const callOptionsSchema = z.object({
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
 
-export const defaultModelLabel = "anthropic/claude-opus-4.6" as const;
-export const defaultModel = gateway(defaultModelLabel);
+export const defaultModelLabel = "kimi-k3" as const;
+export const defaultModel = sharedProvider(defaultModelLabel);
 
 function normalizeAgentModelSelection(
   selection: OpenAgentModelInput | undefined,
-  fallbackId: GatewayModelId,
+  fallbackId: SharedProviderModelId,
 ): AgentModelSelection {
   if (!selection) {
     return { id: fallbackId };
@@ -103,11 +103,11 @@ export const openAgent = new ToolLoopAgent({
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
       : undefined;
 
-    const callModel = gateway(mainSelection.id, {
+    const callModel = sharedProvider(mainSelection.id, {
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
     });
     const subagentModel = subagentSelection
-      ? gateway(subagentSelection.id, {
+      ? sharedProvider(subagentSelection.id, {
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;

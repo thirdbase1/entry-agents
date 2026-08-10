@@ -1,13 +1,47 @@
 import {
-  createGateway,
   defaultSettingsMiddleware,
   wrapLanguageModel,
-  type GatewayModelId,
   type JSONValue,
   type LanguageModel,
 } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
+
+/**
+ * Shared AI provider (owner decision, 2026-08-10): all model calls in this
+ * app go through Entry's own self-hosted gateway (OpenAI-compatible,
+ * source in the separate `entry-gateway` service, deployed on Pxxl) --
+ * NOT Vercel's AI Gateway, and not a direct call to any upstream model
+ * provider. The gateway owns upstream routing (Opencode Zen today, more
+ * later) behind a single API key, so adding/removing models is a config
+ * change on the gateway only -- this app never needs a code change or
+ * redeploy to pick up a new model.
+ *
+ * Env vars (set in Vercel, values come from the entry-gateway deployment):
+ *   GATEWAY_BASE_URL - the entry-gateway's base URL, e.g. https://entry-gateway.pxxl.run/v1
+ *   GATEWAY_API_KEY  - one of entry-gateway's GATEWAY_API_KEYS
+ *
+ * Model IDs are whatever entry-gateway routes (currently Opencode Zen's
+ * flat catalog IDs, e.g. "grok-4.5", "kimi-k3"), not Vercel Gateway's old
+ * "provider/model" namespaced IDs.
+ */
+export type SharedProviderModelId = string;
+// Backward-compat alias -- some call sites still reference this name.
+export type GatewayModelId = SharedProviderModelId;
+
+function getSharedProviderConfig(): { baseURL: string; apiKey: string } {
+  const baseURL = process.env.GATEWAY_BASE_URL;
+  const apiKey = process.env.GATEWAY_API_KEY;
+
+  if (!baseURL || !apiKey) {
+    throw new Error(
+      "GATEWAY_BASE_URL / GATEWAY_API_KEY must be set -- all model calls go through Entry's self-hosted gateway, not Vercel AI Gateway and not a direct provider call.",
+    );
+  }
+
+  return { baseURL, apiKey };
+}
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
   return modelId.includes("4.6") || modelId.includes("4.7");
@@ -99,7 +133,7 @@ export interface GatewayOptions {
   appUrl?: string;
 }
 
-export type { GatewayModelId, LanguageModel, JSONValue };
+export type { LanguageModel, JSONValue };
 
 export function shouldApplyOpenAIReasoningDefaults(modelId: string): boolean {
   return modelId.startsWith("openai/gpt-5");
@@ -169,8 +203,8 @@ export function getProviderOptionsForModel(
   return providerOptions;
 }
 
-export function gateway(
-  modelId: GatewayModelId,
+export function sharedProvider(
+  modelId: SharedProviderModelId,
   options: GatewayOptions = {},
 ): LanguageModel {
   const { config, providerOptionsOverrides, appName, appUrl } = options;
@@ -180,15 +214,18 @@ export function gateway(
     "x-title": appName ?? "Open Agents",
   };
 
-  const baseGateway = config
-    ? createGateway({
-        baseURL: config.baseURL,
-        apiKey: config.apiKey,
-        headers: attributionHeaders,
-      })
-    : createGateway({ headers: attributionHeaders });
+  const { baseURL, apiKey } = config ?? getSharedProviderConfig();
 
-  let model: LanguageModel = baseGateway(modelId);
+  const openCodeZen = createOpenAI({
+    baseURL,
+    apiKey,
+    headers: attributionHeaders,
+    // Opencode Zen is a standard OpenAI Chat Completions-shaped API
+    // (confirmed live: SSE choices[].delta, tool_calls, usage object) --
+    // no Responses-API-specific behavior to opt out of here.
+  });
+
+  let model: LanguageModel = openCodeZen.chat(modelId);
 
   const providerOptions = getProviderOptionsForModel(
     modelId,
@@ -206,3 +243,7 @@ export function gateway(
 
   return model;
 }
+
+// Backward-compat alias for the handful of call sites written before the
+// Vercel AI Gateway -> Opencode Zen shared-provider swap.
+export const gateway = sharedProvider;

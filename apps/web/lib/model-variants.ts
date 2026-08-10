@@ -159,23 +159,23 @@ export function isBuiltInVariant(variantId: string): boolean {
   return variantId.startsWith(BUILT_IN_VARIANT_ID_PREFIX);
 }
 
+// Built-in presets now point at entry-gateway's routed models (Opencode
+// Zen today). Neither model exposes OpenAI-Responses-style
+// `reasoningEffort` or Anthropic-style `effort` knobs the way
+// gpt-5.4/claude-opus-4.6 did through Vercel AI Gateway, so these are
+// plain model shortcuts (empty providerOptions) rather than tuned presets.
 export const BUILT_IN_VARIANTS: ModelVariant[] = [
   {
-    id: `${BUILT_IN_VARIANT_ID_PREFIX}gpt-5.4-xhigh`,
-    name: "GPT-5.4 (XHigh)",
-    baseModelId: "openai/gpt-5.4",
-    providerOptions: {
-      reasoningEffort: "xhigh",
-      reasoningSummary: "auto",
-    },
+    id: `${BUILT_IN_VARIANT_ID_PREFIX}kimi-k3`,
+    name: "Kimi K3",
+    baseModelId: "kimi-k3",
+    providerOptions: {},
   },
   {
-    id: `${BUILT_IN_VARIANT_ID_PREFIX}claude-opus-4.6-high`,
-    name: "Claude Opus 4.6 (High)",
-    baseModelId: "anthropic/claude-opus-4.6",
-    providerOptions: {
-      effort: "high",
-    },
+    id: `${BUILT_IN_VARIANT_ID_PREFIX}grok-4.5`,
+    name: "Grok 4.5",
+    baseModelId: "grok-4.5",
+    providerOptions: {},
   },
 ];
 

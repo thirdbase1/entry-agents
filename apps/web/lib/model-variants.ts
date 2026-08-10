@@ -159,22 +159,25 @@ export function isBuiltInVariant(variantId: string): boolean {
   return variantId.startsWith(BUILT_IN_VARIANT_ID_PREFIX);
 }
 
-// Built-in presets now point at entry-gateway's routed models (Opencode
-// Zen today). Neither model exposes OpenAI-Responses-style
-// `reasoningEffort` or Anthropic-style `effort` knobs the way
-// gpt-5.4/claude-opus-4.6 did through Vercel AI Gateway, so these are
-// plain model shortcuts (empty providerOptions) rather than tuned presets.
+// Built-in presets point at entry-gateway's routed models (Opencode Zen
+// today). kimi-k3 and grok-4.5 are hidden from the main picker (see
+// model-availability.ts -- Opencode Zen workspace has no payment method),
+// so these built-ins point at the two working free-tier models instead.
+// Neither exposes OpenAI-Responses-style `reasoningEffort` or
+// Anthropic-style `effort` knobs the way gpt-5.4/claude-opus-4.6 did
+// through Vercel AI Gateway, so these are plain model shortcuts (empty
+// providerOptions) rather than tuned presets.
 export const BUILT_IN_VARIANTS: ModelVariant[] = [
   {
-    id: `${BUILT_IN_VARIANT_ID_PREFIX}kimi-k3`,
-    name: "Kimi K3",
-    baseModelId: "kimi-k3",
+    id: `${BUILT_IN_VARIANT_ID_PREFIX}ling-3.0-flash-free`,
+    name: "Ling 3.0 Flash (Free)",
+    baseModelId: "ling-3.0-flash-free",
     providerOptions: {},
   },
   {
-    id: `${BUILT_IN_VARIANT_ID_PREFIX}grok-4.5`,
-    name: "Grok 4.5",
-    baseModelId: "grok-4.5",
+    id: `${BUILT_IN_VARIANT_ID_PREFIX}mimo-v2.5-free`,
+    name: "Mimo v2.5 (Free)",
+    baseModelId: "mimo-v2.5-free",
     providerOptions: {},
   },
 ];

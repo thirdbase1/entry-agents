@@ -4,7 +4,7 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
   type SharedProviderModelId,
-  createLazySharedProvider,
+  createInertPlaceholderModel,
   sharedProvider,
   type ProviderOptionsByProvider,
 } from "./models";
@@ -56,12 +56,13 @@ export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
 // prepareCall below always resolves the real per-request model from
 // call options and overrides it before any real request is made.
 export const defaultModelLabel = "ling-3.0-flash-free" as const;
-// Lazy: constructing a real sharedProvider() here at module scope would
-// throw immediately if GATEWAY_BASE_URL/GATEWAY_API_KEY aren't set yet,
-// which breaks Next.js's build-time page-data collection for any route
-// that transitively imports this module (env vars are only guaranteed to
-// exist at request time, not build time). See createLazySharedProvider.
-export const defaultModel = createLazySharedProvider(defaultModelLabel);
+// Inert placeholder: a real sharedProvider() call here at module scope
+// would throw immediately if GATEWAY_BASE_URL/GATEWAY_API_KEY aren't set
+// yet, which breaks Next.js's build-time page-data collection for any
+// route that transitively imports this module (env vars are only
+// guaranteed to exist at request time, not build time). See
+// createInertPlaceholderModel in ./models.
+export const defaultModel = createInertPlaceholderModel(defaultModelLabel);
 
 function normalizeAgentModelSelection(
   selection: OpenAgentModelInput | undefined,

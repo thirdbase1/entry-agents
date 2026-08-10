@@ -204,43 +204,40 @@ export function getProviderOptionsForModel(
 }
 
 /**
- * Lazily-resolved LanguageModel -- defers the GATEWAY_BASE_URL/
- * GATEWAY_API_KEY env check (and the real sharedProvider() construction)
- * until something actually reads a property off the returned object,
- * instead of doing it eagerly at call time. Needed for module-scope
- * placeholders like `defaultModel` in open-agent.ts: those are
- * immediately overridden per-request by `prepareCall`, but constructing
- * them eagerly at import time crashes Next.js's build-time page-data
- * collection (which imports route modules without any env configured
- * yet, before the actual request handler runs).
+ * Inert placeholder LanguageModel that never touches
+ * GATEWAY_BASE_URL/GATEWAY_API_KEY or constructs a real network client.
+ *
+ * Used for module-scope placeholders like `defaultModel` in
+ * open-agent.ts: those get immediately overridden per-request by
+ * `prepareCall`, so they're never actually invoked -- but ToolLoopAgent's
+ * constructor reads properties like `specificationVersion` off `model`
+ * synchronously at construction time, so even a *lazy* Proxy that defers
+ * sharedProvider() doesn't help (it just moves the env-var throw from
+ * "module eval" to "agent construction", which still happens during
+ * Next.js's build-time page-data collection, before any env var is
+ * guaranteed to be set). A real, static, non-throwing stub sidesteps the
+ * whole problem: it doesn't need env vars because it never makes a real
+ * request. If it's ever *actually* invoked (it shouldn't be), it throws
+ * a clear, specific error instead of a confusing network/env failure.
  */
-export function createLazySharedProvider(
+export function createInertPlaceholderModel(
   modelId: SharedProviderModelId,
-  options: GatewayOptions = {},
 ): LanguageModel {
-  // sharedProvider() always returns an actual model object (never the
-  // bare-string form of the LanguageModel union), so this narrowing is
-  // safe -- it just keeps the Proxy's target/get/has signatures in plain
-  // `object` terms instead of the full LanguageModel union.
-  let cached: object | undefined;
-  const resolve = (): object => {
-    if (!cached) {
-      cached = sharedProvider(modelId, options) as object;
-    }
-    return cached;
+  const notInvokable = () => {
+    throw new Error(
+      `Placeholder model "${modelId}" was invoked directly -- this should never happen. ` +
+        "prepareCall() is expected to replace it with a real sharedProvider() model before any request is made.",
+    );
   };
 
-  return new Proxy(
-    {},
-    {
-      get(_target, prop, receiver) {
-        return Reflect.get(resolve(), prop, receiver);
-      },
-      has(_target, prop) {
-        return Reflect.has(resolve(), prop);
-      },
-    },
-  ) as LanguageModel;
+  return {
+    specificationVersion: "v2",
+    provider: "entry-placeholder",
+    modelId,
+    supportedUrls: {},
+    doGenerate: notInvokable,
+    doStream: notInvokable,
+  } as unknown as LanguageModel;
 }
 
 export function sharedProvider(

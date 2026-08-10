@@ -1,6 +1,6 @@
 import type { LanguageModel } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
-import { sharedProvider } from "../models";
+import { createInertPlaceholderModel, sharedProvider } from "../models";
 import { z } from "zod";
 import { bashTool } from "../tools/bash";
 import { globTool } from "../tools/glob";
@@ -90,7 +90,11 @@ const callOptionsSchema = z.object({
 export type DesignCallOptions = z.infer<typeof callOptionsSchema>;
 
 export const designSubagent = new ToolLoopAgent({
-  model: sharedProvider("grok-4.5"),
+  // Inert placeholder -- see createInertPlaceholderModel for why this
+  // can't be a real sharedProvider() call at module scope. prepareCall
+  // below lazily constructs the real default model if the caller
+  // doesn't pass one explicitly.
+  model: createInertPlaceholderModel("grok-4.5"),
   instructions: DESIGN_SYSTEM_PROMPT,
   tools: {
     read: readFileTool(),
@@ -108,7 +112,7 @@ export const designSubagent = new ToolLoopAgent({
     }
 
     const sandbox = options.sandbox;
-    const model = options.model ?? settings.model;
+    const model = options.model ?? sharedProvider("grok-4.5");
     return {
       ...settings,
       model,

@@ -1,0 +1,28 @@
+{
+  "name": "open-agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "web": "pnpm --dir apps/web dev",
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "sandbox:snapshot-base": "node scripts/vercel-refresh-base-snapshot.ts",
+    "typecheck": "turbo typecheck",
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "ci": "pnpm check && pnpm typecheck && pnpm test:isolated && pnpm --dir apps/web db:check",
+    "test:isolated": "node scripts/test-isolated.ts",
+    "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.43.0",
+    "oxlint": "1.57.0",
+    "turbo": "^2.5.4",
+    "typescript": "^5",
+    "ultracite": "7.4.0"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "pnpm@11.5.1+sha512.93f7b57422ea7068257235b4c16eb60762eb68e1dc23723199cc739043ea9be2c4143274a399d8c6defa2b1176226d9ca1c4b63482d6200c1a8fbaa78c1d1485"
+}

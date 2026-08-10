@@ -116,9 +116,17 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   if (installations.length === 0) {
-    // no installations — route to install page
+    // No installations and no known target_id -- GitHub's
+    // "installations/new/permissions" path is ONLY valid with a target_id
+    // query param (it's the "review permissions for this specific
+    // account/org" step). Without one it 404s ("Page not found"), which is
+    // exactly what users were hitting here. The correct entry point when we
+    // don't yet know which account/org to install into is the plain
+    // "installations/new" path -- it shows GitHub's own account/org picker,
+    // then GitHub itself redirects into the permissions review step (with a
+    // target_id it fills in) before finally hitting our callback.
     const installUrl = new URL(
-      `https://github.com/apps/${appSlug}/installations/new/permissions`,
+      `https://github.com/apps/${appSlug}/installations/new`,
     );
     installUrl.searchParams.set("state", state);
     return redirectWithInstallCookies(installUrl, redirectTo, state);

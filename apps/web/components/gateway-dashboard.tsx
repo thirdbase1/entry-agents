@@ -30,24 +30,68 @@ import { cn } from "@/lib/utils";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface HealthResponse {
+  ok: boolean;
   status: string;
-  version: string;
-  gitCommit: string | null;
   uptime: number;
   routes: number;
-  models: string[];
+  routedModels: string[];
+  providers: string[];
   circuitBreakers: Record<string, string>;
-  metrics: {
-    counters: Record<string, number | Record<string, number>>;
-    gauges: Record<string, number>;
-    histograms: Record<string, Record<string, number>>;
+  activeRequests: number;
+  activeStreams: number;
+  // version/gitCommit aren't in the real /health payload today, but keep
+  // them optional in case they're added later -- avoids re-breaking this.
+  version?: string;
+  gitCommit?: string | null;
+}
+
+interface LatencyStats {
+  p50: number;
+  p95: number;
+  p99: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+interface MetricsBucket {
+  requests: number;
+  requests2xx: number;
+  requests4xx: number;
+  requests5xx: number;
+  upstreamErrors: number;
+  fallbacks: number;
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    reasoning: number;
+    total: number;
   };
+  estimatedSpend: number;
+  latency: LatencyStats;
+  ttft: LatencyStats;
+  statusBreakdown: Record<string, number>;
+}
+
+interface CircuitBreakerDetail {
+  state: string;
+  failures: number;
+  openedAt: number;
 }
 
 interface MetricsResponse {
-  counters: Record<string, number | Record<string, number>>;
-  gauges: Record<string, number>;
-  histograms: Record<string, Record<string, number>>;
+  uptime: number;
+  activeRequests: number;
+  activeStreams: number;
+  global: MetricsBucket;
+  byProvider: Record<string, MetricsBucket>;
+  byModel: Record<string, MetricsBucket>;
+  circuitBreakers: Record<string, CircuitBreakerDetail>;
+  providers: string[];
+  modelCount: number;
+  providerCount: number;
 }
 
 interface ModelInfo {
@@ -161,7 +205,7 @@ function StatCard({
 function LatencyChart({
   histogram,
 }: {
-  histogram?: Record<string, number>;
+  histogram?: LatencyStats;
 }) {
   if (!histogram || !histogram.count) {
     return (
@@ -211,11 +255,11 @@ function LatencyChart({
 // ─── Request Status Breakdown ────────────────────────────────────────────────
 
 function StatusBreakdown({
-  byLabel,
+  breakdown,
 }: {
-  byLabel?: Record<string, number>;
+  breakdown?: Record<string, number>;
 }) {
-  if (!byLabel || Object.keys(byLabel).length === 0) {
+  if (!breakdown || Object.keys(breakdown).length === 0) {
     return (
       <div className="text-sm text-muted-foreground">
         No request data yet
@@ -223,35 +267,22 @@ function StatusBreakdown({
     );
   }
 
-  const entries = Object.entries(byLabel).map(([label, count]) => {
-    const parsed = JSON.parse(label);
-    return {
-      method: parsed.method || "GET",
-      status: parsed.status || 0,
-      count,
-    };
-  });
-
-  entries.sort((a, b) => b.count - a.count);
+  const entries = Object.entries(breakdown)
+    .map(([status, count]) => ({ status: Number(status), count }))
+    .sort((a, b) => b.count - a.count);
 
   const total = entries.reduce((sum, e) => sum + e.count, 0);
 
   return (
     <div className="space-y-2">
       {entries.map((entry) => {
-        const pct = (entry.count / total) * 100;
+        const pct = total ? (entry.count / total) * 100 : 0;
         const is2xx = entry.status >= 200 && entry.status < 300;
         const is4xx = entry.status >= 400 && entry.status < 500;
         const is5xx = entry.status >= 500;
 
         return (
-          <div
-            key={`${entry.method}-${entry.status}`}
-            className="flex items-center gap-3"
-          >
-            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
-              {entry.method}
-            </span>
+          <div key={entry.status} className="flex items-center gap-3">
             <span
               className={cn(
                 "w-10 shrink-0 font-mono text-xs font-medium",
@@ -280,6 +311,98 @@ function StatusBreakdown({
         );
       })}
     </div>
+  );
+}
+
+// ─── Usage Breakdown Table (shared by per-provider and per-model) ───────────
+
+function UsageBreakdownTable({
+  buckets,
+  nameHeader,
+  circuitBreakers,
+  cbKeyPrefix,
+}: {
+  buckets: Record<string, MetricsBucket>;
+  nameHeader: string;
+  circuitBreakers?: Record<string, CircuitBreakerDetail>;
+  cbKeyPrefix?: boolean;
+}) {
+  const names = Object.keys(buckets);
+  if (names.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground">No data yet</div>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{nameHeader}</TableHead>
+          <TableHead className="text-right">Requests</TableHead>
+          <TableHead className="text-right">2xx</TableHead>
+          <TableHead className="text-right">4xx</TableHead>
+          <TableHead className="text-right">5xx</TableHead>
+          <TableHead className="text-right">Tokens In</TableHead>
+          <TableHead className="text-right">Tokens Out</TableHead>
+          <TableHead className="text-right">Spend</TableHead>
+          <TableHead className="text-right">p50</TableHead>
+          <TableHead className="text-right">Errors</TableHead>
+          {cbKeyPrefix && <TableHead>Health</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {names.map((name) => {
+          const b = buckets[name];
+          let cbState: string | undefined;
+          if (cbKeyPrefix && circuitBreakers) {
+            const cbKey = Object.keys(circuitBreakers).find((k) =>
+              k.startsWith(`${name}:`),
+            );
+            cbState = cbKey ? circuitBreakers[cbKey].state : "closed";
+          }
+          return (
+            <TableRow key={name}>
+              <TableCell className="font-mono text-xs">{name}</TableCell>
+              <TableCell className="text-right font-mono text-xs">
+                {formatNumber(b.requests || 0)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs text-emerald-400">
+                {formatNumber(b.requests2xx || 0)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs text-amber-400">
+                {formatNumber(b.requests4xx || 0)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs text-red-400">
+                {formatNumber(b.requests5xx || 0)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs">
+                {formatNumber(b.tokens?.input || 0)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs">
+                {formatNumber(b.tokens?.output || 0)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs text-[#ff8a3d]">
+                ${(b.estimatedSpend || 0).toFixed(4)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs">
+                {b.latency?.count ? formatLatency(b.latency.p50) : "—"}
+              </TableCell>
+              <TableCell className="text-right font-mono text-xs">
+                {formatNumber(b.upstreamErrors || 0)}
+              </TableCell>
+              {cbKeyPrefix && (
+                <TableCell>
+                  <span className={cn("font-mono text-xs", cnStatus(cbState || ""))}>
+                    {cbState || "—"}
+                  </span>
+                </TableCell>
+              )}
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -432,22 +555,20 @@ export function GatewayDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const counters = metrics?.counters || health?.metrics?.counters || {};
-  const gauges = metrics?.gauges || health?.metrics?.gauges || {};
-  const histograms = metrics?.histograms || health?.metrics?.histograms || {};
-  const latencyMs = histograms.request_latency_ms;
-  const asCount = (value: number | Record<string, number> | undefined): number =>
-    typeof value === "number" ? value : 0;
-  const requestTotal = asCount(counters.request_total);
-  const tokensTotal = asCount(counters.tokens_total);
-  const spendTotal = asCount(counters.estimated_spend_total);
-  const upstreamErrors = asCount(counters.upstream_errors);
-  const fallbackTotal = asCount(counters.fallback_total);
-  const rateLimitRejected = asCount(counters.rate_limit_rejected);
-  const activeRequests = gauges.active_requests || 0;
-  const activeStreams = gauges.active_streams || 0;
-  const statusByLabel =
-    (counters.request_total_by_label as Record<string, number>) || {};
+  // The real /metrics response nests everything under `global`
+  // (requests/latency/tokens/spend/statusBreakdown), plus separate
+  // `byProvider` and `byModel` breakdowns -- there is no flat
+  // counters/gauges/histograms shape. Reading the wrong keys is why this
+  // dashboard used to show 0 for everything despite real traffic.
+  const g = metrics?.global;
+  const latencyStats = g?.latency;
+  const requestTotal = g?.requests || 0;
+  const tokensTotal = g?.tokens?.total || 0;
+  const spendTotal = g?.estimatedSpend || 0;
+  const upstreamErrors = g?.upstreamErrors || 0;
+  const activeRequests = metrics?.activeRequests ?? health?.activeRequests ?? 0;
+  const activeStreams = metrics?.activeStreams ?? 0;
+  const statusBreakdown = g?.statusBreakdown || {};
 
   return (
     <div className="space-y-6">
@@ -518,8 +639,12 @@ export function GatewayDashboard() {
                 <span className="font-medium text-emerald-400">Connected</span>
               </div>
               <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">v{health.version}</span>
-              <span className="text-muted-foreground">·</span>
+              {health.version && (
+                <>
+                  <span className="text-muted-foreground">v{health.version}</span>
+                  <span className="text-muted-foreground">·</span>
+                </>
+              )}
               <span className="font-mono text-xs text-muted-foreground">
                 {lastRefresh
                   ? lastRefresh.toLocaleTimeString()
@@ -554,8 +679,8 @@ export function GatewayDashboard() {
             />
             <StatCard
               label="Avg Latency"
-              value={latencyMs ? formatLatency(latencyMs.p50 || 0) : "—"}
-              sublabel={latencyMs ? `p95: ${formatLatency(latencyMs.p95 || 0)}` : undefined}
+              value={latencyStats?.count ? formatLatency(latencyStats.p50 || 0) : "—"}
+              sublabel={latencyStats?.count ? `p95: ${formatLatency(latencyStats.p95 || 0)}` : undefined}
               icon={Clock}
             />
             <StatCard
@@ -583,7 +708,7 @@ export function GatewayDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <LatencyChart histogram={latencyMs} />
+                <LatencyChart histogram={latencyStats} />
               </CardContent>
             </Card>
 
@@ -595,7 +720,7 @@ export function GatewayDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <StatusBreakdown byLabel={statusByLabel} />
+                <StatusBreakdown breakdown={statusBreakdown} />
               </CardContent>
             </Card>
           </div>
@@ -641,7 +766,49 @@ export function GatewayDashboard() {
             </CardContent>
           </Card>
 
-          {/* ─── Routes Table ─── */}
+          {/* ─── Per-Model Usage ─── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingUp className="size-4 text-[#ff8a3d]" />
+                Model Usage
+                <span className="ml-auto rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                  {metrics?.modelCount ?? Object.keys(metrics?.byModel || {}).length} model
+                  {(metrics?.modelCount ?? Object.keys(metrics?.byModel || {}).length) !== 1 ? "s" : ""}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto pt-0">
+              <UsageBreakdownTable
+                buckets={metrics?.byModel || {}}
+                nameHeader="Model"
+              />
+            </CardContent>
+          </Card>
+
+          {/* ─── Per-Provider Usage ─── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Server className="size-4 text-[#ff8a3d]" />
+                Provider Usage
+                <span className="ml-auto rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                  {metrics?.providerCount ?? Object.keys(metrics?.byProvider || {}).length} provider
+                  {(metrics?.providerCount ?? Object.keys(metrics?.byProvider || {}).length) !== 1 ? "s" : ""}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto pt-0">
+              <UsageBreakdownTable
+                buckets={metrics?.byProvider || {}}
+                nameHeader="Provider"
+                circuitBreakers={metrics?.circuitBreakers}
+                cbKeyPrefix
+              />
+            </CardContent>
+          </Card>
+
+                    {/* ─── Routes Table ─── */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">

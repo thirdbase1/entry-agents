@@ -1,6 +1,7 @@
 export {
   type GatewayConfig,
   type GatewayOptions,
+  type ProviderOptionsByProvider,
   type SharedProviderModelId,
   createInertPlaceholderModel,
   sharedProvider,

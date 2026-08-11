@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProviderOptionsByProvider } from "@open-agents/agent";
 
 export const REASONING_EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORT_LEVELS)[number];
@@ -44,8 +45,6 @@ export function sanitizeReasoningEffort(
   const parsed = reasoningEffortSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
-
-export type ProviderOptionsByProvider = Record<string, Record<string, unknown>>;
 
 /**
  * All model calls in this app go through a single createOpenAI()-based

@@ -249,6 +249,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     ) : activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "models" ? (
+      <PreferencesSectionSkeleton />
     ) : activeItem?.id === "leaderboard" ? (
       <LeaderboardSectionSkeleton />
     ) : (

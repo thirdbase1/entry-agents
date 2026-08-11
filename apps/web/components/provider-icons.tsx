@@ -15,6 +15,9 @@ import {
 } from "@lobehub/icons";
 import AntGroup from "@lobehub/icons/es/AntGroup";
 import Hunyuan from "@lobehub/icons/es/Hunyuan";
+import Minimax from "@lobehub/icons/es/Minimax";
+import Qwen from "@lobehub/icons/es/Qwen";
+import Stepfun from "@lobehub/icons/es/Stepfun";
 import type { SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement>;
@@ -79,6 +82,18 @@ function Hy3Icon(props: IconProps) {
   return <Hunyuan.Color {...props} />;
 }
 
+function QwenIcon(props: IconProps) {
+  return <Qwen.Color {...props} />;
+}
+
+function MinimaxIcon(props: IconProps) {
+  return <Minimax.Color {...props} />;
+}
+
+function StepfunIcon(props: IconProps) {
+  return <Stepfun {...props} />;
+}
+
 function DefaultProviderIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -105,6 +120,9 @@ export type ProviderId =
   | "xiaomi"
   | "ling"
   | "hy3"
+  | "qwen"
+  | "minimax"
+  | "stepfun"
   | string;
 
 const providerIconMap: Record<string, React.FC<IconProps>> = {
@@ -123,6 +141,9 @@ const providerIconMap: Record<string, React.FC<IconProps>> = {
   xiaomi: XiaomiIcon,
   ling: LingIcon,
   hy3: Hy3Icon,
+  qwen: QwenIcon,
+  minimax: MinimaxIcon,
+  stepfun: StepfunIcon,
 };
 
 const providerDisplayNames: Record<string, string> = {
@@ -143,6 +164,9 @@ const providerDisplayNames: Record<string, string> = {
   xiaomi: "Xiaomi",
   ling: "Ling",
   hy3: "Hy3",
+  qwen: "Qwen",
+  minimax: "MiniMax",
+  stepfun: "StepFun",
 };
 
 /** Prefixes in model display names that match the provider brand (stripped in compact UI). */
@@ -170,6 +194,9 @@ const flatModelIdProviderPrefixes: [prefix: string, provider: string][] = [
   ["mimo", "xiaomi"],
   ["ling", "ling"],
   ["hy3", "hy3"],
+  ["qwen", "qwen"],
+  ["minimax", "minimax"],
+  ["step", "stepfun"],
   ["deepseek", "deepseek"],
   ["claude", "anthropic"],
   ["gpt-", "openai"],

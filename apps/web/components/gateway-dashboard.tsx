@@ -372,12 +372,14 @@ export function GatewayDashboard() {
   const gauges = metrics?.gauges || health?.metrics?.gauges || {};
   const histograms = metrics?.histograms || health?.metrics?.histograms || {};
   const latencyMs = histograms.request_latency_ms;
-  const requestTotal = counters.request_total || 0;
-  const tokensTotal = counters.tokens_total || 0;
-  const spendTotal = counters.estimated_spend_total || 0;
-  const upstreamErrors = counters.upstream_errors || 0;
-  const fallbackTotal = counters.fallback_total || 0;
-  const rateLimitRejected = counters.rate_limit_rejected || 0;
+  const asCount = (value: number | Record<string, number> | undefined): number =>
+    typeof value === "number" ? value : 0;
+  const requestTotal = asCount(counters.request_total);
+  const tokensTotal = asCount(counters.tokens_total);
+  const spendTotal = asCount(counters.estimated_spend_total);
+  const upstreamErrors = asCount(counters.upstream_errors);
+  const fallbackTotal = asCount(counters.fallback_total);
+  const rateLimitRejected = asCount(counters.rate_limit_rejected);
   const activeRequests = gauges.active_requests || 0;
   const activeStreams = gauges.active_streams || 0;
   const statusByLabel =

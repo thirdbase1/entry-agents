@@ -4,7 +4,7 @@ import {
   type JSONValue,
   type LanguageModel,
 } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
@@ -253,16 +253,30 @@ export function sharedProvider(
 
   const { baseURL, apiKey } = config ?? getSharedProviderConfig();
 
-  const openCodeZen = createOpenAI({
+  // Use @ai-sdk/openai-compatible, NOT @ai-sdk/openai, even though this is
+  // a standard OpenAI Chat Completions-shaped API. Reason (found 2026-08-11):
+  // Opencode Zen's reasoning models (deepseek-v4-pro, glm-5.2) return their
+  // thinking text in a non-standard `reasoning_content` field on
+  // choices[].delta / choices[].message -- a DeepSeek-style convention, not
+  // part of real OpenAI's API. @ai-sdk/openai's chat-completions parser has
+  // no code path for that field at all (it only knows OpenAI's own Responses
+  // API reasoning shape), so it silently dropped every reasoning token before
+  // it ever reached the UI -- the whole ThinkingBlock/"Pondering..." UI was
+  // built and wired correctly, but had nothing to render.
+  // @ai-sdk/openai-compatible's chat model *does* parse `reasoning_content`
+  // (both delta.reasoning_content while streaming and message.reasoning_content
+  // for non-streaming) into proper reasoning-start/delta/end parts.
+  // `name: "openai"` keeps the providerOptions namespace as `openai` so every
+  // existing `providerOptions.openai.*` call site (reasoningEffort, GPT-5
+  // defaults, etc.) keeps working unchanged.
+  const openCodeZen = createOpenAICompatible({
+    name: "openai",
     baseURL,
     apiKey,
     headers: attributionHeaders,
-    // Opencode Zen is a standard OpenAI Chat Completions-shaped API
-    // (confirmed live: SSE choices[].delta, tool_calls, usage object) --
-    // no Responses-API-specific behavior to opt out of here.
   });
 
-  let model: LanguageModel = openCodeZen.chat(modelId);
+  let model: LanguageModel = openCodeZen.chatModel(modelId);
 
   const providerOptions = getProviderOptionsForModel(
     modelId,

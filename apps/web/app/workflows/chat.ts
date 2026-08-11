@@ -44,11 +44,9 @@ import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
-  filterModelVariantsForSession,
   sanitizeSelectedModelIdForSession,
   sanitizeUserPreferencesForSession,
 } from "@/lib/model-access";
-import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID, type AvailableModel } from "@/lib/models";
 import type { Session as AuthSession } from "@/lib/session/types";
 import type {
@@ -176,15 +174,9 @@ async function resolveChatModelRuntime(params: {
         params.requestUrl,
       )
     : null;
-  const modelVariants = filterModelVariantsForSession(
-    getAllVariants(preferences?.modelVariants ?? []),
-    params.authSession,
-    params.requestUrl,
-  );
   const selectedModelId =
     sanitizeSelectedModelIdForSession(
       chat.modelId,
-      modelVariants,
       params.authSession,
       params.requestUrl,
     ) ??
@@ -192,19 +184,17 @@ async function resolveChatModelRuntime(params: {
     null;
   const mainModelSelection = resolveChatModelSelection({
     selectedModelId,
-    modelVariants,
-    missingVariantLabel: "Selected model variant",
+    reasoningEffort: chat.reasoningEffort,
+    missingModelLabel: "Selected model",
   });
   const subagentModelSelection = preferences?.defaultSubagentModelId
     ? resolveChatModelSelection({
         selectedModelId: sanitizeSelectedModelIdForSession(
           preferences.defaultSubagentModelId,
-          modelVariants,
           params.authSession,
           params.requestUrl,
         ),
-        modelVariants,
-        missingVariantLabel: "Subagent model variant",
+        missingModelLabel: "Subagent model",
       })
     : undefined;
   const autoCommitEnabled =
@@ -661,7 +651,13 @@ export async function runAgentWorkflow(options: Options) {
   // briefly unreachable, cost tracking degrades to undefined for this
   // turn rather than failing the whole chat request.
   const modelCostCatalog = await fetchAvailableLanguageModels().catch(
-    () => [],
+    (error) => {
+      console.error(
+        "Failed to fetch entry-gateway model/pricing catalog for cost tracking:",
+        error,
+      );
+      return [];
+    },
   );
 
   let pendingAssistantResponse: WebAgentUIMessage =
@@ -1077,17 +1073,6 @@ const runAgentStep = async (
             streamPart.usage,
             modelCostCatalog,
           );
-          // TEMP diagnostic (2026-08-11): tracking down why the per-turn
-          // cost pill still shows nothing in production. Remove once
-          // resolved.
-          console.log("[cost-debug] streaming finish-step", {
-            modelId,
-            stepCost,
-            usage: streamPart.usage,
-            catalogSize: modelCostCatalog.length,
-            catalogHasModel: modelCostCatalog.some((m) => m.id === modelId),
-            catalogIds: modelCostCatalog.map((m) => m.id),
-          });
           if (stepCost !== undefined) {
             lastStepCost = stepCost;
             totalMessageCost = (totalMessageCost ?? 0) + stepCost;
@@ -1168,18 +1153,6 @@ const runAgentStep = async (
       }
       return (sum ?? 0) + cost;
     }, undefined);
-
-    // TEMP diagnostic (2026-08-11): tracking down why the per-turn cost
-    // pill still shows nothing in production. Remove once resolved.
-    console.log("[cost-debug] final steps cost", {
-      modelId,
-      stepsCost,
-      stepCount: steps.length,
-      stepUsages: steps.map((s) => s.usage),
-      existingTotalMessageCost,
-      catalogSize: modelCostCatalog.length,
-      catalogHasModel: modelCostCatalog.some((m) => m.id === modelId),
-    });
 
     if (stepsCost !== undefined) {
       const carriedCost = (existingTotalMessageCost ?? 0) + stepsCost;

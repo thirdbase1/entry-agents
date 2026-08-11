@@ -131,7 +131,6 @@ let testPreferences: {
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
   globalSkillRefs: never[];
-  modelVariants: never[];
   enabledModelIds: string[];
 };
 
@@ -428,7 +427,6 @@ beforeEach(() => {
     alertSoundEnabled: true,
     publicUsageEnabled: false,
     globalSkillRefs: [],
-    modelVariants: [],
     enabledModelIds: [],
   };
   Object.values(spies).forEach((s) => s.mockClear());

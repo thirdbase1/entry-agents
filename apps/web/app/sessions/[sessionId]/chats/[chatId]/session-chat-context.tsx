@@ -119,6 +119,9 @@ type SessionChatContextValue = {
   unarchiveSession: () => Promise<void>;
   updateSessionTitle: (title: string) => Promise<void>;
   updateChatModel: (modelId: string) => Promise<void>;
+  updateChatReasoningEffort: (
+    reasoningEffort: string | null,
+  ) => Promise<void>;
   /** Whether the chat had persisted messages when it was loaded */
   hadInitialMessages: boolean;
   /** The initial message snapshot used for SSR hydration */
@@ -251,6 +254,7 @@ type SessionChatMetadataContextValue = Pick<
   | "unarchiveSession"
   | "updateSessionTitle"
   | "updateChatModel"
+  | "updateChatReasoningEffort"
   | "updateSessionSnapshot"
   | "preferredSandboxType"
   | "supportsDiff"
@@ -1014,6 +1018,29 @@ export function SessionChatProvider({
     [sessionRecord.id, chatInfo.id],
   );
 
+  const updateChatReasoningEffort = useCallback(
+    async (reasoningEffort: string | null) => {
+      const res = await fetch(
+        `/api/sessions/${sessionRecord.id}/chats/${chatInfo.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reasoningEffort }),
+        },
+      );
+
+      const data = (await res.json()) as { chat?: Chat; error?: string };
+      if (!res.ok || !data.chat) {
+        throw new Error(
+          data.error ?? "Failed to update chat reasoning effort",
+        );
+      }
+
+      setChatInfo(data.chat);
+    },
+    [sessionRecord.id, chatInfo.id],
+  );
+
   const runtimeContextValue = useMemo<SessionChatRuntimeContextValue>(
     () => ({
       chat,
@@ -1094,6 +1121,7 @@ export function SessionChatProvider({
       unarchiveSession,
       updateSessionTitle,
       updateChatModel,
+      updateChatReasoningEffort,
       updateSessionSnapshot,
       preferredSandboxType,
       supportsDiff,
@@ -1120,6 +1148,7 @@ export function SessionChatProvider({
       unarchiveSession,
       updateSessionTitle,
       updateChatModel,
+      updateChatReasoningEffort,
       updateSessionSnapshot,
       preferredSandboxType,
       supportsDiff,

@@ -48,12 +48,6 @@ let messageRows: Array<{ parts: unknown; role: string; createdAt: Date }> = [
   },
 ];
 let viewerSession: { user: { id: string } } | null = null;
-let userModelVariants: Array<{
-  id: string;
-  name: string;
-  baseModelId: string;
-  providerOptions: Record<string, unknown>;
-}> = [];
 
 mock.module("next/navigation", () => ({
   notFound: () => {
@@ -92,7 +86,6 @@ mock.module("@/lib/db/user-preferences", () => ({
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,
-    modelVariants: userModelVariants,
   }),
 }));
 
@@ -135,7 +128,6 @@ describe("/shared/[shareId] page", () => {
       },
     ];
     viewerSession = null;
-    userModelVariants = [];
   });
 
   test("generateMetadata uses shared chat title", async () => {
@@ -181,24 +173,14 @@ describe("/shared/[shareId] page", () => {
     );
   });
 
-  test("passes custom variant name to shared chat content", async () => {
+  test("passes through modelId without a separate variant name", async () => {
     chatRecord = {
       id: "chat-1",
       sessionId: "session-1",
       title: "Debug flaky tests",
-      modelId: "variant:abc123",
+      modelId: "openai/gpt-5.4",
       activeStreamId: null,
     };
-    userModelVariants = [
-      {
-        id: "variant:abc123",
-        name: "Gateway Usage Variant",
-        baseModelId: "openai/gpt-5.4",
-        providerOptions: {
-          reasoningEffort: "high",
-        },
-      },
-    ];
 
     const { default: SharedPage } = await pageModulePromise;
 
@@ -206,11 +188,13 @@ describe("/shared/[shareId] page", () => {
       params: Promise.resolve({ shareId: "share-1" }),
     })) as {
       props: {
+        modelId: string | null;
         modelName: string | null;
       };
     };
 
-    expect(element.props.modelName).toBe("Gateway Usage Variant");
+    expect(element.props.modelId).toBe("openai/gpt-5.4");
+    expect(element.props.modelName).toBeNull();
   });
 
   test("redacts top-level .env tool content on shared pages", async () => {

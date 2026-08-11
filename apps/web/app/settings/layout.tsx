@@ -27,7 +27,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { AccountsSectionSkeleton } from "./accounts-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
-import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 
 /** Skeleton shown while auth is loading for the combined profile page */
@@ -242,7 +241,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     ) : activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "models" ? (
-      <ModelVariantsSectionSkeleton />
     ) : activeItem?.id === "leaderboard" ? (
       <LeaderboardSectionSkeleton />
     ) : (

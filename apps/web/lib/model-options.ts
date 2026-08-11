@@ -5,10 +5,6 @@ import {
   getModelDisplayName,
 } from "@/lib/models";
 import {
-  MODEL_VARIANT_ID_PREFIX,
-  type ModelVariant,
-} from "@/lib/model-variants";
-import {
   getProviderFromModelId,
   stripProviderPrefix,
 } from "@/components/provider-icons";
@@ -18,7 +14,6 @@ export interface ModelOption {
   label: string;
   shortLabel: string;
   description?: string;
-  isVariant: boolean;
   contextWindow?: number;
   cost?: AvailableModelCost;
   provider: string;
@@ -32,30 +27,8 @@ function toBaseModelOption(model: AvailableModel): ModelOption {
     label,
     shortLabel: stripProviderPrefix(label, provider),
     description: model.description ?? undefined,
-    isVariant: false,
     contextWindow: model.context_window,
     ...(model.cost ? { cost: model.cost } : {}),
-    provider,
-  };
-}
-
-function toVariantOption(
-  variant: ModelVariant,
-  baseModel?: AvailableModel,
-): ModelOption {
-  const baseLabel = baseModel
-    ? getModelDisplayName(baseModel)
-    : variant.baseModelId;
-  const provider = getProviderFromModelId(variant.baseModelId);
-
-  return {
-    id: variant.id,
-    label: variant.name,
-    shortLabel: stripProviderPrefix(variant.name, provider),
-    description: `Variant of ${baseLabel}`,
-    isVariant: true,
-    contextWindow: baseModel?.context_window,
-    ...(baseModel?.cost ? { cost: baseModel.cost } : {}),
     provider,
   };
 }
@@ -70,8 +43,7 @@ export interface ModelGroup {
 }
 
 /**
- * Group options by provider, sort groups (priority first, then alphabetical),
- * and within each group put base models before variants.
+ * Group options by provider, sort groups (priority first, then alphabetical).
  */
 export function groupByProvider(options: ModelOption[]): ModelGroup[] {
   const groups: Record<string, ModelOption[]> = {};
@@ -102,25 +74,14 @@ export function groupByProvider(options: ModelOption[]): ModelGroup[] {
   }));
 }
 
-export function buildModelOptions(
-  models: AvailableModel[],
-  modelVariants: ModelVariant[],
-): ModelOption[] {
-  const baseModelOptions = models.map(toBaseModelOption);
-  const baseModelsById = new Map(models.map((model) => [model.id, model]));
-
-  const variantOptions = modelVariants.map((variant) =>
-    toVariantOption(variant, baseModelsById.get(variant.baseModelId)),
-  );
-
-  return [...baseModelOptions, ...variantOptions];
+export function buildModelOptions(models: AvailableModel[]): ModelOption[] {
+  return models.map(toBaseModelOption);
 }
 
 export function buildSessionChatModelOptions(
   models: AvailableModel[],
-  modelVariants: ModelVariant[],
 ): ModelOption[] {
-  return buildModelOptions(models, modelVariants);
+  return buildModelOptions(models);
 }
 
 export function withMissingModelOption(
@@ -131,20 +92,13 @@ export function withMissingModelOption(
     return modelOptions;
   }
 
-  if (!modelId.startsWith(MODEL_VARIANT_ID_PREFIX)) {
-    return modelOptions;
-  }
-
-  const label = `${modelId.slice(MODEL_VARIANT_ID_PREFIX.length)} (missing)`;
-
   return [
     ...modelOptions,
     {
       id: modelId,
-      label,
-      shortLabel: label,
-      description: "Variant no longer exists",
-      isVariant: true,
+      label: `${modelId} (unavailable)`,
+      shortLabel: `${modelId} (unavailable)`,
+      description: "Model no longer available",
       contextWindow: undefined,
       provider: "unknown",
     },

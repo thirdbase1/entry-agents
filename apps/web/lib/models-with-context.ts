@@ -214,11 +214,19 @@ async function fetchGatewayModels(): Promise<GatewayModel[]> {
     );
   }
 
+  // NOTE: deliberately no `next: { revalidate }` cache option here. That
+  // Next.js-specific fetch directive only works inside a request-scoped
+  // Next.js execution context (route handlers). The Vercel Workflow SDK's
+  // "use workflow"/"use step" durable-execution context is NOT a normal
+  // per-request Next.js context, so passing it there causes this fetch to
+  // throw -- which upstream callers (chat.ts) caught with a bare
+  // `.catch(() => [])`, silently emptying the pricing catalog on every
+  // real chat turn while the same function worked fine when called from
+  // /api/models (a plain route handler). That was the root cause of the
+  // per-turn cost pill never showing anything in production. Model list
+  // changes rarely enough that fetching it fresh each call is fine.
   const response = await fetch(`${baseURL.replace(/\/$/, "")}/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    // Model list changes rarely; a short cache keeps this off the hot
-    // path without going fully stale for long.
-    next: { revalidate: 60 },
   });
 
   if (!response.ok) {

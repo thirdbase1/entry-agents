@@ -301,7 +301,7 @@ export async function generatePullRequestContentFromSandbox(
   let prContent: z.infer<typeof prContentSchema>;
   try {
     const { output } = await generateText({
-      model: gateway("ling-3.0-flash-free"),
+      model: gateway("deepseek-v4-flash"),
       output: Output.object({
         schema: prContentSchema,
       }),

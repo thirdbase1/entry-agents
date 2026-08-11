@@ -158,7 +158,7 @@ async function compactLog(rawLog: string): Promise<string> {
   }
 
   const result = await generateText({
-    model: gateway("ling-3.0-flash-free"),
+    model: gateway("deepseek-v4-flash"),
     system: LOG_SUMMARIZATION_PROMPT,
     prompt: logInput,
   });

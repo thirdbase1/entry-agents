@@ -1,5 +1,5 @@
-export const DEFAULT_MODEL_ID = "ling-3.0-flash-free";
-export const APP_DEFAULT_MODEL_ID = "ling-3.0-flash-free";
+export const DEFAULT_MODEL_ID = "deepseek-v4-flash"; // TEMP: ling-3.0-flash-free is down on Opencode Zen (503 "Endpoint is unavailable", confirmed 2026-08-11). Revert once Opencode Zen restores it.
+export const APP_DEFAULT_MODEL_ID = "deepseek-v4-flash"; // TEMP: same outage, see DEFAULT_MODEL_ID above.
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 const TOKENS_PER_MILLION = 1_000_000;
 

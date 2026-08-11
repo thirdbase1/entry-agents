@@ -18,7 +18,6 @@ const preferencesState = {
   alertSoundEnabled: true,
   publicUsageEnabled: false,
   globalSkillRefs: [] as Array<{ source: string; skillName: string }>,
-  modelVariants: [] as Array<Record<string, unknown>>,
   enabledModelIds: [] as string[],
 };
 
@@ -57,7 +56,6 @@ describe("/api/settings/preferences", () => {
     currentSession = { user: { id: "user-1" } };
     preferencesState.defaultModelId = "anthropic/claude-haiku-4.5";
     preferencesState.defaultSubagentModelId = null;
-    preferencesState.modelVariants = [];
     preferencesState.enabledModelIds = [];
     updateCalls.length = 0;
   });
@@ -88,24 +86,16 @@ describe("/api/settings/preferences", () => {
     expect(body.preferences.globalSkillRefs).toEqual([]);
   });
 
-  test("GET hides Opus defaults for managed trial users", async () => {
+  test("GET hides Kimi K3 defaults for managed trial users", async () => {
     const { GET } = await routeModulePromise;
 
     currentSession = {
       authProvider: "vercel",
       user: { id: "user-1", email: "person@example.com" },
     };
-    preferencesState.defaultModelId = "anthropic/claude-opus-4.6";
-    preferencesState.defaultSubagentModelId =
-      "variant:builtin:claude-opus-4.6-high";
-    preferencesState.modelVariants = [
-      {
-        id: "variant:user-opus",
-        name: "User Opus",
-        baseModelId: "anthropic/claude-opus-4.6",
-        providerOptions: {},
-      },
-    ];
+    preferencesState.defaultModelId = "kimi-k3";
+    preferencesState.defaultSubagentModelId = "kimi-k3";
+    preferencesState.enabledModelIds = ["kimi-k3", "openai/gpt-5"];
 
     const response = await GET(
       new Request("https://open-agents.dev/api/settings/preferences"),
@@ -114,9 +104,9 @@ describe("/api/settings/preferences", () => {
       preferences: typeof preferencesState;
     };
 
-    expect(body.preferences.defaultModelId).toBe("openai/gpt-5.4");
-    expect(body.preferences.defaultSubagentModelId).toBe("openai/gpt-5.4");
-    expect(body.preferences.modelVariants).toEqual([]);
+    expect(body.preferences.defaultModelId).not.toBe("kimi-k3");
+    expect(body.preferences.defaultSubagentModelId).not.toBe("kimi-k3");
+    expect(body.preferences.enabledModelIds).toEqual(["openai/gpt-5"]);
   });
 
   test("PATCH rejects invalid sandbox types", async () => {

@@ -15,7 +15,6 @@ import {
   withMissingModelOption,
 } from "@/lib/model-options";
 import {
-  filterModelVariantsForSession,
   filterModelsForSession,
   sanitizeSelectedModelIdForSession,
   sanitizeUserPreferencesForSession,
@@ -24,7 +23,6 @@ import {
   isManagedTemplateTrialUser,
   MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR,
 } from "@/lib/managed-template-trial";
-import { getAllVariants } from "@/lib/model-variants";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
@@ -175,11 +173,6 @@ export default async function SessionChatPage({
     session,
     requestHost,
   );
-  const modelVariants = filterModelVariantsForSession(
-    getAllVariants(preferences.modelVariants),
-    session,
-    requestHost,
-  );
   const filteredModels = filterModelsForSession(
     initialModels,
     session,
@@ -188,12 +181,11 @@ export default async function SessionChatPage({
   const chatModelId =
     sanitizeSelectedModelIdForSession(
       chat.modelId,
-      modelVariants,
       session,
       requestHost,
     ) ?? chat.modelId;
   const initialModelOptions = withMissingModelOption(
-    buildSessionChatModelOptions(filteredModels, modelVariants),
+    buildSessionChatModelOptions(filteredModels),
     chatModelId,
   );
 

@@ -64,7 +64,7 @@ export const executorSubagent = new ToolLoopAgent({
   // can't be a real sharedProvider() call at module scope. prepareCall
   // below lazily constructs the real default model if the caller
   // doesn't pass one explicitly.
-  model: createInertPlaceholderModel("ling-3.0-flash-free"),
+  model: createInertPlaceholderModel("deepseek-v4-flash"),
   instructions: EXECUTOR_SYSTEM_PROMPT,
   tools: {
     read: readFileTool(),
@@ -82,7 +82,7 @@ export const executorSubagent = new ToolLoopAgent({
     }
 
     const sandbox = options.sandbox;
-    const model = options.model ?? sharedProvider("ling-3.0-flash-free");
+    const model = options.model ?? sharedProvider("deepseek-v4-flash");
     return {
       ...settings,
       model,

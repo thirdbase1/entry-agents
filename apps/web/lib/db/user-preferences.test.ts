@@ -11,7 +11,7 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     expect(toUserPreferencesData()).toEqual({
-      defaultModelId: "ling-3.0-flash-free",
+      defaultModelId: "deepseek-v4-flash",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
       defaultDiffMode: "unified",
@@ -21,7 +21,6 @@ describe("toUserPreferencesData", () => {
       alertSoundEnabled: true,
       publicUsageEnabled: false,
       globalSkillRefs: [],
-      modelVariants: [],
       enabledModelIds: [],
     });
   });
@@ -40,7 +39,6 @@ describe("toUserPreferencesData", () => {
       alertSoundEnabled: true,
       publicUsageEnabled: false,
       globalSkillRefs: [],
-      modelVariants: [],
       enabledModelIds: [],
     });
 
@@ -62,7 +60,6 @@ describe("toUserPreferencesData", () => {
       alertSoundEnabled: true,
       publicUsageEnabled: false,
       globalSkillRefs: [],
-      modelVariants: [],
       enabledModelIds: [],
     });
 
@@ -86,7 +83,6 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [
         { source: "vercel/ai", skillName: "bad name" },
       ] as never,
-      modelVariants: [],
       enabledModelIds: [],
     });
 
@@ -110,82 +106,12 @@ describe("toUserPreferencesData", () => {
         { source: "vercel/ai", skillName: "ai-sdk" },
         { source: "vercel/ai", skillName: "ai-sdk" },
       ],
-      modelVariants: [],
       enabledModelIds: [],
     });
 
     expect(result.globalSkillRefs).toEqual([
       { source: "vercel/ai", skillName: "ai-sdk" },
     ]);
-  });
-
-  test("drops invalid modelVariants payloads", async () => {
-    const { toUserPreferencesData } = await userPreferencesModulePromise;
-
-    const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [{ id: "bad-id" }] as never,
-      enabledModelIds: [],
-    });
-
-    expect(result.modelVariants).toEqual([]);
-  });
-
-  test("keeps valid modelVariants payloads", async () => {
-    const { toUserPreferencesData } = await userPreferencesModulePromise;
-
-    const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: true,
-      autoCreatePr: true,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [
-        {
-          id: "variant:test",
-          name: "Test Variant",
-          baseModelId: "openai/gpt-5",
-          providerOptions: { reasoningEffort: "low" },
-        },
-      ],
-      enabledModelIds: [],
-    });
-
-    expect(result).toEqual({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: true,
-      autoCreatePr: true,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [
-        {
-          id: "variant:test",
-          name: "Test Variant",
-          baseModelId: "openai/gpt-5",
-          providerOptions: { reasoningEffort: "low" },
-        },
-      ],
-      enabledModelIds: [],
-    });
   });
 
   test("keeps publicUsageEnabled when provided", async () => {
@@ -202,7 +128,6 @@ describe("toUserPreferencesData", () => {
       alertSoundEnabled: true,
       publicUsageEnabled: true,
       globalSkillRefs: [],
-      modelVariants: [],
       enabledModelIds: [],
     });
 

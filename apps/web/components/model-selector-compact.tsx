@@ -167,11 +167,6 @@ export function ModelSelectorCompact({
                     <span className="min-w-0 truncate">
                       {option.shortLabel}
                     </span>
-                    {option.isVariant && (
-                      <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                        variant
-                      </span>
-                    )}
                     {option.id === APP_DEFAULT_MODEL_ID && (
                       <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                         default

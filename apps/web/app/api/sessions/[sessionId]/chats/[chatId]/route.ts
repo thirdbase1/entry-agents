@@ -9,9 +9,11 @@ import {
   getChatsBySessionId,
   updateChat,
 } from "@/lib/db/sessions";
-import { getUserPreferences } from "@/lib/db/user-preferences";
 import { sanitizeSelectedModelIdForSession } from "@/lib/model-access";
-import { getAllVariants } from "@/lib/model-variants";
+import {
+  reasoningEffortSchema,
+  sanitizeReasoningEffort,
+} from "@/lib/model-reasoning";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 type RouteContext = {
@@ -21,12 +23,14 @@ type RouteContext = {
 interface UpdateChatRequest {
   title?: string;
   modelId?: string;
+  reasoningEffort?: string | null;
 }
 
 export interface ChatRefreshResponse {
   chat: {
     id: string;
     modelId: string | null;
+    reasoningEffort: string | null;
     activeStreamId: string | null;
   };
   isStreaming: boolean;
@@ -51,14 +55,10 @@ export async function GET(req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  const [messages, preferences] = await Promise.all([
-    getChatMessages(chatId),
-    getUserPreferences(authResult.userId),
-  ]);
+  const messages = await getChatMessages(chatId);
   const modelId =
     sanitizeSelectedModelIdForSession(
       chatContext.chat.modelId,
-      getAllVariants(preferences.modelVariants),
       session,
       req.url,
     ) ??
@@ -69,6 +69,9 @@ export async function GET(req: Request, context: RouteContext) {
     chat: {
       id: chatContext.chat.id,
       modelId,
+      reasoningEffort: modelId
+        ? sanitizeReasoningEffort(modelId, chatContext.chat.reasoningEffort)
+        : null,
       activeStreamId: chatContext.chat.activeStreamId,
     },
     isStreaming: chatContext.chat.activeStreamId !== null,
@@ -103,27 +106,44 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   const nextTitle = body.title?.trim();
   const nextModelId = body.modelId?.trim();
+  const hasReasoningEffortField = Object.hasOwn(body, "reasoningEffort");
 
-  if (!nextTitle && !nextModelId) {
+  if (!nextTitle && !nextModelId && !hasReasoningEffortField) {
     return Response.json(
       { error: "At least one field is required" },
       { status: 400 },
     );
   }
 
-  const updatePayload: { title?: string; modelId?: string } = {};
+  const updatePayload: {
+    title?: string;
+    modelId?: string;
+    reasoningEffort?: string | null;
+  } = {};
   if (nextTitle) {
     updatePayload.title = nextTitle;
   }
   if (nextModelId) {
-    const preferences = await getUserPreferences(authResult.userId);
     const sanitizedModelId = sanitizeSelectedModelIdForSession(
       nextModelId,
-      getAllVariants(preferences.modelVariants),
       session,
       req.url,
     );
     updatePayload.modelId = sanitizedModelId ?? nextModelId;
+  }
+  if (hasReasoningEffortField) {
+    if (body.reasoningEffort === null) {
+      updatePayload.reasoningEffort = null;
+    } else {
+      const parsed = reasoningEffortSchema.safeParse(body.reasoningEffort);
+      if (!parsed.success) {
+        return Response.json(
+          { error: "Invalid reasoningEffort value" },
+          { status: 400 },
+        );
+      }
+      updatePayload.reasoningEffort = parsed.data;
+    }
   }
 
   const updatedChat = await updateChat(chatId, updatePayload);
@@ -131,17 +151,20 @@ export async function PATCH(req: Request, context: RouteContext) {
     return Response.json({ error: "Chat not found" }, { status: 404 });
   }
 
-  const preferences = await getUserPreferences(authResult.userId);
+  const resolvedModelId =
+    sanitizeSelectedModelIdForSession(
+      updatedChat.modelId,
+      session,
+      req.url,
+    ) ?? updatedChat.modelId;
+
   return Response.json({
     chat: {
       ...updatedChat,
-      modelId:
-        sanitizeSelectedModelIdForSession(
-          updatedChat.modelId,
-          getAllVariants(preferences.modelVariants),
-          session,
-          req.url,
-        ) ?? updatedChat.modelId,
+      modelId: resolvedModelId,
+      reasoningEffort: resolvedModelId
+        ? sanitizeReasoningEffort(resolvedModelId, updatedChat.reasoningEffort)
+        : null,
     },
   });
 }

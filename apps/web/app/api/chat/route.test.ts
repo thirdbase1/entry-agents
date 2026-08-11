@@ -47,16 +47,9 @@ let routeEvents: string[] = [];
 let preferencesState: {
   autoCommitPush: boolean;
   autoCreatePr: boolean;
-  modelVariants: Array<{
-    id: string;
-    name: string;
-    baseModelId: string;
-    providerOptions: Record<string, unknown>;
-  }>;
 } = {
   autoCommitPush: true,
   autoCreatePr: false,
-  modelVariants: [],
 };
 let cachedSkillsState: unknown = null;
 let discoverSkillDirsCalls: string[][] = [];
@@ -271,7 +264,6 @@ describe("/api/chat route", () => {
     preferencesState = {
       autoCommitPush: true,
       autoCreatePr: false,
-      modelVariants: [],
     };
     claimChatActiveStreamIdSpy.mockClear();
     compareAndSetChatActiveStreamIdSpy.mockClear();
@@ -444,15 +436,7 @@ describe("/api/chat route", () => {
       throw new Error("chatRecord must be set");
     }
 
-    chatRecord.modelId = "variant:test-model";
-    preferencesState.modelVariants = [
-      {
-        id: "variant:test-model",
-        name: "Test model",
-        baseModelId: "openai/gpt-5",
-        providerOptions: {},
-      },
-    ];
+    chatRecord.modelId = "deepseek-v4-pro";
 
     const response = await POST(createValidRequest());
 

@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
-import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
   normalizeGlobalSkillRefs,
@@ -23,7 +22,6 @@ export interface UserPreferencesData {
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
   globalSkillRefs: GlobalSkillRef[];
-  modelVariants: ModelVariant[];
   enabledModelIds: string[];
 }
 
@@ -38,7 +36,6 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   alertSoundEnabled: true,
   publicUsageEnabled: false,
   globalSkillRefs: [],
-  modelVariants: [],
   enabledModelIds: [],
 };
 
@@ -91,14 +88,9 @@ export function toUserPreferencesData(
     | "alertSoundEnabled"
     | "publicUsageEnabled"
     | "globalSkillRefs"
-    | "modelVariants"
     | "enabledModelIds"
   >,
 ): UserPreferencesData {
-  const parsedModelVariants = modelVariantsSchema.safeParse(
-    row?.modelVariants ?? [],
-  );
-
   return {
     defaultModelId: row?.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
     defaultSubagentModelId: row?.defaultSubagentModelId ?? null,
@@ -112,7 +104,6 @@ export function toUserPreferencesData(
     publicUsageEnabled:
       row?.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
-    modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
   };
 }
@@ -181,7 +172,6 @@ export async function updateUserPreferences(
         updates.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
       globalSkillRefs:
         updates.globalSkillRefs ?? DEFAULT_PREFERENCES.globalSkillRefs,
-      modelVariants: updates.modelVariants ?? DEFAULT_PREFERENCES.modelVariants,
       enabledModelIds:
         updates.enabledModelIds ?? DEFAULT_PREFERENCES.enabledModelIds,
     })

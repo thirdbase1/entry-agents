@@ -47,7 +47,6 @@ mock.module("@/lib/db/user-preferences", () => ({
     alertSoundEnabled: true,
     publicUsageEnabled: false,
     globalSkillRefs: [{ source: "vercel/ai", skillName: "ai-sdk" }],
-    modelVariants: [],
     enabledModelIds: [],
   }),
 }));

@@ -27,7 +27,6 @@ interface ModelComboboxItem {
   id: string;
   label: string;
   description?: string;
-  isVariant?: boolean;
   provider?: string;
 }
 
@@ -114,11 +113,6 @@ export function ModelCombobox({
               />
             )}
             <span className="truncate text-left">{displayText}</span>
-            {selectedItem?.isVariant && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                variant
-              </span>
-            )}
           </span>
           <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
         </button>
@@ -152,11 +146,6 @@ export function ModelCombobox({
                         className="mr-1.5 size-3.5 shrink-0 opacity-70"
                       />
                       <span className="min-w-0 truncate">{shortLabel}</span>
-                      {item.isVariant && (
-                        <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                          variant
-                        </span>
-                      )}
                       <CheckIcon
                         className={cn(
                           "ml-auto size-4 shrink-0",

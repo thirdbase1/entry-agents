@@ -111,7 +111,6 @@ mock.module("@/lib/db/user-preferences", () => ({
     alertSoundEnabled: true,
     publicUsageEnabled: false,
     globalSkillRefs: [],
-    modelVariants: [],
     enabledModelIds: [],
   }),
 }));

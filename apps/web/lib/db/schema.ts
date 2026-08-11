@@ -1,5 +1,4 @@
 import type { SandboxState } from "@open-agents/sandbox";
-import type { ModelVariant } from "@/lib/model-variants";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
   boolean,
@@ -208,7 +207,7 @@ export const chats = pgTable(
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    modelId: text("model_id").default("ling-3.0-flash-free"),
+    modelId: text("model_id").default("deepseek-v4-flash"),
     // Per-chat reasoning-effort preference (e.g. "low"/"medium"/"high"/
     // "xhigh", or a boolean-style "on"/"off" for models that only support
     // toggling thinking rather than graduated effort). Null means "use the
@@ -348,7 +347,7 @@ export const userPreferences = pgTable("user_preferences", {
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
   defaultModelId: text("default_model_id").default(
-    "ling-3.0-flash-free",
+    "deepseek-v4-flash",
   ),
   defaultSubagentModelId: text("default_subagent_model_id"),
   defaultSandboxType: text("default_sandbox_type", {
@@ -366,8 +365,12 @@ export const userPreferences = pgTable("user_preferences", {
     .$type<GlobalSkillRef[]>()
     .notNull()
     .default([]),
+  // Deprecated 2026-08-11: the model-variant system was replaced by a
+  // per-chat reasoningEffort column (see `chats.reasoningEffort` below).
+  // Column kept as-is (unread, always []) to avoid a destructive migration;
+  // safe to drop in a future cleanup pass.
   modelVariants: jsonb("model_variants")
-    .$type<ModelVariant[]>()
+    .$type<unknown[]>()
     .notNull()
     .default([]),
   enabledModelIds: jsonb("enabled_model_ids")

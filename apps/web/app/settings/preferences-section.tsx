@@ -842,7 +842,6 @@ export function ModelPreferencesSection() {
               id: option.id,
               label: option.label,
               description: option.description,
-              isVariant: option.isVariant,
             }))}
             placeholder="Select a model"
             searchPlaceholder="Search models..."
@@ -865,7 +864,6 @@ export function ModelPreferencesSection() {
                 id: option.id,
                 label: option.label,
                 description: option.description,
-                isVariant: option.isVariant,
               })),
             ]}
             placeholder="Select a model"
@@ -986,11 +984,6 @@ function EnabledModelsSection({
                   <span className="truncate text-sm font-medium">
                     {option.label}
                   </span>
-                  {option.isVariant && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                      variant
-                    </span>
-                  )}
                 </div>
                 <p className="truncate text-xs text-muted-foreground">
                   {option.id}
@@ -1058,11 +1051,6 @@ function EnabledModelsSection({
                           <span className="truncate font-medium">
                             {option.label}
                           </span>
-                          {option.isVariant && (
-                            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                              variant
-                            </span>
-                          )}
                         </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {option.description ?? option.id}

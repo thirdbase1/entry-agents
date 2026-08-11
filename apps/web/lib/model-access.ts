@@ -1,11 +1,6 @@
 import type { UserPreferencesData } from "@/lib/db/user-preferences";
 import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
-import {
-  getAllVariants,
-  MODEL_VARIANT_ID_PREFIX,
-  type ModelVariant,
-} from "@/lib/model-variants";
 import type { Session } from "@/lib/session/types";
 
 // kimi-k3 is our priciest premium model ($15/MTok output) -- same role
@@ -51,26 +46,8 @@ export function filterModelsForSession<T extends { id: string }>(
   );
 }
 
-export function filterModelVariantsForSession(
-  modelVariants: ModelVariant[],
-  session: SessionLike,
-  url: string | URL,
-): ModelVariant[] {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return modelVariants;
-  }
-
-  return modelVariants.filter(
-    (variant) =>
-      !RESTRICTED_MODEL_PREFIXES.some((prefix) =>
-        variant.baseModelId.startsWith(prefix),
-      ),
-  );
-}
-
 export function sanitizeSelectedModelIdForSession(
   modelId: string | null | undefined,
-  modelVariants: ModelVariant[],
   session: SessionLike,
   url: string | URL,
 ): string | null | undefined {
@@ -79,15 +56,6 @@ export function sanitizeSelectedModelIdForSession(
   }
 
   if (RESTRICTED_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix))) {
-    return APP_DEFAULT_MODEL_ID;
-  }
-
-  if (
-    modelId.startsWith(MODEL_VARIANT_ID_PREFIX) &&
-    !filterModelVariantsForSession(modelVariants, session, url).some(
-      (variant) => variant.id === modelId,
-    )
-  ) {
     return APP_DEFAULT_MODEL_ID;
   }
 
@@ -103,34 +71,20 @@ export function sanitizeUserPreferencesForSession(
     return preferences;
   }
 
-  const filteredModelVariants = filterModelVariantsForSession(
-    preferences.modelVariants,
-    session,
-    url,
-  );
-  const availableModelVariants = filterModelVariantsForSession(
-    getAllVariants(filteredModelVariants),
-    session,
-    url,
-  );
-
   return {
     ...preferences,
     defaultModelId:
       sanitizeSelectedModelIdForSession(
         preferences.defaultModelId,
-        availableModelVariants,
         session,
         url,
       ) ?? APP_DEFAULT_MODEL_ID,
     defaultSubagentModelId:
       sanitizeSelectedModelIdForSession(
         preferences.defaultSubagentModelId,
-        availableModelVariants,
         session,
         url,
       ) ?? null,
-    modelVariants: filteredModelVariants,
     enabledModelIds: preferences.enabledModelIds.filter(
       (modelId) => !isRestrictedModelIdForSession(modelId, session, url),
     ),

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { ModelVariant } from "@/lib/model-variants";
 import {
   buildModelOptions,
   getDefaultModelOptionId,
@@ -24,7 +23,7 @@ function createModel(input: {
 }
 
 describe("model options", () => {
-  test("buildModelOptions includes base models and variants", () => {
+  test("buildModelOptions maps base models", () => {
     const models: AvailableModel[] = [
       createModel({
         id: "openai/gpt-5",
@@ -34,16 +33,7 @@ describe("model options", () => {
       }),
     ];
 
-    const variants: ModelVariant[] = [
-      {
-        id: "variant:gpt-5-medium",
-        name: "GPT-5 Medium Reasoning",
-        baseModelId: "openai/gpt-5",
-        providerOptions: { reasoningEffort: "medium" },
-      },
-    ];
-
-    const options = buildModelOptions(models, variants);
+    const options = buildModelOptions(models);
 
     expect(options).toEqual([
       {
@@ -51,16 +41,6 @@ describe("model options", () => {
         label: "GPT-5",
         shortLabel: "GPT-5",
         description: "Base model",
-        isVariant: false,
-        contextWindow: 400_000,
-        provider: "openai",
-      },
-      {
-        id: "variant:gpt-5-medium",
-        label: "GPT-5 Medium Reasoning",
-        shortLabel: "GPT-5 Medium Reasoning",
-        description: "Variant of GPT-5",
-        isVariant: true,
         contextWindow: 400_000,
         provider: "openai",
       },
@@ -75,7 +55,7 @@ describe("model options", () => {
       }),
     ];
 
-    const options = buildModelOptions(models, []);
+    const options = buildModelOptions(models);
 
     expect(options[0].shortLabel).toBe("Opus 4.6");
     expect(options[0].label).toBe("Claude Opus 4.6");
@@ -87,28 +67,18 @@ describe("model options", () => {
         id: "google/gemini-2.5",
         label: "Gemini 2.5",
         shortLabel: "2.5",
-        isVariant: false,
         provider: "google",
       },
       {
         id: "openai/gpt-5",
         label: "GPT-5",
         shortLabel: "GPT-5",
-        isVariant: false,
         provider: "openai",
-      },
-      {
-        id: "variant:opus-custom",
-        label: "Opus Custom",
-        shortLabel: "Opus Custom",
-        isVariant: true,
-        provider: "anthropic",
       },
       {
         id: "anthropic/claude-opus-4.6",
         label: "Claude Opus 4.6",
         shortLabel: "Opus 4.6",
-        isVariant: false,
         provider: "anthropic",
       },
     ];
@@ -120,54 +90,47 @@ describe("model options", () => {
       "openai",
       "google",
     ]);
-    // Within anthropic: preserves original order (variant first, base second)
-    expect(groups[0].options[0].id).toBe("variant:opus-custom");
-    expect(groups[0].options[1].id).toBe("anthropic/claude-opus-4.6");
+    expect(groups[0].options[0].id).toBe("anthropic/claude-opus-4.6");
   });
 
-  test("withMissingModelOption appends missing variant option", () => {
-    const result = withMissingModelOption([], "variant:removed");
+  test("withMissingModelOption appends missing model option", () => {
+    const result = withMissingModelOption([], "openai/removed");
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      id: "variant:removed",
-      label: "removed (missing)",
-      shortLabel: "removed (missing)",
-      description: "Variant no longer exists",
-      isVariant: true,
+      id: "openai/removed",
+      label: "openai/removed (unavailable)",
+      shortLabel: "openai/removed (unavailable)",
+      description: "Model no longer available",
       contextWindow: undefined,
       provider: "unknown",
     });
   });
 
-  test("withMissingModelOption does not append non-variant ids", () => {
+  test("withMissingModelOption returns original list when id already exists", () => {
     const original = [
       {
         id: "openai/gpt-5",
         label: "GPT-5",
         shortLabel: "GPT-5",
-        isVariant: false,
         provider: "openai",
       },
     ];
 
-    expect(withMissingModelOption(original, "openai/unknown-model")).toBe(
-      original,
-    );
+    expect(withMissingModelOption(original, "openai/gpt-5")).toBe(original);
   });
 
-  test("withMissingModelOption returns original list when id already exists", () => {
+  test("withMissingModelOption returns original list when modelId is missing", () => {
     const original = [
       {
-        id: "variant:existing",
-        label: "Existing Variant",
-        shortLabel: "Existing Variant",
-        isVariant: true,
+        id: "openai/gpt-5",
+        label: "GPT-5",
+        shortLabel: "GPT-5",
         provider: "openai",
       },
     ];
 
-    expect(withMissingModelOption(original, "variant:existing")).toBe(original);
+    expect(withMissingModelOption(original, null)).toBe(original);
   });
 
   test("getDefaultModelOptionId prefers repository default model when present", () => {
@@ -176,14 +139,12 @@ describe("model options", () => {
         id: "openai/gpt-5.4",
         label: "GPT-5.4",
         shortLabel: "GPT-5.4",
-        isVariant: false,
         provider: "anthropic",
       },
       {
         id: "openai/gpt-5",
         label: "GPT-5",
         shortLabel: "GPT-5",
-        isVariant: false,
         provider: "openai",
       },
     ];
@@ -197,7 +158,6 @@ describe("model options", () => {
         id: "openai/gpt-5",
         label: "GPT-5",
         shortLabel: "GPT-5",
-        isVariant: false,
         provider: "openai",
       },
     ];

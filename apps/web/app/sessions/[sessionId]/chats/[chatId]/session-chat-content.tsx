@@ -67,6 +67,8 @@ import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown"
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
+import { ReasoningEffortSelector } from "@/components/reasoning-effort-selector";
+import { isReasoningCapableModel, sanitizeReasoningEffort } from "@/lib/model-reasoning";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
 import { SnippetChip } from "@/components/snippet-chip";
@@ -1181,6 +1183,7 @@ export function SessionChatContent({
     archiveSession,
     unarchiveSession: _unarchiveSession,
     updateChatModel,
+    updateChatReasoningEffort,
     updateSessionTitle,
     preferredSandboxType,
     supportsDiff,
@@ -1785,6 +1788,21 @@ export function SessionChatContent({
       }
     },
     [chatInfo.modelId, updateChatModel],
+  );
+
+  const handleReasoningEffortChange = useCallback(
+    async (reasoningEffort: string | null) => {
+      if (reasoningEffort === chatInfo.reasoningEffort) return;
+      try {
+        setIsUpdatingModel(true);
+        await updateChatReasoningEffort(reasoningEffort);
+      } catch (err) {
+        console.error("Failed to update chat reasoning effort:", err);
+      } finally {
+        setIsUpdatingModel(false);
+      }
+    },
+    [chatInfo.reasoningEffort, updateChatReasoningEffort],
   );
 
   const selectedModelOption = useMemo(
@@ -4191,6 +4209,33 @@ export function SessionChatContent({
                                 />
                               </div>
                             )}
+                            {chatInfo.modelId &&
+                              isReasoningCapableModel(chatInfo.modelId) && (
+                                <div
+                                  className={
+                                    isChatInFlight ||
+                                    isUpdatingModel ||
+                                    modelOptionsLoading
+                                      ? "pointer-events-none opacity-60"
+                                      : undefined
+                                  }
+                                >
+                                  <ReasoningEffortSelector
+                                    value={sanitizeReasoningEffort(
+                                      chatInfo.modelId,
+                                      chatInfo.reasoningEffort,
+                                    )}
+                                    disabled={
+                                      isChatInFlight ||
+                                      isUpdatingModel ||
+                                      modelOptionsLoading
+                                    }
+                                    onChange={(effort) => {
+                                      void handleReasoningEffortChange(effort);
+                                    }}
+                                  />
+                                </div>
+                              )}
                             <ContextUsageIndicator
                               inputTokens={tokenUsage.inputTokens}
                               conversationInputTokens={

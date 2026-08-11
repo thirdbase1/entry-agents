@@ -1077,6 +1077,17 @@ const runAgentStep = async (
             streamPart.usage,
             modelCostCatalog,
           );
+          // TEMP diagnostic (2026-08-11): tracking down why the per-turn
+          // cost pill still shows nothing in production. Remove once
+          // resolved.
+          console.log("[cost-debug] streaming finish-step", {
+            modelId,
+            stepCost,
+            usage: streamPart.usage,
+            catalogSize: modelCostCatalog.length,
+            catalogHasModel: modelCostCatalog.some((m) => m.id === modelId),
+            catalogIds: modelCostCatalog.map((m) => m.id),
+          });
           if (stepCost !== undefined) {
             lastStepCost = stepCost;
             totalMessageCost = (totalMessageCost ?? 0) + stepCost;
@@ -1157,6 +1168,18 @@ const runAgentStep = async (
       }
       return (sum ?? 0) + cost;
     }, undefined);
+
+    // TEMP diagnostic (2026-08-11): tracking down why the per-turn cost
+    // pill still shows nothing in production. Remove once resolved.
+    console.log("[cost-debug] final steps cost", {
+      modelId,
+      stepsCost,
+      stepCount: steps.length,
+      stepUsages: steps.map((s) => s.usage),
+      existingTotalMessageCost,
+      catalogSize: modelCostCatalog.length,
+      catalogHasModel: modelCostCatalog.some((m) => m.id === modelId),
+    });
 
     if (stepsCost !== undefined) {
       const carriedCost = (existingTotalMessageCost ?? 0) + stepsCost;

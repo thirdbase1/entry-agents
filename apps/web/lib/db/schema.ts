@@ -209,6 +209,12 @@ export const chats = pgTable(
       .references(() => sessions.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     modelId: text("model_id").default("ling-3.0-flash-free"),
+    // Per-chat reasoning-effort preference (e.g. "low"/"medium"/"high"/
+    // "xhigh", or a boolean-style "on"/"off" for models that only support
+    // toggling thinking rather than graduated effort). Null means "use the
+    // model's default reasoning behavior" -- see lib/model-reasoning.ts for
+    // the per-model capability catalog and validation.
+    reasoningEffort: text("reasoning_effort"),
     activeStreamId: text("active_stream_id"),
     lastAssistantMessageAt: timestamp("last_assistant_message_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

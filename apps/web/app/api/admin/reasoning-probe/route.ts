@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const maxDuration = 300;
+
 // TEMPORARY diagnostic route -- probes entry-gateway directly with a
 // battery of candidate reasoning/thinking request-body shapes per model,
 // so we can empirically confirm (not just assume from vendor docs) which
@@ -112,13 +114,37 @@ export async function POST(request: Request) {
 
   const plan = (await request.json()) as Record<string, ProbeVariant[]>;
 
-  const results: Record<string, unknown[]> = {};
+  // Flatten to a single task list and run with bounded concurrency so the
+  // whole battery finishes well inside maxDuration instead of running the
+  // ~42 probes fully sequentially (each up to 45s -> way past any
+  // function timeout).
+  const tasks: Array<{ model: string; variant: ProbeVariant }> = [];
   for (const [model, variants] of Object.entries(plan)) {
-    results[model] = [];
     for (const variant of variants) {
-      results[model].push(await runProbe(baseURL, apiKey, model, variant));
+      tasks.push({ model, variant });
     }
   }
+
+  const results: Record<string, unknown[]> = {};
+  for (const model of Object.keys(plan)) {
+    results[model] = [];
+  }
+
+  const CONCURRENCY = 8;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < tasks.length) {
+      const index = cursor;
+      cursor += 1;
+      const task = tasks[index];
+      if (!task) continue;
+      const outcome = await runProbe(baseURL, apiKey, task.model, task.variant);
+      results[task.model]?.push(outcome);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()),
+  );
 
   return NextResponse.json({ results });
 }

@@ -267,6 +267,13 @@
       "when": 1786364774632,
       "tag": "0037_update_model_defaults_to_opencodezen",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786438391415,
+      "tag": "0038_add_chat_reasoning_effort",
+      "breakpoints": true
     }
   ]
 }

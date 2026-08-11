@@ -11,8 +11,9 @@ const DISABLED_NAME_SUBSTRINGS = ["mythos"];
 // no payment method on file, so real requests to either one fail with a
 // CreditsError. Hidden from the picker until billing is fixed upstream --
 // remove from this list (or just delete the list) once that's resolved.
-// The two remaining models (ling-3.0-flash-free, mimo-v2.5-free) are free
-// tier and confirmed working end to end.
+// (Both are correctly priced in entry-gateway's MODEL_ROUTES_JSON already,
+// using Zen's own published rate card, so no further pricing work is
+// needed once billing is fixed -- just delete them from this list.)
 const DISABLED_MODEL_IDS = ["kimi-k3", "grok-4.5"];
 
 export function isModelDisabled(modelId: string): boolean {

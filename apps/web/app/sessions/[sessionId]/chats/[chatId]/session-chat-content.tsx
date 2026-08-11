@@ -3541,14 +3541,13 @@ export function SessionChatContent({
                                               {!isMessageStreaming &&
                                                 isFinalAssistantTextPart &&
                                                 m.metadata && (
-                                                  <span className="opacity-0 transition group-hover:opacity-100">
-                                                    <MessageModelPill
-                                                      metadata={m.metadata}
-                                                      modelOptions={
-                                                        modelOptions
-                                                      }
-                                                    />
-                                                  </span>
+                                                  // Always visible (not hover-gated) -- per-turn
+                                                  // cost needs to actually be seen, including on
+                                                  // touch devices with no hover state.
+                                                  <MessageModelPill
+                                                    metadata={m.metadata}
+                                                    modelOptions={modelOptions}
+                                                  />
                                                 )}
                                             </div>
                                           )}

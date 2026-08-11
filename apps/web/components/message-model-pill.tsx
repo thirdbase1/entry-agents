@@ -115,15 +115,17 @@ export function MessageModelPill({
   }
 
   const pill = (
-    <span className="inline-flex max-w-[320px] items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground/50 transition-colors hover:text-muted-foreground/80">
+    <span className="inline-flex max-w-[320px] items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground/70 transition-colors hover:text-muted-foreground">
       <ProviderIcon provider={provider} className="size-3 shrink-0" />
       <span className="truncate">{shortLabel}</span>
       {hasCost && (
         <>
-          <span aria-hidden className="text-muted-foreground/30">
+          <span aria-hidden className="text-muted-foreground/40">
             ·
           </span>
-          <span className="tabular-nums">
+          {/* Cost is the actual info users are looking for here -- give it
+              full contrast rather than fading it with the rest of the pill. */}
+          <span className="tabular-nums font-medium text-foreground/80">
             {formatCostUsd(totalMessageCost as number)}
           </span>
         </>

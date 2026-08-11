@@ -159,28 +159,14 @@ export function isBuiltInVariant(variantId: string): boolean {
   return variantId.startsWith(BUILT_IN_VARIANT_ID_PREFIX);
 }
 
-// Built-in presets point at entry-gateway's routed models (Opencode Zen
-// today). kimi-k3 and grok-4.5 are hidden from the main picker (see
-// model-availability.ts -- Opencode Zen workspace has no payment method),
-// so these built-ins point at the two working free-tier models instead.
-// Neither exposes OpenAI-Responses-style `reasoningEffort` or
-// Anthropic-style `effort` knobs the way gpt-5.4/claude-opus-4.6 did
-// through Vercel AI Gateway, so these are plain model shortcuts (empty
-// providerOptions) rather than tuned presets.
-export const BUILT_IN_VARIANTS: ModelVariant[] = [
-  {
-    id: `${BUILT_IN_VARIANT_ID_PREFIX}ling-3.0-flash-free`,
-    name: "Ling 3.0 Flash (Free)",
-    baseModelId: "ling-3.0-flash-free",
-    providerOptions: {},
-  },
-  {
-    id: `${BUILT_IN_VARIANT_ID_PREFIX}mimo-v2.5-free`,
-    name: "Mimo v2.5 (Free)",
-    baseModelId: "mimo-v2.5-free",
-    providerOptions: {},
-  },
-];
+// Previously had two built-in presets pointing at ling-3.0-flash-free and
+// mimo-v2.5-free with empty providerOptions -- i.e. plain duplicates of
+// those base models with no actual variant behavior, plus a "(Free)"
+// label that no longer reflects reality now that both are priced at real
+// market rates (see entry-gateway's MODEL_ROUTES_JSON). Removed as
+// redundant. Re-add real presets here once a model actually exposes a
+// tunable knob (reasoning effort, thinking budget, etc.) worth pinning.
+export const BUILT_IN_VARIANTS: ModelVariant[] = [];
 
 /**
  * Combines built-in variants with user-defined variants.

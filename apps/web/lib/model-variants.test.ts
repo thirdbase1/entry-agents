@@ -59,11 +59,13 @@ describe("model variants", () => {
     expect(isBuiltInVariant("variant:openai-medium")).toBe(false);
   });
 
-  test("BUILT_IN_VARIANTS has expected shape and ids", () => {
-    expect(BUILT_IN_VARIANTS).toHaveLength(2);
-    for (const variant of BUILT_IN_VARIANTS) {
-      expect(variant.id.startsWith(BUILT_IN_VARIANT_ID_PREFIX)).toBe(true);
-    }
+  test("BUILT_IN_VARIANTS is currently empty (no tuned presets defined)", () => {
+    // The old ling-3.0-flash-free / mimo-v2.5-free "(Free)" presets were
+    // removed as redundant duplicates of the (now properly priced) base
+    // models -- see the comment above BUILT_IN_VARIANTS in
+    // model-variants.ts. Re-add real entries here once a model exposes
+    // an actual tunable knob worth pinning as a preset.
+    expect(BUILT_IN_VARIANTS).toHaveLength(0);
   });
 
   test("getAllVariants prepends built-in variants to user variants", () => {
@@ -80,10 +82,8 @@ describe("model variants", () => {
 
     const result = getAllVariants(userVariants);
 
-    expect(result).toHaveLength(3);
-    expect(result[0]).toEqual(BUILT_IN_VARIANTS[0]);
-    expect(result[1]).toEqual(BUILT_IN_VARIANTS[1]);
-    expect(result[2]).toEqual(userVariants[0]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(userVariants[0]);
   });
 
   test("resolveModelSelection returns base model unchanged when id is not a variant", () => {
@@ -115,25 +115,6 @@ describe("model variants", () => {
       providerOptionsByProvider: {
         openai: {
           reasoningEffort: "medium",
-          store: false,
-        },
-      },
-      isMissingVariant: false,
-    });
-  });
-
-  test("resolveModelSelection resolves built-in variants", () => {
-    const result = resolveModelSelection(
-      "variant:builtin:gpt-5.4-xhigh",
-      BUILT_IN_VARIANTS,
-    );
-
-    expect(result).toEqual({
-      resolvedModelId: "openai/gpt-5.4",
-      providerOptionsByProvider: {
-        openai: {
-          reasoningEffort: "xhigh",
-          reasoningSummary: "auto",
           store: false,
         },
       },

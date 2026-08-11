@@ -40,12 +40,13 @@ export function PricingTable({ models }: { readonly models: AvailableModel[] }) 
 
   return (
     <div className="overflow-hidden border border-(--l-border)">
-      <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-(--l-border) bg-(--l-fg-6) px-4 py-3 text-xs font-medium uppercase tracking-wide text-(--l-fg-3) sm:grid-cols-[2fr_1fr_1fr_1fr_1fr] sm:px-6">
+      <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 border-b border-(--l-border) bg-(--l-fg-6) px-4 py-3 text-xs font-medium uppercase tracking-wide text-(--l-fg-3) sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] sm:px-6">
         <div>Model</div>
         <div className="text-right">Context</div>
         <div className="text-right">Input</div>
         <div className="text-right">Output</div>
         <div className="hidden text-right sm:block">Cache read</div>
+        <div className="hidden text-right lg:block">Cache write</div>
       </div>
 
       {sorted.map((model) => {
@@ -54,7 +55,7 @@ export function PricingTable({ models }: { readonly models: AvailableModel[] }) 
         return (
           <div
             key={model.id}
-            className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-4 border-b border-(--l-border) px-4 py-4 last:border-b-0 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr] sm:px-6"
+            className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-x-4 border-b border-(--l-border) px-4 py-4 last:border-b-0 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] sm:px-6"
           >
             <div className="flex min-w-0 items-center gap-3">
               <ProviderIcon
@@ -91,6 +92,11 @@ export function PricingTable({ models }: { readonly models: AvailableModel[] }) 
             <div className="hidden text-right text-sm tabular-nums text-(--l-fg-2) sm:block">
               {model.cost?.cache_read !== undefined
                 ? `${formatPrice(model.cost.cache_read)}${!free ? "/M" : ""}`
+                : "—"}
+            </div>
+            <div className="hidden text-right text-sm tabular-nums text-(--l-fg-2) lg:block">
+              {model.cost?.cache_write !== undefined
+                ? `${formatPrice(model.cost.cache_write)}${!free ? "/M" : ""}`
                 : "—"}
             </div>
           </div>

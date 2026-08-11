@@ -71,8 +71,18 @@ export function estimateStepCost(
   usage:
     | {
         inputTokens?: number;
-        cachedInputTokens?: number;
         outputTokens?: number;
+        inputTokenDetails?: {
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        };
+        /**
+         * @deprecated Use inputTokenDetails.cacheReadTokens instead --
+         * kept only as a fallback for usage objects that predate the
+         * inputTokenDetails split (some provider adapters/tests still
+         * only populate this one).
+         */
+        cachedInputTokens?: number;
       }
     | undefined,
   catalog: CatalogCostEntry[],
@@ -91,10 +101,23 @@ export function estimateStepCost(
     return undefined;
   }
 
+  // The AI SDK moved cache accounting from the flat, now-deprecated
+  // `cachedInputTokens` field into `inputTokenDetails.cacheReadTokens` /
+  // `cacheWriteTokens`. Current provider adapters generally only populate
+  // the new nested fields, so reading the deprecated one exclusively (as
+  // this used to do) silently always came out to 0 -- meaning the cache
+  // discount (and any cache-write surcharge) never applied and every
+  // message was billed as if 100% of its input was uncached. Prefer the
+  // current field, fall back to the deprecated one for older callers.
+  const cachedInputTokens =
+    usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
+  const cacheWriteInputTokens = usage.inputTokenDetails?.cacheWriteTokens ?? 0;
+
   return estimateModelUsageCost(
     {
       inputTokens: usage.inputTokens ?? 0,
-      cachedInputTokens: usage.cachedInputTokens ?? 0,
+      cachedInputTokens,
+      cacheWriteInputTokens,
       outputTokens: usage.outputTokens ?? 0,
     },
     model.cost,

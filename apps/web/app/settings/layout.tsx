@@ -7,6 +7,7 @@ import {
   Menu,
   Settings as SettingsIcon,
   ShieldAlert,
+  Router,
   SlidersHorizontal,
   Trophy,
   User,
@@ -86,13 +87,20 @@ const baseSidebarItems = [
     id: "models",
     label: "Models",
     href: "/settings/models",
-    icon: SlidersHorizontal,
+    icon: Router,
+  SlidersHorizontal,
   },
   {
     id: "leaderboard",
     label: "Leaderboard",
     href: "/settings/leaderboard",
     icon: Trophy,
+  },
+  {
+    id: "gateway",
+    label: "Gateway",
+    href: "/settings/gateway",
+    icon: Router,
   },
 ];
 

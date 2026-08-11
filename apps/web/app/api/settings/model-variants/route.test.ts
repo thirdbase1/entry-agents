@@ -101,9 +101,9 @@ describe("/api/settings/model-variants", () => {
   test("GET hides Opus-backed variants for managed trial users", async () => {
     preferences.modelVariants = [
       {
-        id: "variant:user-opus",
-        name: "User Opus",
-        baseModelId: "anthropic/claude-opus-4.6",
+        id: "variant:user-kimi",
+        name: "User Kimi",
+        baseModelId: "kimi-k3",
         providerOptions: {},
       },
     ];
@@ -123,7 +123,8 @@ describe("/api/settings/model-variants", () => {
     const body = (await response.json()) as { modelVariants: ModelVariant[] };
 
     expect(body.modelVariants.map((variant) => variant.id)).toEqual([
-      "variant:builtin:gpt-5.4-xhigh",
+      "variant:builtin:deepseek-v4-pro-high",
+      "variant:builtin:glm-5.2-high",
     ]);
   });
 
@@ -182,8 +183,8 @@ describe("/api/settings/model-variants", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "User Opus",
-          baseModelId: "anthropic/claude-opus-4.6",
+          name: "User Kimi",
+          baseModelId: "kimi-k3",
           providerOptions: {},
         }),
       }),
@@ -268,7 +269,7 @@ describe("/api/settings/model-variants", () => {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: "variant:builtin:gpt-5.4-xhigh",
+          id: "variant:builtin:deepseek-v4-pro-high",
           name: "Modified",
         }),
       }),
@@ -357,7 +358,7 @@ describe("/api/settings/model-variants", () => {
       new Request("http://localhost/api/settings/model-variants", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: "variant:builtin:gpt-5.4-xhigh" }),
+        body: JSON.stringify({ id: "variant:builtin:deepseek-v4-pro-high" }),
       }),
     );
 

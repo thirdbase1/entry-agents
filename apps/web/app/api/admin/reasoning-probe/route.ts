@@ -132,16 +132,23 @@ export async function POST(request: Request) {
 
   const CONCURRENCY = 8;
   let cursor = 0;
-  async function worker() {
+  const gatewayBaseURL: string = baseURL;
+  const gatewayApiKey: string = apiKey;
+  const worker = async () => {
     while (cursor < tasks.length) {
       const index = cursor;
       cursor += 1;
       const task = tasks[index];
       if (!task) continue;
-      const outcome = await runProbe(baseURL, apiKey, task.model, task.variant);
+      const outcome = await runProbe(
+        gatewayBaseURL,
+        gatewayApiKey,
+        task.model,
+        task.variant,
+      );
       results[task.model]?.push(outcome);
     }
-  }
+  };
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()),
   );

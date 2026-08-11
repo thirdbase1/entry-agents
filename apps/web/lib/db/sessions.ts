@@ -441,6 +441,7 @@ export async function getChatSummariesBySessionId(
       sessionId: chats.sessionId,
       title: chats.title,
       modelId: chats.modelId,
+      reasoningEffort: chats.reasoningEffort,
       activeStreamId: chats.activeStreamId,
       lastAssistantMessageAt: chats.lastAssistantMessageAt,
       createdAt: chats.createdAt,

@@ -81,17 +81,23 @@ export type ProviderOptionsByProvider = Record<
   Record<string, JsonValue>
 >;
 
+// All model calls in this app go through a single createOpenAI()-based
+// client pointed at entry-gateway (see packages/agent/models.ts), regardless
+// of which upstream model actually serves the request (Kimi K3, DeepSeek,
+// Qwen, GPT-5.4, ...). The AI SDK's OpenAI provider always looks up its
+// settings under the literal key "openai" in providerOptions -- NOT a key
+// derived from the model id -- so every variant's providerOptions must be
+// nested under "openai" no matter what the base model actually is. (This
+// was a real bug: baseModelId.split("/")[0] produced keys like "kimi-k3"
+// for flat reseller ids, which the SDK silently ignored -- reasoning
+// effort overrides were never actually reaching the request.)
 function withVariantProviderDefaults(
-  provider: string,
   providerOptions: Record<string, JsonValue>,
 ): Record<string, JsonValue> {
-  if (provider !== "openai") {
-    return providerOptions;
-  }
-
   // OpenAI Responses items are not persisted when store is false. Ensure
   // variants always carry the non-persistent setting so follow-up turns never
-  // try to reference missing rs_* items.
+  // try to reference missing rs_* items. Harmless no-op for non-OpenAI
+  // upstream models since entry-gateway ignores fields it doesn't recognize.
   return {
     ...providerOptions,
     store: false,
@@ -102,21 +108,17 @@ export function toProviderOptionsByProvider(
   baseModelId: string,
   providerOptions: Record<string, JsonValue>,
 ): ProviderOptionsByProvider | undefined {
-  const provider = baseModelId.split("/")[0];
-  if (!provider) {
+  if (!baseModelId) {
     return undefined;
   }
 
-  const providerOptionsWithDefaults = withVariantProviderDefaults(
-    provider,
-    providerOptions,
-  );
+  const providerOptionsWithDefaults = withVariantProviderDefaults(providerOptions);
   if (Object.keys(providerOptionsWithDefaults).length === 0) {
     return undefined;
   }
 
   return {
-    [provider]: providerOptionsWithDefaults,
+    openai: providerOptionsWithDefaults,
   };
 }
 
@@ -159,14 +161,38 @@ export function isBuiltInVariant(variantId: string): boolean {
   return variantId.startsWith(BUILT_IN_VARIANT_ID_PREFIX);
 }
 
-// Previously had two built-in presets pointing at ling-3.0-flash-free and
-// mimo-v2.5-free with empty providerOptions -- i.e. plain duplicates of
-// those base models with no actual variant behavior, plus a "(Free)"
-// label that no longer reflects reality now that both are priced at real
-// market rates (see entry-gateway's MODEL_ROUTES_JSON). Removed as
-// redundant. Re-add real presets here once a model actually exposes a
-// tunable knob (reasoning effort, thinking budget, etc.) worth pinning.
-export const BUILT_IN_VARIANTS: ModelVariant[] = [];
+// Two real presets, each pinning a genuine tunable knob on a model that's
+// actually live in entry-gateway's flat catalog (see MODEL_ROUTES_JSON --
+// post Vercel-AI-Gateway -> Opencode-Zen swap, model ids are flat, e.g.
+// "kimi-k3", "deepseek-v4-pro", not "provider/model"). Both use
+// reasoningEffort: "high", which is a value both AI SDK's OpenAI-compatible
+// enum (none/minimal/low/medium/high/xhigh) AND each upstream model's own
+// native reasoning_effort docs accept, so it survives the SDK's strict
+// provider-options schema without needing an unsupported passthrough value
+// like "max".
+// NOTE: kimi-k3 is deliberately NOT used for a built-in preset even though
+// it's the RESTRICTED_MODEL_PREFIXES model in lib/model-access.ts (our
+// priciest premium tier, gated for managed-trial sessions) -- it's
+// *also* currently in lib/model-availability.ts's DISABLED_MODEL_IDS
+// (Opencode Zen workspace has no payment method on file yet), so a
+// built-in pinned to it would silently no-op back to the default model
+// for every user, not just trial ones. Swap deepseek-v4-pro/glm-5.2 below
+// for kimi-k3 once Opencode Zen billing is fixed and it's removed from
+// DISABLED_MODEL_IDS.
+export const BUILT_IN_VARIANTS: ModelVariant[] = [
+  {
+    id: `${BUILT_IN_VARIANT_ID_PREFIX}deepseek-v4-pro-high`,
+    name: "DeepSeek V4 Pro (High Reasoning)",
+    baseModelId: "deepseek-v4-pro",
+    providerOptions: { reasoningEffort: "high" },
+  },
+  {
+    id: `${BUILT_IN_VARIANT_ID_PREFIX}glm-5.2-high`,
+    name: "GLM-5.2 (High Reasoning)",
+    baseModelId: "glm-5.2",
+    providerOptions: { reasoningEffort: "high" },
+  },
+];
 
 /**
  * Combines built-in variants with user-defined variants.

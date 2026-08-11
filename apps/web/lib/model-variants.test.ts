@@ -10,23 +10,27 @@ import {
 } from "./model-variants";
 
 describe("model variants", () => {
-  test("toProviderOptionsByProvider maps flat provider options to model provider", () => {
-    const result = toProviderOptionsByProvider("openai/gpt-5", {
-      reasoningEffort: "medium",
-      reasoningSummary: "detailed",
+  test("toProviderOptionsByProvider always nests under the 'openai' key, regardless of the base model id", () => {
+    // Every model call goes through a single createOpenAI()-based client
+    // (see packages/agent/models.ts) pointed at entry-gateway, so the AI
+    // SDK only ever reads settings back out under the literal "openai" key
+    // -- never a key derived from the actual upstream model id. Flat
+    // reseller ids like "kimi-k3" must map here too, not just "openai/..."
+    // ids from the old Vercel-AI-Gateway-namespaced era.
+    const result = toProviderOptionsByProvider("kimi-k3", {
+      reasoningEffort: "high",
     });
 
     expect(result).toEqual({
       openai: {
-        reasoningEffort: "medium",
-        reasoningSummary: "detailed",
+        reasoningEffort: "high",
         store: false,
       },
     });
   });
 
-  test("toProviderOptionsByProvider injects store false for OpenAI variants even when provider options are empty", () => {
-    const result = toProviderOptionsByProvider("openai/gpt-5", {});
+  test("toProviderOptionsByProvider injects store false even when provider options are empty", () => {
+    const result = toProviderOptionsByProvider("deepseek-v4-pro", {});
 
     expect(result).toEqual({
       openai: {
@@ -35,12 +39,12 @@ describe("model variants", () => {
     });
   });
 
-  test("toProviderOptionsByProvider returns undefined for non-OpenAI variants with no provider options", () => {
-    const result = toProviderOptionsByProvider("anthropic/claude-opus-4.6", {});
+  test("toProviderOptionsByProvider returns undefined when baseModelId is empty", () => {
+    const result = toProviderOptionsByProvider("", {});
     expect(result).toBeUndefined();
   });
 
-  test("toProviderOptionsByProvider forces store false for OpenAI variants", () => {
+  test("toProviderOptionsByProvider forces store false even if the caller passed store true", () => {
     const result = toProviderOptionsByProvider("openai/gpt-5", {
       reasoningEffort: "medium",
       store: true,
@@ -55,17 +59,15 @@ describe("model variants", () => {
   });
 
   test("isBuiltInVariant returns true for built-in ids and false for user ids", () => {
-    expect(isBuiltInVariant("variant:builtin:gpt-5.4-xhigh")).toBe(true);
+    expect(isBuiltInVariant("variant:builtin:deepseek-v4-pro-high")).toBe(true);
     expect(isBuiltInVariant("variant:openai-medium")).toBe(false);
   });
 
-  test("BUILT_IN_VARIANTS is currently empty (no tuned presets defined)", () => {
-    // The old ling-3.0-flash-free / mimo-v2.5-free "(Free)" presets were
-    // removed as redundant duplicates of the (now properly priced) base
-    // models -- see the comment above BUILT_IN_VARIANTS in
-    // model-variants.ts. Re-add real entries here once a model exposes
-    // an actual tunable knob worth pinning as a preset.
-    expect(BUILT_IN_VARIANTS).toHaveLength(0);
+  test("BUILT_IN_VARIANTS has real presets pinning a live flat model id with a genuine tunable knob", () => {
+    expect(BUILT_IN_VARIANTS.map((variant) => variant.id)).toEqual([
+      `${BUILT_IN_VARIANT_ID_PREFIX}deepseek-v4-pro-high`,
+      `${BUILT_IN_VARIANT_ID_PREFIX}glm-5.2-high`,
+    ]);
   });
 
   test("getAllVariants prepends built-in variants to user variants", () => {
@@ -82,8 +84,10 @@ describe("model variants", () => {
 
     const result = getAllVariants(userVariants);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual(userVariants[0]);
+    expect(result).toHaveLength(3);
+    expect(result[0]?.id).toBe(`${BUILT_IN_VARIANT_ID_PREFIX}deepseek-v4-pro-high`);
+    expect(result[1]?.id).toBe(`${BUILT_IN_VARIANT_ID_PREFIX}glm-5.2-high`);
+    expect(result[2]).toEqual(userVariants[0]);
   });
 
   test("resolveModelSelection returns base model unchanged when id is not a variant", () => {

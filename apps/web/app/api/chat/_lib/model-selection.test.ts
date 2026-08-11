@@ -45,19 +45,18 @@ describe("resolveChatModelSelection", () => {
     });
   });
 
-  test("resolves built-in OpenAI variants with store false", () => {
+  test("resolves built-in DeepSeek variant, nested under the 'openai' provider key regardless of base model", () => {
     const selection = resolveChatModelSelection({
-      selectedModelId: "variant:builtin:gpt-5.4-xhigh",
+      selectedModelId: "variant:builtin:deepseek-v4-pro-high",
       modelVariants: BUILT_IN_VARIANTS,
       missingVariantLabel: "Selected model variant",
     });
 
     expect(selection).toEqual({
-      id: "openai/gpt-5.4",
+      id: "deepseek-v4-pro",
       providerOptionsOverrides: {
         openai: {
-          reasoningEffort: "xhigh",
-          reasoningSummary: "auto",
+          reasoningEffort: "high",
           store: false,
         },
       },

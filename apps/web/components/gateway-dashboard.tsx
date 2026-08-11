@@ -285,11 +285,29 @@ function StatusBreakdown({
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
+const STORAGE_KEY = "entry-gateway-dashboard-connection";
+
+function loadSavedConnection(): { url: string; key: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.url === "string") {
+      return { url: parsed.url, key: typeof parsed.key === "string" ? parsed.key : "" };
+    }
+  } catch {
+    // ignore corrupt storage
+  }
+  return null;
+}
+
 export function GatewayDashboard() {
   const [gatewayUrl, setGatewayUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -341,18 +359,27 @@ export function GatewayDashboard() {
     [],
   );
 
-  const handleConnect = async () => {
-    if (!gatewayUrl.trim()) return;
-    const url = gatewayUrl.trim().replace(/\/+$/, "");
+  const handleConnect = async (opts?: { url?: string; key?: string; persist?: boolean }) => {
+    const url = (opts?.url ?? gatewayUrl).trim().replace(/\/+$/, "");
+    const key = (opts?.key ?? apiKey).trim();
+    if (!url) return;
     setConnecting(true);
     setError(null);
-    await fetchData(url, apiKey.trim());
+    await fetchData(url, key);
     setConnecting(false);
     setConnected(true);
 
+    if (opts?.persist !== false && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ url, key }));
+      } catch {
+        // storage full/unavailable -- not worth failing the connection over
+      }
+    }
+
     // Auto-refresh every 5 seconds
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => fetchData(url, apiKey.trim()), 5000);
+    intervalRef.current = setInterval(() => fetchData(url, key), 5000);
   };
 
   const handleRefresh = async () => {
@@ -366,6 +393,43 @@ export function GatewayDashboard() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
+  }, []);
+
+  // On first mount: reconnect with whatever this browser already had
+  // saved (so the dashboard stops asking for credentials on every visit),
+  // otherwise fall back to the admin-only server default (GATEWAY_BASE_URL
+  // / GATEWAY_API_KEY), otherwise just show the empty connect form.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = loadSavedConnection();
+      if (saved?.url) {
+        setGatewayUrl(saved.url);
+        setApiKey(saved.key);
+        if (!cancelled) await handleConnect({ url: saved.url, key: saved.key, persist: false });
+        if (!cancelled) setRestoring(false);
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/settings/gateway-defaults");
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data?.baseUrl) {
+            setGatewayUrl(data.baseUrl);
+            setApiKey(data.apiKey || "");
+            await handleConnect({ url: data.baseUrl, key: data.apiKey || "" });
+          }
+        }
+      } catch {
+        // no server default available -- fine, user can enter manually
+      }
+      if (!cancelled) setRestoring(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const counters = metrics?.counters || health?.metrics?.counters || {};
@@ -417,7 +481,7 @@ export function GatewayDashboard() {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={handleConnect}
+                onClick={() => handleConnect()}
                 disabled={connecting || !gatewayUrl.trim()}
                 className="bg-[#ff8a3d] text-black hover:bg-[#ff8a3d]/90"
               >
@@ -466,7 +530,7 @@ export function GatewayDashboard() {
         </CardContent>
       </Card>
 
-      {!connected && !connecting && (
+      {!connected && !connecting && !restoring && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
           <Server className="size-12 text-muted-foreground/40" />
           <p className="mt-4 text-lg font-medium text-muted-foreground">

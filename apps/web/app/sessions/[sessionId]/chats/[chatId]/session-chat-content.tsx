@@ -64,12 +64,16 @@ import {
   type AssistantFileLinkProps,
 } from "@/components/assistant-file-link";
 import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown";
+import { MessageAttachmentChip } from "@/components/message-attachment-chip";
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
 import { ReasoningEffortSelector } from "@/components/reasoning-effort-selector";
 import { PermissionModeSelector } from "@/components/permission-mode-selector";
-import { isReasoningCapableModel, sanitizeReasoningEffort } from "@/lib/model-reasoning";
+import {
+  isReasoningCapableModel,
+  sanitizeReasoningEffort,
+} from "@/lib/model-reasoning";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
 import { SnippetChip } from "@/components/snippet-chip";
@@ -3658,11 +3662,9 @@ export function SessionChatContent({
                                       className="flex justify-end"
                                     >
                                       <div className="group relative w-fit max-w-[80%]">
-                                        {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
-                                        <img
-                                          src={p.url}
-                                          alt={p.filename ?? "Attached image"}
-                                          className="max-h-64 rounded-lg"
+                                        <MessageAttachmentChip
+                                          url={p.url}
+                                          filename={p.filename}
                                         />
                                         {m.role === "user" &&
                                           group.index === 0 && (

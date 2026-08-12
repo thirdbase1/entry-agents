@@ -2,9 +2,14 @@
 
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
+import {
+  getAdminPlatformUsageOverview,
+  type AdminPlatformUsageOverview,
+} from "@/lib/db/admin-usage";
 import { db } from "@/lib/db/client";
 import { accounts, authSessions, githubInstallations } from "@/lib/db/schema";
 import { isUserAdmin } from "@/lib/db/users";
+import { fetchAvailableLanguageModels } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 async function requireAdmin(): Promise<string> {
@@ -235,4 +240,26 @@ export async function revokeAllVercelTokens(): Promise<{
       error: error instanceof Error ? error.message : "Failed to revoke tokens",
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Admin usage dashboard
+// ---------------------------------------------------------------------------
+
+/**
+ * Platform-wide usage + estimated spend across every user, for the admin
+ * usage dashboard. Admin-only -- throws for non-admins the same way the
+ * revocation actions above do.
+ */
+export async function getAdminUsageOverview(
+  days = 30,
+): Promise<AdminPlatformUsageOverview> {
+  await requireAdmin();
+
+  const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
+
+  return getAdminPlatformUsageOverview({
+    days,
+    modelCostCatalog,
+  });
 }

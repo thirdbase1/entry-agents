@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useSession } from "@/hooks/use-session";
+import { AdminUsageSection } from "./admin-usage-section";
 import {
   revokeAllGitHubTokens,
   revokeAllVercelTokens,
@@ -75,6 +76,8 @@ function AdminPageContent() {
   return (
     <>
       <h1 className="text-2xl font-semibold">Admin</h1>
+
+      <AdminUsageSection />
 
       <div className="rounded-lg border border-red-500/30 bg-red-500/5">
         <div className="border-b border-red-500/20 px-5 py-4">

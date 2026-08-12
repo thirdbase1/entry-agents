@@ -3,6 +3,10 @@
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import {
+  getAdminPlatformStats,
+  type AdminPlatformStats,
+} from "@/lib/db/admin-platform-stats";
+import {
   getAdminPlatformUsageOverview,
   type AdminPlatformUsageOverview,
 } from "@/lib/db/admin-usage";
@@ -262,4 +266,13 @@ export async function getAdminUsageOverview(
     days,
     modelCostCatalog,
   });
+}
+
+/**
+ * All-time platform counters (users, sessions, connected accounts) for
+ * the admin overview page. Admin-only.
+ */
+export async function getAdminStats(): Promise<AdminPlatformStats> {
+  await requireAdmin();
+  return getAdminPlatformStats();
 }

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { getAdminUsageOverview } from "@/lib/admin/actions";
 import type { AdminPlatformUsageOverview } from "@/lib/db/admin-usage";
+import { AdminStatCard } from "./admin-stat-card";
 
 const RANGE_OPTIONS = [
   { label: "7d", days: 7 },
@@ -21,32 +22,6 @@ const RANGE_OPTIONS = [
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(amount < 1 ? 4 : 2)}`;
-}
-
-function StatCard({
-  label,
-  value,
-  description,
-}: {
-  label: string;
-  value: string;
-  description?: string;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-1">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-2xl font-semibold tabular-nums">
-          {value}
-        </CardTitle>
-      </CardHeader>
-      {description && (
-        <CardContent className="pt-0 text-xs text-muted-foreground">
-          {description}
-        </CardContent>
-      )}
-    </Card>
-  );
 }
 
 export function AdminUsageSection() {
@@ -115,23 +90,23 @@ export function AdminUsageSection() {
       {!isLoading && !error && data && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard
+            <AdminStatCard
               label="Active users"
               value={data.totalActiveUsers.toLocaleString()}
               description={`last ${data.rangeDays}d`}
             />
-            <StatCard
+            <AdminStatCard
               label="Requests"
               value={data.totalEvents.toLocaleString()}
             />
-            <StatCard
+            <AdminStatCard
               label="Tokens"
               value={formatTokens(
                 data.totalInputTokens + data.totalOutputTokens,
               )}
               description={`${formatTokens(data.totalInputTokens)} in / ${formatTokens(data.totalOutputTokens)} out`}
             />
-            <StatCard
+            <AdminStatCard
               label="Estimated spend"
               value={formatUsd(data.totalEstimatedCostUsd)}
               description={

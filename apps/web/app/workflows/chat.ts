@@ -54,7 +54,11 @@ import type {
   WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
-import { resolveChatSandboxRuntime } from "./chat-sandbox-runtime";
+import {
+  type PendingImageAttachment,
+  persistImageAttachmentsToSandbox,
+  resolveChatSandboxRuntime,
+} from "./chat-sandbox-runtime";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
 
@@ -109,6 +113,47 @@ function shouldRefreshDiffCacheForParts(
   );
 }
 
+// Owner decision (2026-08-12): image attachments are never re-sent to the
+// model as raw multimodal content. Instead they're written once into the
+// session's sandbox (see persistImageAttachmentsToSandbox) and the model
+// only ever sees the resulting file path -- nothing else, no caption, no
+// restated filename. The agent already has `read`/`bash` tools to look at
+// the file itself if it's relevant to the turn.
+function extractPendingImageAttachments(
+  messages: WebAgentUIMessage[],
+): PendingImageAttachment[] {
+  const images: PendingImageAttachment[] = [];
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type === "file" && part.mediaType.startsWith("image/")) {
+        images.push({ mediaType: part.mediaType, dataUrl: part.url });
+      }
+    }
+  }
+  return images;
+}
+
+function replaceImageAttachmentsWithPaths(
+  messages: WebAgentUIMessage[],
+  paths: string[],
+): WebAgentUIMessage[] {
+  let pathIndex = 0;
+  return messages.map((message) => {
+    let mutated = false;
+    const parts = message.parts.map((part) => {
+      if (part.type === "file" && part.mediaType.startsWith("image/")) {
+        const path = paths[pathIndex];
+        pathIndex += 1;
+        mutated = true;
+        // Path only -- no other text, per owner instruction.
+        return { type: "text" as const, text: path };
+      }
+      return part;
+    });
+    return mutated ? { ...message, parts } : message;
+  });
+}
+
 const convertMessages = async (
   messages: WebAgentUIMessage[],
 ): Promise<ModelMessage[]> => {
@@ -138,6 +183,39 @@ const convertMessages = async (
     emptyMessages: "remove",
   });
 };
+
+// Owner decision (2026-08-12): permission mode (ask / autoAccept /
+// fullAccess) must be changeable "anytime, per model turn" -- not frozen
+// for the whole assistant response the way it used to be. The multi-step
+// tool-calling loop below drives one agent step per loop iteration, so we
+// re-read the live value fresh before every single step instead of baking
+// it into `agentOptions` once before the loop starts. That way a mode
+// change made mid-turn (while the agent is still working through tool
+// calls) takes effect on the very next step, not just on the next chat
+// message.
+async function resolveCurrentPermissionMode(params: {
+  userId: string;
+  sessionId: string;
+}): Promise<"ask" | "autoAccept" | "fullAccess"> {
+  "use step";
+
+  const [sessionRecord, rawPreferences] = await Promise.all([
+    getSessionById(params.sessionId),
+    getUserPreferences(params.userId).catch((error) => {
+      console.error(
+        "Failed to load user preferences for live permission mode check:",
+        error,
+      );
+      return null;
+    }),
+  ]);
+
+  return (
+    sessionRecord?.permissionModeOverride ??
+    rawPreferences?.defaultPermissionMode ??
+    "ask"
+  );
+}
 
 async function resolveChatModelRuntime(params: {
   userId: string;
@@ -608,7 +686,6 @@ export async function runAgentWorkflow(options: Options) {
       ? latestMessage.id
       : (options.assistantId ?? generateIdAi());
 
-  const modelMessagesPromise = convertMessages(options.messages);
   const inputMessagesPersistPromise = options.inputMessagesPersisted
     ? Promise.resolve()
     : persistInputMessages(options.chatId, options.messages);
@@ -623,6 +700,29 @@ export async function runAgentWorkflow(options: Options) {
     userId: options.userId,
     sessionId: options.sessionId,
   });
+
+  // Fast path (the common case, no attachments): convert messages straight
+  // away, fully in parallel with sandbox resolution below. Only when there
+  // are image attachments do we need to wait on the sandbox first, since
+  // they get written into it before conversion (see
+  // extractPendingImageAttachments above).
+  const pendingImageAttachments = extractPendingImageAttachments(
+    options.messages,
+  );
+  const modelMessagesPromise: Promise<ModelMessage[]> =
+    pendingImageAttachments.length === 0
+      ? convertMessages(options.messages)
+      : runtimePromise.then(async (runtime) => {
+          const paths = await persistImageAttachmentsToSandbox({
+            sandboxState: runtime.sandboxState,
+            images: pendingImageAttachments,
+          });
+          const messagesWithPaths = replaceImageAttachmentsWithPaths(
+            options.messages,
+            paths,
+          );
+          return convertMessages(messagesWithPaths);
+        });
 
   // Self-register this workflow's runId onto the chat as the very first step.
   // The HTTP POST handler also writes this (via compareAndSetChatActiveStreamId
@@ -743,6 +843,24 @@ export async function runAgentWorkflow(options: Options) {
     ) {
       let result: Awaited<ReturnType<typeof runAgentStep>>;
 
+      // Refresh permission mode fresh for this specific step -- see
+      // resolveCurrentPermissionMode above. Everything else about
+      // agentOptions (sandbox, model, skills) stays fixed for the turn;
+      // only the approval-gating mode is allowed to change mid-flight.
+      // An explicit caller-supplied override (options.agentOptions,
+      // rarely used) still wins, matching the precedence `agentOptions`
+      // was built with above.
+      const livePermissionMode = options.agentOptions?.permissionMode
+        ? agentOptions.permissionMode
+        : await resolveCurrentPermissionMode({
+            userId: options.userId,
+            sessionId: options.sessionId,
+          });
+      const stepAgentOptions: OpenAgentCallOptions = {
+        ...agentOptions,
+        permissionMode: livePermissionMode,
+      };
+
       try {
         result = await runAgentStep(
           modelMessages,
@@ -754,7 +872,7 @@ export async function runAgentWorkflow(options: Options) {
           options.sessionId,
           selectedModelId,
           modelId,
-          agentOptions,
+          stepAgentOptions,
           step + 1,
           modelCostCatalog,
         );

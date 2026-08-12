@@ -32,6 +32,7 @@ function createSandbox(params: {
       }),
     readFileBuffer: async () => Buffer.from(""),
     writeFile: async () => {},
+    writeFileBuffer: async () => {},
     stat: async () => ({
       isDirectory: () => false,
       isFile: () => true,

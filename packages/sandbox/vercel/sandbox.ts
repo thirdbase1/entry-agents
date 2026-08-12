@@ -798,6 +798,19 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     ]);
   }
 
+  async writeFileBuffer(path: string, content: Buffer): Promise<void> {
+    // Symmetric with writeFile, but takes an already-decoded Buffer instead
+    // of re-encoding a string as UTF-8 -- required for binary payloads like
+    // images, which would otherwise get corrupted (the literal base64 text
+    // would be written instead of the decoded bytes).
+    const parentDir = path.substring(0, path.lastIndexOf("/"));
+    if (parentDir) {
+      await this.mkdir(parentDir, { recursive: true });
+    }
+
+    await this.session.writeFiles([{ path, content }]);
+  }
+
   async stat(path: string): Promise<SandboxStats> {
     // Use stat command to get file info
     // Use tab delimiter to avoid issues with file types containing spaces (e.g., "regular file")

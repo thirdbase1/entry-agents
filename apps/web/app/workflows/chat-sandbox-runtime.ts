@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { discoverSkills } from "@open-agents/agent";
 import {
   connectSandbox,
@@ -118,4 +119,82 @@ export async function resolveChatSandboxRuntime(params: {
     repoOwner: session.repoOwner ?? undefined,
     repoName: session.repoName ?? undefined,
   };
+}
+
+
+// ── Image attachment offload ────────────────────────────────────────
+//
+// Owner decision (2026-08-12): images attached in chat should never be
+// re-sent to the model as raw multimodal content on every turn (expensive,
+// and most of our current models aren't vision-capable anyway). Instead,
+// write the decoded image once into the session's own sandbox filesystem
+// and hand the agent nothing but the file path -- it already has `read`
+// and `bash` tools to look at the file itself if it needs to.
+
+export type PendingImageAttachment = {
+  /** e.g. "image/png" */
+  mediaType: string;
+  /** data: URL, e.g. "data:image/png;base64,...." */
+  dataUrl: string;
+};
+
+const IMAGE_UPLOADS_DIR = "uploads";
+
+function extensionForMediaType(mediaType: string): string {
+  const subtype = mediaType.split("/")[1] ?? "bin";
+  // jpeg is the only common mismatch between MIME subtype and conventional extension.
+  return subtype === "jpeg" ? "jpg" : subtype.replace(/[^a-z0-9]/gi, "");
+}
+
+function decodeImageDataUrl(dataUrl: string): Buffer {
+  const commaIndex = dataUrl.indexOf(",");
+  const base64Payload =
+    commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+  return Buffer.from(base64Payload, "base64");
+}
+
+function buildImagePath(image: PendingImageAttachment, buffer: Buffer): string {
+  // Content-addressed path: identical bytes always resolve to the same
+  // path, so re-sending the same image across turns is a no-op (we check
+  // existence before writing) instead of piling up duplicate files.
+  const hash = createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+  const extension = extensionForMediaType(image.mediaType);
+  return `${IMAGE_UPLOADS_DIR}/${hash}.${extension}`;
+}
+
+/**
+ * Writes each attached image into the sandbox (skipping any that are
+ * already there) and returns the workspace-relative path for each, in the
+ * same order as the input array.
+ */
+export async function persistImageAttachmentsToSandbox(params: {
+  sandboxState: SandboxState;
+  images: PendingImageAttachment[];
+}): Promise<string[]> {
+  "use step";
+
+  if (params.images.length === 0) {
+    return [];
+  }
+
+  const sandbox = await connectSandbox(params.sandboxState);
+  const paths: string[] = [];
+
+  for (const image of params.images) {
+    const buffer = decodeImageDataUrl(image.dataUrl);
+    const path = buildImagePath(image, buffer);
+
+    const alreadyExists = await sandbox
+      .access(path)
+      .then(() => true)
+      .catch(() => false);
+
+    if (!alreadyExists) {
+      await sandbox.writeFileBuffer(path, buffer);
+    }
+
+    paths.push(path);
+  }
+
+  return paths;
 }

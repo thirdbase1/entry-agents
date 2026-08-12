@@ -125,6 +125,14 @@ export interface Sandbox {
   readFile(path: string, encoding: "utf-8"): Promise<string>;
   readFileBuffer(path: string): Promise<Buffer>;
   writeFile(path: string, content: string, encoding: "utf-8"): Promise<void>;
+  /**
+   * Write raw binary content (e.g. a decoded image) to a file in the
+   * sandbox. Symmetric with readFileBuffer -- writeFile is text-only
+   * (it always encodes `content` as UTF-8), so binary payloads must go
+   * through this method instead of being smuggled through writeFile as
+   * a base64 *string* (which would just write the literal base64 text).
+   */
+  writeFileBuffer(path: string, content: Buffer): Promise<void>;
   stat(path: string): Promise<SandboxStats>;
   access(path: string): Promise<void>;
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;

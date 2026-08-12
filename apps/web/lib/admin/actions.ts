@@ -10,6 +10,7 @@ import {
   type AdminModelAlertRow,
   type AdminModelHealthRow,
 } from "@/lib/db/admin-activity";
+import { checkAndNotifyTelegramAlerts } from "@/lib/telegram-alerts";
 import {
   getAdminRecentSignups,
   searchAdminUsers,
@@ -349,7 +350,14 @@ export async function lookupAdminUsers(
  */
 export async function getAdminAlerts(): Promise<AdminModelAlertRow[]> {
   await requireAdmin();
-  return getAdminModelAlerts();
+  const alerts = await getAdminModelAlerts();
+  // Fire-and-forget: push a Telegram notification if the alert state
+  // changed (new failure or resolved). Never block the dashboard poll on
+  // this -- it's a best-effort side channel, see lib/telegram-alerts.ts.
+  checkAndNotifyTelegramAlerts(alerts).catch((err) => {
+    console.error("[admin] telegram alert notify failed:", err);
+  });
+  return alerts;
 }
 
 /**

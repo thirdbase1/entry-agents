@@ -18,11 +18,26 @@ export const reasoningEffortSchema = z.enum(REASONING_EFFORT_LEVELS);
 // yet). Add it here once that's resolved.
 const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   "deepseek-v4-pro",
+  // NOTE 2026-08-12: glm-5.2 is currently DOWN end-to-end (iamhc route
+  // times out at 90s, opencode-zen fallback blocked -- no payment method
+  // on Opencode Zen workspace). Kept in this set since reasoning_effort
+  // was already wired before the outage and should resume working once
+  // either upstream is back; this is an availability issue, not a param
+  // issue.
   "glm-5.2",
   // Confirmed 2026-08-11 via live probe through entry-gateway (iamhc
   // route): reasoning_effort=max -> 16 reasoning_tokens, low -> 49,
   // extra_body.thinking.disabled -> 0. Genuinely gated by the param.
   "deepseek-v4-flash",
+  // Confirmed 2026-08-12 via live probe (iamhc route): reasoning_effort
+  // low -> 20 completion_tokens/short reasoning, high -> 55 completion_
+  // tokens/136-char reasoning, none/xhigh -> rejected/ignored (StepFun
+  // only supports low/medium/high, no xhigh -- matches their own docs).
+  "step-3.7-flash",
+  // Confirmed 2026-08-12 via live probe (opencode-zen route): reasoning
+  // length scales with effort (low < high). Same OpenAI-compatible param
+  // shape as the others.
+  "hy3",
 ]);
 
 export function isReasoningCapableModel(modelId: string): boolean {

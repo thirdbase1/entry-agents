@@ -3,6 +3,18 @@
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import {
+  getAdminActivityTrend,
+  getAdminModelHealth,
+  type AdminActivityDayRow,
+  type AdminModelHealthRow,
+} from "@/lib/db/admin-activity";
+import {
+  getAdminRecentSignups,
+  searchAdminUsers,
+  type AdminSignupRow,
+  type AdminUserLookupRow,
+} from "@/lib/db/admin-directory";
+import {
   getAdminPlatformStats,
   type AdminPlatformStats,
 } from "@/lib/db/admin-platform-stats";
@@ -275,4 +287,47 @@ export async function getAdminUsageOverview(
 export async function getAdminStats(): Promise<AdminPlatformStats> {
   await requireAdmin();
   return getAdminPlatformStats();
+}
+
+/**
+ * Daily turn volume + failure counts for the admin activity chart.
+ * Admin-only.
+ */
+export async function getAdminActivity(
+  days = 14,
+): Promise<AdminActivityDayRow[]> {
+  await requireAdmin();
+  return getAdminActivityTrend(days);
+}
+
+/**
+ * Per-model reliability breakdown (completed/aborted/failed, error rate,
+ * avg duration) for the admin model-health table. Admin-only.
+ */
+export async function getAdminModelHealthReport(
+  days = 7,
+): Promise<AdminModelHealthRow[]> {
+  await requireAdmin();
+  return getAdminModelHealth(days);
+}
+
+/**
+ * Most recently created accounts for the admin Users tab. Admin-only.
+ */
+export async function getAdminSignups(limit = 12): Promise<AdminSignupRow[]> {
+  await requireAdmin();
+  return getAdminRecentSignups(limit);
+}
+
+/**
+ * Free-text user search (username/name/email) enriched with connection
+ * flags and an all-time estimated-spend summary, for the admin Users
+ * tab's lookup box. Admin-only.
+ */
+export async function lookupAdminUsers(
+  query: string,
+): Promise<AdminUserLookupRow[]> {
+  await requireAdmin();
+  const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
+  return searchAdminUsers(query, modelCostCatalog);
 }

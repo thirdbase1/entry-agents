@@ -60,7 +60,7 @@ export interface AdminUsageOverviewOptions {
   topUserLimit?: number;
 }
 
-function costForModel(
+export function costForModel(
   modelId: string | null,
   catalog: AvailableModel[],
 ): AvailableModel["cost"] | undefined {

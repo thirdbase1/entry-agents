@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldAlert, TriangleAlert } from "lucide-react";
+import { ShieldAlert, TriangleAlert, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,12 @@ const ADMIN_TABS = [
     label: "Overview",
     href: "/settings/admin",
     icon: ShieldAlert,
+  },
+  {
+    id: "users",
+    label: "Users",
+    href: "/settings/admin/users",
+    icon: Users,
   },
   {
     id: "danger",

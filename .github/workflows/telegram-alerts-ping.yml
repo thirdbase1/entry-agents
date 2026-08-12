@@ -1,0 +1,29 @@
+name: Telegram model-health alert ping
+
+# Vercel Hobby plan caps cron jobs at once/day (see apps/web/vercel.json's
+# own daily backstop cron). GitHub Actions has no such limit and is on the
+# same repo/account already, so this workflow is the real near-real-time
+# poller: it just hits the same protected route every 10 minutes so a
+# failing model gets flagged even when nobody has the admin dashboard open.
+# CRON_SECRET here must always match the CRON_SECRET env var on the
+# entry-agents Vercel project -- if you rotate one, rotate the other.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check model health + notify Telegram if needed
+        run: |
+          status=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://entry-agents.vercel.app/api/cron/telegram-alerts")
+          echo "HTTP status: $status"
+          cat /tmp/response.json
+          if [ "$status" -ne 200 ]; then
+            echo "::error::telegram-alerts cron endpoint returned $status"
+            exit 1
+          fi

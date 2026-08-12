@@ -34,7 +34,14 @@ export type AvailableModel = GatewayAvailableModel & {
 };
 
 export function getModelDisplayName(model: AvailableModel): string {
-  return model.name ?? model.id;
+  const raw = model.name ?? model.id;
+  // Cosmetic only: several Opencode Zen model ids carry a literal "-free"
+  // suffix (mimo-v2.5-free, ling-3.0-flash-free, ...) baked into the id
+  // itself for gateway routing purposes. The id must stay untouched
+  // (routing, cost lookup, and the gateway config all key off it), but
+  // showing "-free" in the picker reads as a stray leftover rather than
+  // useful info, so strip it from the *displayed* label only.
+  return raw.replace(/-free$/i, "");
 }
 
 export function getModelContextLimit(

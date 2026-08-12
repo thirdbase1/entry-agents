@@ -1,17 +1,53 @@
 import { NextResponse } from "next/server";
 
-export const maxDuration = 90;
+export const maxDuration = 60;
 
 // TEMPORARY — self-contained check, deployed and removed same session.
-// Bypasses the normal AUDIT_ROUTE_SECRET gate with a hardcoded one-shot
-// token known only to the person who added this route, so we don't need
-// to know the real (sensitive, unreadable-via-CLI) AUDIT_ROUTE_SECRET
-// value to use it once for debugging.
 const ONE_SHOT_TOKEN = "lyra-temp-check-7f3a9c";
 
 // 1x1 red pixel PNG, base64.
 const TEST_IMAGE_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+async function probeModel(trimmedBase: string, apiKey: string, model: string) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${trimmedBase}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "What color is this 1x1 pixel image? Answer in one word." },
+              { type: "image_url", image_url: { url: TEST_IMAGE_DATA_URL } },
+            ],
+          },
+        ],
+        max_tokens: 30,
+      }),
+    });
+    const bodyText = await res.text();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(bodyText);
+    } catch {
+      parsed = bodyText.slice(0, 300);
+    }
+    return [model, { httpStatus: res.status, ok: res.ok, body: parsed }] as const;
+  } catch (err) {
+    return [model, { error: String(err) }] as const;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -30,9 +66,6 @@ export async function GET(request: Request) {
 
   const trimmedBase = baseURL.replace(/\/$/, "");
 
-  // Pull the live, gateway-driven model catalog (language models only) so
-  // we test whatever's actually enabled right now, not a stale hardcoded
-  // list.
   let catalogModels: string[] = [];
   let catalogError: string | null = null;
   try {
@@ -49,48 +82,10 @@ export async function GET(request: Request) {
     catalogError = String(err);
   }
 
-  const results: Record<string, unknown> = {};
-
-  for (const model of catalogModels) {
-    try {
-      const res = await fetch(`${trimmedBase}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "What color is this 1x1 pixel image? Answer in one word." },
-                { type: "image_url", image_url: { url: TEST_IMAGE_DATA_URL } },
-              ],
-            },
-          ],
-          max_tokens: 30,
-        }),
-      });
-
-      const bodyText = await res.text();
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(bodyText);
-      } catch {
-        parsed = bodyText.slice(0, 500);
-      }
-
-      results[model] = {
-        httpStatus: res.status,
-        ok: res.ok,
-        body: parsed,
-      };
-    } catch (err) {
-      results[model] = { error: String(err) };
-    }
-  }
+  const entries = await Promise.all(
+    catalogModels.map((model) => probeModel(trimmedBase, apiKey, model)),
+  );
+  const results = Object.fromEntries(entries);
 
   return NextResponse.json({
     baseURL: trimmedBase,

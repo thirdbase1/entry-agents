@@ -65,7 +65,11 @@ export function commandNeedsApproval(command: string): boolean {
 
 export const bashTool = (options?: ToolOptions) =>
   tool({
-    needsApproval: async (args) => {
+    needsApproval: async (args, { experimental_context }) => {
+      if ((experimental_context as { fullAccess?: boolean } | undefined)?.fullAccess) {
+        return false;
+      }
+
       if (commandNeedsApproval(args.command)) {
         if (typeof options?.needsApproval === "function") {
           return options.needsApproval(args);

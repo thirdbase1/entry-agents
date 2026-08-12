@@ -18,6 +18,7 @@ interface UpdatePreferencesRequest {
   defaultDiffMode?: DiffMode;
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
+  autoApproveTools?: boolean;
   alertsEnabled?: boolean;
   alertSoundEnabled?: boolean;
   publicUsageEnabled?: boolean;
@@ -123,6 +124,19 @@ export async function PATCH(req: Request) {
   }
   if (body.autoCreatePr !== undefined) {
     updates.autoCreatePr = body.autoCreatePr;
+  }
+
+  if (
+    body.autoApproveTools !== undefined &&
+    typeof body.autoApproveTools !== "boolean"
+  ) {
+    return Response.json(
+      { error: "Invalid autoApproveTools value" },
+      { status: 400 },
+    );
+  }
+  if (body.autoApproveTools !== undefined) {
+    updates.autoApproveTools = body.autoApproveTools;
   }
 
   if (

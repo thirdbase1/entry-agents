@@ -274,6 +274,13 @@
       "when": 1786438391415,
       "tag": "0038_add_chat_reasoning_effort",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786479957242,
+      "tag": "0039_colorful_trish_tilby",
+      "breakpoints": true
     }
   ]
 }

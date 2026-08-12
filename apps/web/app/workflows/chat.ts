@@ -205,6 +205,15 @@ async function resolveChatModelRuntime(params: {
   const autoCreatePrEnabled =
     autoCommitEnabled &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
+  // "Full access" mode: session-level override wins, otherwise fall back
+  // to the user's default preference. When on, tool approval gates are
+  // skipped entirely for this call -- see packages/agent/open-agent.ts
+  // (experimental_context.fullAccess) and tools/{bash,read,write,fetch}.ts.
+  const fullAccessEnabled = Boolean(
+    sessionRecord.autoApproveToolsOverride ??
+      preferences?.autoApproveTools ??
+      false,
+  );
 
   return {
     selectedModelId: selectedModelId ?? mainModelSelection.id,
@@ -215,6 +224,7 @@ async function resolveChatModelRuntime(params: {
         ? { subagentModel: subagentModelSelection }
         : {}),
       customInstructions: assistantFileLinkPrompt,
+      fullAccess: fullAccessEnabled,
     },
     autoCommitEnabled,
     autoCreatePrEnabled,

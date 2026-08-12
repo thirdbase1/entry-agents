@@ -152,6 +152,10 @@ export const sessions = pgTable(
     // Optional per-session override for auto PR creation after auto-commit.
     // null means "use the user's default preference".
     autoCreatePrOverride: boolean("auto_create_pr_override"),
+    // Optional per-session override for full-access (auto-approve tool
+    // calls) mode. null means "use the user's default preference". See
+    // userPreferences.autoApproveTools for what this actually disables.
+    autoApproveToolsOverride: boolean("auto_approve_tools_override"),
     globalSkillRefs: jsonb("global_skill_refs")
       .$type<GlobalSkillRef[]>()
       .notNull()
@@ -358,6 +362,13 @@ export const userPreferences = pgTable("user_preferences", {
   }).default("unified"),
   autoCommitPush: boolean("auto_commit_push").notNull().default(false),
   autoCreatePr: boolean("auto_create_pr").notNull().default(false),
+  // "Full access" mode: when true, the agent's bash/write/edit/web_fetch
+  // tools skip their needsApproval gate entirely (dangerous commands,
+  // dotenv/secret file reads and writes, and outbound fetches all run
+  // without a manual approval click). Off by default -- this is an
+  // explicit, informed opt-in since it removes the safety net against
+  // prompt-injection-driven secret exfiltration or destructive commands.
+  autoApproveTools: boolean("auto_approve_tools").notNull().default(false),
   alertsEnabled: boolean("alerts_enabled").notNull().default(true),
   alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
   publicUsageEnabled: boolean("public_usage_enabled").notNull().default(false),

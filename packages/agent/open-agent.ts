@@ -45,6 +45,12 @@ const callOptionsSchema = z.object({
   subagentModel: z.custom<OpenAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
+  // "Full access" mode: when true, tool-level needsApproval gates (bash
+  // dangerous commands, web_fetch, sensitive file read/write) are skipped
+  // entirely for this call. Threaded through to every tool via
+  // experimental_context.fullAccess -- see tools/bash.ts, tools/read.ts,
+  // tools/write.ts, tools/fetch.ts.
+  fullAccess: z.boolean().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -150,6 +156,7 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
+        fullAccess: options.fullAccess ?? false,
       },
     };
   },

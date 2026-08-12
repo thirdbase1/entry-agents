@@ -245,7 +245,9 @@ const fetchOutputSchema = z.union([
 ]);
 
 export const webFetchTool = tool({
-  needsApproval: true,
+  needsApproval: async (_args, { experimental_context }) =>
+    !(experimental_context as { fullAccess?: boolean } | undefined)
+      ?.fullAccess,
   description: `Fetch a URL from the web.
 
 USAGE:

@@ -15,6 +15,10 @@ interface UpdateSessionRequest {
   linesRemoved?: number;
   prNumber?: number;
   prStatus?: "open" | "merged" | "closed";
+  // Per-session override for "Full access" mode (skips tool approval
+  // gates for bash/write/edit/fetch). null clears the override so the
+  // session falls back to the user's default preference.
+  autoApproveToolsOverride?: boolean | null;
 }
 
 export async function GET(

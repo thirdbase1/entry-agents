@@ -28,6 +28,8 @@ import {
   RefreshCw,
   RotateCcw,
   Share2,
+  ShieldCheck,
+  ShieldOff,
   Square,
   Trash2,
   X,
@@ -1185,6 +1187,7 @@ export function SessionChatContent({
     updateChatModel,
     updateChatReasoningEffort,
     updateSessionTitle,
+    updateFullAccess,
     preferredSandboxType,
     supportsDiff,
     supportsRepoCreation,
@@ -1250,6 +1253,23 @@ export function SessionChatContent({
     session.repoName &&
     (session.autoCommitPushOverride ?? preferences?.autoCommitPush ?? false),
   );
+  const fullAccessEnabled = Boolean(
+    session.autoApproveToolsOverride ?? preferences?.autoApproveTools ?? false,
+  );
+  const [isTogglingFullAccess, setIsTogglingFullAccess] = useState(false);
+  const handleToggleFullAccess = useCallback(() => {
+    if (isTogglingFullAccess) {
+      return;
+    }
+    setIsTogglingFullAccess(true);
+    void updateFullAccess(!fullAccessEnabled)
+      .catch((toggleError) => {
+        console.error("Failed to update full access setting:", toggleError);
+      })
+      .finally(() => {
+        setIsTogglingFullAccess(false);
+      });
+  }, [isTogglingFullAccess, fullAccessEnabled, updateFullAccess]);
   const { isAutoCommitting, markAutoCommitStarted } = useAutoCommitStatus(
     autoCommitEnabled,
     gitStatus,
@@ -4236,6 +4256,33 @@ export function SessionChatContent({
                                   />
                                 </div>
                               )}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={handleToggleFullAccess}
+                                  disabled={isArchived || isTogglingFullAccess}
+                                  className={`h-8 w-8 rounded-full ${
+                                    fullAccessEnabled
+                                      ? "text-amber-500 hover:text-amber-600"
+                                      : "text-muted-foreground hover:text-foreground"
+                                  }`}
+                                >
+                                  {fullAccessEnabled ? (
+                                    <ShieldOff className="h-4 w-4" />
+                                  ) : (
+                                    <ShieldCheck className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" sideOffset={8}>
+                                {fullAccessEnabled
+                                  ? "Full access is on for this session \u2013 tool approvals are skipped. Click to turn off."
+                                  : "Turn on full access to skip tool approval prompts for this session."}
+                              </TooltipContent>
+                            </Tooltip>
                             <ContextUsageIndicator
                               inputTokens={tokenUsage.inputTokens}
                               conversationInputTokens={

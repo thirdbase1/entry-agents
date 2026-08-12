@@ -18,6 +18,7 @@ export interface UserPreferencesData {
   defaultDiffMode: DiffMode;
   autoCommitPush: boolean;
   autoCreatePr: boolean;
+  autoApproveTools: boolean;
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
@@ -32,6 +33,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,
+  autoApproveTools: false,
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
@@ -84,6 +86,7 @@ export function toUserPreferencesData(
     | "defaultDiffMode"
     | "autoCommitPush"
     | "autoCreatePr"
+    | "autoApproveTools"
     | "alertsEnabled"
     | "alertSoundEnabled"
     | "publicUsageEnabled"
@@ -98,6 +101,8 @@ export function toUserPreferencesData(
     defaultDiffMode: normalizeDiffMode(row?.defaultDiffMode),
     autoCommitPush: row?.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
     autoCreatePr: row?.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,
+    autoApproveTools:
+      row?.autoApproveTools ?? DEFAULT_PREFERENCES.autoApproveTools,
     alertsEnabled: row?.alertsEnabled ?? DEFAULT_PREFERENCES.alertsEnabled,
     alertSoundEnabled:
       row?.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
@@ -165,6 +170,8 @@ export async function updateUserPreferences(
       autoCommitPush:
         updates.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
       autoCreatePr: updates.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,
+      autoApproveTools:
+        updates.autoApproveTools ?? DEFAULT_PREFERENCES.autoApproveTools,
       alertsEnabled: updates.alertsEnabled ?? DEFAULT_PREFERENCES.alertsEnabled,
       alertSoundEnabled:
         updates.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,

@@ -27,6 +27,10 @@ const readInputSchema = z.object({
 export const readFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
+      if ((experimental_context as { fullAccess?: boolean } | undefined)?.fullAccess) {
+        return false;
+      }
+
       if (isDotEnvFilePath(filePath)) {
         return true;
       }

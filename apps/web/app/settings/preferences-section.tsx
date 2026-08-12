@@ -290,6 +290,17 @@ function usePreferencesSectionState() {
     }
   };
 
+  const handleAutoApproveToolsChange = async (enabled: boolean) => {
+    setIsSaving(true);
+    try {
+      await updatePreferences({ autoApproveTools: enabled });
+    } catch (error) {
+      console.error("Failed to update full access preference:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleAlertsEnabledChange = async (enabled: boolean) => {
     setIsSaving(true);
     try {
@@ -477,6 +488,7 @@ function usePreferencesSectionState() {
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
+    handleAutoApproveToolsChange,
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
     handlePublicUsageEnabledChange,
@@ -513,6 +525,7 @@ export function PreferencesSection() {
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
+    handleAutoApproveToolsChange,
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
     handlePublicUsageEnabledChange,
@@ -621,6 +634,23 @@ export function PreferencesSection() {
                 checked={preferences?.autoCreatePr ?? false}
                 onCheckedChange={handleAutoCreatePrChange}
                 disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="auto-approve-tools">
+                  Full access by default
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Skip tool approval prompts (bash, file edits, fetch) for
+                  new sessions. Can be overridden per session.
+                </p>
+              </div>
+              <Switch
+                id="auto-approve-tools"
+                checked={preferences?.autoApproveTools ?? false}
+                onCheckedChange={handleAutoApproveToolsChange}
+                disabled={isSaving}
               />
             </div>
             <div className="flex items-center justify-between gap-4">

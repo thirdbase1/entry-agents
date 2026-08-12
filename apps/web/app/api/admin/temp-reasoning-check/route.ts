@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 // TEMPORARY — self-contained check, deployed and removed same session.
 // Bypasses the normal AUDIT_ROUTE_SECRET gate with a hardcoded one-shot
@@ -8,6 +8,10 @@ export const maxDuration = 60;
 // to know the real (sensitive, unreadable-via-CLI) AUDIT_ROUTE_SECRET
 // value to use it once for debugging.
 const ONE_SHOT_TOKEN = "lyra-temp-check-7f3a9c";
+
+// 1x1 red pixel PNG, base64.
+const TEST_IMAGE_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -24,12 +28,32 @@ export async function GET(request: Request) {
     );
   }
 
-  const models = ["deepseek-v4-flash", "hy3", "grok-4.5", "kimi-k3", "mimo-v2.5-free"];
+  const trimmedBase = baseURL.replace(/\/$/, "");
+
+  // Pull the live, gateway-driven model catalog (language models only) so
+  // we test whatever's actually enabled right now, not a stale hardcoded
+  // list.
+  let catalogModels: string[] = [];
+  let catalogError: string | null = null;
+  try {
+    const res = await fetch(`${trimmedBase}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const json = (await res.json()) as {
+      data?: { id: string; modelType?: string | null }[];
+    };
+    catalogModels = (json.data ?? [])
+      .filter((m) => (m.modelType ?? "language") === "language")
+      .map((m) => m.id);
+  } catch (err) {
+    catalogError = String(err);
+  }
+
   const results: Record<string, unknown> = {};
 
-  for (const model of models) {
+  for (const model of catalogModels) {
     try {
-      const res = await fetch(`${baseURL.replace(/\/$/, "")}/chat/completions`, {
+      const res = await fetch(`${trimmedBase}/chat/completions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -38,41 +62,40 @@ export async function GET(request: Request) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: "user", content: "What is 17 * 24? Think step by step then answer." },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "What color is this 1x1 pixel image? Answer in one word." },
+                { type: "image_url", image_url: { url: TEST_IMAGE_DATA_URL } },
+              ],
+            },
           ],
-          max_tokens: 400,
-          stream: false,
+          max_tokens: 30,
         }),
-        signal: AbortSignal.timeout(40_000),
       });
-      const text = await res.text();
-      let json: Record<string, unknown> | undefined;
+
+      const bodyText = await res.text();
+      let parsed: unknown;
       try {
-        json = JSON.parse(text);
+        parsed = JSON.parse(bodyText);
       } catch {
-        // ignore
+        parsed = bodyText.slice(0, 500);
       }
-      if (!res.ok) {
-        results[model] = { httpStatus: res.status, error: json ?? text.slice(0, 300) };
-        continue;
-      }
-      const choices = json?.choices as Array<Record<string, unknown>> | undefined;
-      const choice = choices?.[0];
-      const message = choice?.message as Record<string, unknown> | undefined;
+
       results[model] = {
         httpStatus: res.status,
-        messageKeys: message ? Object.keys(message) : [],
-        reasoning_content: message?.reasoning_content ?? null,
-        reasoning: message?.reasoning ?? null,
-        content_preview:
-          typeof message?.content === "string" ? message.content.slice(0, 150) : message?.content,
-        finish_reason: choice?.finish_reason,
-        usage: json?.usage,
+        ok: res.ok,
+        body: parsed,
       };
     } catch (err) {
-      results[model] = { error: err instanceof Error ? err.message : String(err) };
+      results[model] = { error: String(err) };
     }
   }
 
-  return NextResponse.json({ baseURL, results });
+  return NextResponse.json({
+    baseURL: trimmedBase,
+    catalogModels,
+    catalogError,
+    results,
+  });
 }

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { fetch as workflowFetch } from "workflow";
 import { z } from "zod";
 import { filterDisabledModels } from "./model-availability";
 import type {
@@ -225,9 +226,19 @@ async function fetchGatewayModels(): Promise<GatewayModel[]> {
   // /api/models (a plain route handler). That was the root cause of the
   // per-turn cost pill never showing anything in production. Model list
   // changes rarely enough that fetching it fresh each call is fine.
-  const response = await fetch(`${baseURL.replace(/\/$/, "")}/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+  // Use the Workflow SDK's hoisted `fetch` step, not global `fetch` --
+  // this function is called from inside `runAgentWorkflow` ("use workflow"),
+  // where global fetch throws ("Global fetch is unavailable in workflow
+  // functions"). The workflow-step fetch is a safe drop-in outside of a
+  // workflow context too (it's a no-op wrapper around globalThis.fetch when
+  // there's no active workflow run), so this one import works for both the
+  // plain /api/models route handler and the workflow call site.
+  const response = await workflowFetch(
+    `${baseURL.replace(/\/$/, "")}/models`,
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    },
+  );
 
   if (!response.ok) {
     throw new Error(

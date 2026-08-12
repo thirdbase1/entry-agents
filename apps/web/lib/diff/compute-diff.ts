@@ -1,6 +1,8 @@
 import type { Sandbox } from "@open-agents/sandbox";
 import {
+  buildUntrackedBinaryDiffFile,
   buildUntrackedDiffFile,
+  isBinaryBuffer,
   isGeneratedFile,
   parseNameStatus,
   parseStats,
@@ -24,6 +26,9 @@ export type DiffFile = {
   oldPath?: string;
   /** True for generated/lock files whose diff content is intentionally omitted. */
   generated?: boolean;
+  /** True for binary files (images, video, etc.) whose diff content is
+   * intentionally omitted -- see isBinaryBuffer in diff-utils.ts. */
+  binary?: boolean;
 };
 
 export type DiffResponse = {
@@ -109,19 +114,45 @@ export async function computeAndCacheDiff(params: {
       .split("\n")
       .filter((line) => line.length > 0);
 
+    // Read as raw bytes first so we can detect binary content (images,
+    // video, etc.) before ever treating it as UTF-8 text -- see
+    // isBinaryBuffer in diff-utils.ts for why this matters.
     const untrackedFileContents = await Promise.all(
       untrackedFiles.map(async (filePath) => {
         const fullPath = `${cwd}/${filePath}`;
         try {
-          const content = await sandbox.readFile(fullPath, "utf-8");
-          return { path: filePath, content };
+          const buffer = await sandbox.readFileBuffer(fullPath);
+          if (isBinaryBuffer(buffer)) {
+            return {
+              path: filePath,
+              content: null as string | null,
+              binary: true,
+              byteLength: buffer.length,
+            };
+          }
+          return {
+            path: filePath,
+            content: buffer.toString("utf-8"),
+            binary: false,
+            byteLength: buffer.length,
+          };
         } catch {
-          return { path: filePath, content: null };
+          return {
+            path: filePath,
+            content: null as string | null,
+            binary: false,
+            byteLength: 0,
+          };
         }
       }),
     );
 
-    for (const { path, content } of untrackedFileContents) {
+    for (const { path, content, binary, byteLength } of untrackedFileContents) {
+      if (binary) {
+        const entry = buildUntrackedBinaryDiffFile(path, byteLength);
+        files.push(entry.file);
+        continue;
+      }
       const entry = buildUntrackedDiffFile(path, content);
       if (!entry) continue;
       totalAdditions += entry.lineCount;

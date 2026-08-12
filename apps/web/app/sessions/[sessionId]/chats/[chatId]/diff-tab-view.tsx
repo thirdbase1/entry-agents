@@ -196,6 +196,10 @@ function FileDiffSection({
             <div className="px-4 py-6 text-center text-xs text-muted-foreground">
               Generated file — diff content hidden
             </div>
+          ) : file.binary ? (
+            <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+              Binary file — diff content hidden
+            </div>
           ) : patchContent ? (
             <PatchDiff
               key={`${file.path}-${diffStyle}-${diffScope}`}

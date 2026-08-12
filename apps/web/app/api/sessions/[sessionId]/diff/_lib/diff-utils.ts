@@ -9,6 +9,10 @@ export type DiffFileShape = {
   diff: string;
   oldPath?: string;
   generated?: boolean;
+  /** True for binary files (images, video, etc.) whose diff content is
+   * intentionally omitted -- unlike text files we never attempt to render
+   * their bytes as a line-by-line diff. See isBinaryBuffer below. */
+  binary?: boolean;
 };
 
 /**
@@ -138,6 +142,57 @@ export function splitDiffByFile(fullDiff: string): Map<string, string> {
   }
 
   return result;
+}
+
+/**
+ * Detect whether a buffer looks like binary content, using the same
+ * heuristic git itself uses (`buffer_is_binary` in git's source): if a NUL
+ * byte appears anywhere in a leading sample of the content, treat it as
+ * binary. This is intentionally cheap and matches how `git diff` decides
+ * to print "Binary files ... differ" instead of a line-by-line patch.
+ *
+ * We need this for untracked files in brand-new repos (no commits yet):
+ * that path builds its own synthetic diff instead of shelling out to
+ * `git diff`, so unlike the normal path it previously had no binary
+ * detection at all -- reading an image/video as "utf-8" text and jamming
+ * the resulting mojibake (including raw NUL bytes) into a synthetic diff
+ * string that then got written straight into a Postgres text column,
+ * which rejects NUL bytes outright and threw on every save with an image
+ * attachment. See compute-diff.ts's untracked-files branch.
+ */
+export function isBinaryBuffer(buffer: Buffer): boolean {
+  const sampleLength = Math.min(buffer.length, 8000);
+  for (let i = 0; i < sampleLength; i++) {
+    if (buffer[i] === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Build a DiffFile entry for an untracked binary file. Mirrors what real
+ * `git diff` prints for binary files ("Binary files ... differ") instead
+ * of trying to render its bytes as text.
+ */
+export function buildUntrackedBinaryDiffFile(
+  path: string,
+  byteLength: number,
+): { file: DiffFileShape; lineCount: number } {
+  return {
+    file: {
+      path,
+      status: "added",
+      stagingStatus: "unstaged",
+      additions: 0,
+      deletions: 0,
+      diff: `diff --git a/${path} b/${path}
+new file mode 100644
+Binary files /dev/null and b/${path} differ (${byteLength} bytes)`,
+      binary: true,
+    },
+    lineCount: 0,
+  };
 }
 
 /**

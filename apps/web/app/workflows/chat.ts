@@ -355,6 +355,82 @@ function withModelMetadata(
   };
 }
 
+/**
+ * Known upstream provider "we're out of capacity" messages that come back
+ * as ordinary 200 response content instead of an HTTP error (e.g. a 429 or
+ * 402). We saw this in production with DeepSeek-V4-Flash via the Opencode
+ * Zen gateway: the provider's own monthly token allotment ran out and it
+ * replied with a short Chinese string, which finished with the
+ * non-standard `finishReason: "other"` yet otherwise looked like a normal
+ * successful answer -- so it was rendered verbatim to the user as if it
+ * were a real reply.
+ *
+ * This only rewrites what gets persisted/returned from this step; it does
+ * not retroactively un-stream tokens that were already flushed live to the
+ * client before the step finished (streaming is token-by-token, so we only
+ * know the full text and finishReason after it's done). It does prevent
+ * this message from ever being saved to chat history and re-rendered as a
+ * real answer on reload, and flags the message so the frontend can show a
+ * "try a different model" affordance instead.
+ */
+const PROVIDER_QUOTA_EXHAUSTED_PATTERNS = [
+  /每月token额度已不足/, // DeepSeek-V4-Flash / Opencode Zen: "monthly token quota insufficient"
+  /monthly (?:token )?(?:usage |quota )?limit (?:has been |is )?reached/i,
+  /insufficient_quota/i,
+  /you exceeded your current quota/i,
+];
+
+function detectProviderQuotaExhaustion(
+  finishReason: string | undefined,
+  responseText: string,
+): boolean {
+  if (finishReason !== "other") return false;
+  const trimmed = responseText.trim();
+  if (!trimmed) return false;
+  return PROVIDER_QUOTA_EXHAUSTED_PATTERNS.some((pattern) =>
+    pattern.test(trimmed),
+  );
+}
+
+function extractPlainText(parts: WebAgentUIMessage["parts"]): string {
+  return parts
+    .filter((part) => part.type === "text")
+    .map((part) => ("text" in part ? part.text : ""))
+    .join("");
+}
+
+/**
+ * Replace a quota-exhausted provider message's text parts with a clear,
+ * user-facing explanation and mark it in metadata. Preserves every other
+ * part (tool calls, step markers, etc.) untouched.
+ */
+function markProviderQuotaExhausted(
+  message: WebAgentUIMessage,
+  modelId: string,
+): WebAgentUIMessage {
+  const friendlyText = `The "${modelId}" model has hit its provider-side usage limit and can't respond right now. Please switch to a different model and try again.`;
+  let replaced = false;
+  const parts = message.parts.map((part) => {
+    if (part.type === "text") {
+      if (replaced) {
+        return { ...part, text: "" };
+      }
+      replaced = true;
+      return { ...part, text: friendlyText };
+    }
+    return part;
+  });
+
+  return {
+    ...message,
+    parts,
+    metadata: {
+      ...message.metadata,
+      providerQuotaExhausted: true,
+    },
+  };
+}
+
 function getSetupErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
     return "Workspace setup failed. Try again in a moment.";
@@ -1351,6 +1427,14 @@ const runAgentStep = async (
       console.warn(
         `[workflow] Agent step finished with reason 'other':\n${debugPayload}`,
       );
+
+      const responseText = extractPlainText(responseMessage.parts);
+      if (detectProviderQuotaExhaustion(finishReason, responseText)) {
+        console.warn(
+          `[workflow] Detected provider-side quota exhaustion for model '${modelId}' -- rewriting response before it is persisted. Raw text: ${responseText}`,
+        );
+        responseMessage = markProviderQuotaExhausted(responseMessage, modelId);
+      }
     }
 
     const stepFinishedAt = new Date();

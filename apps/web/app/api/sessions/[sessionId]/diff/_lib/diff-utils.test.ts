@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildUntrackedBinaryDiffFile,
   buildUntrackedDiffFile,
+  isBinaryBuffer,
   isGeneratedFile,
   parseNameStatus,
   parseStats,
@@ -100,6 +102,33 @@ describe("diff utils", () => {
     expect(split.size).toBe(2);
     expect(split.get("src/a.ts")).toContain("diff --git a/src/a.ts b/src/a.ts");
     expect(split.get("docs/new name.md")).toContain('+++ "b/docs/new name.md"');
+  });
+
+  test("isBinaryBuffer detects a NUL byte in the sampled prefix", () => {
+    // Real image bytes (a tiny WEBP header) contain NUL bytes very early.
+    const webpHeader = Buffer.from([
+      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+    ]);
+    expect(isBinaryBuffer(webpHeader)).toBe(true);
+  });
+
+  test("isBinaryBuffer returns false for plain text content", () => {
+    expect(isBinaryBuffer(Buffer.from("hello world\n", "utf-8"))).toBe(false);
+  });
+
+  test("buildUntrackedBinaryDiffFile produces a safe placeholder diff with no raw bytes", () => {
+    const { file, lineCount } = buildUntrackedBinaryDiffFile(
+      "uploads/photo.webp",
+      12345,
+    );
+    expect(lineCount).toBe(0);
+    expect(file.binary).toBe(true);
+    expect(file.additions).toBe(0);
+    expect(file.deletions).toBe(0);
+    // No NUL bytes or other raw binary content should ever end up in the
+    // diff string -- this is what previously broke the Postgres write.
+    expect(file.diff).not.toContain("\u0000");
+    expect(file.diff).toContain("Binary files /dev/null and b/uploads/photo.webp differ");
   });
 
   test("buildUntrackedDiffFile returns null for unreadable content", () => {

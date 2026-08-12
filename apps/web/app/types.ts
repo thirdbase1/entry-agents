@@ -30,6 +30,15 @@ export type WebAgentMessageMetadata = {
   lastStepFinishReason?: FinishReason;
   lastStepRawFinishReason?: string;
   stepFinishReasons?: WebAgentStepFinishMetadata[];
+  /**
+   * True when the upstream model provider reported its own quota/capacity
+   * as exhausted (e.g. a monthly token cap on the provider's side) but
+   * returned it as ordinary 200 response content instead of an HTTP error.
+   * See detectProviderQuotaExhaustion in workflows/chat.ts -- without this
+   * flag that provider-side message would otherwise render verbatim as if
+   * it were a real assistant answer.
+   */
+  providerQuotaExhausted?: boolean;
 };
 
 export type WebAgentGitDataStatus = "pending" | "success" | "error" | "skipped";

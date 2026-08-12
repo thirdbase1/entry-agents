@@ -28,8 +28,6 @@ import {
   RefreshCw,
   RotateCcw,
   Share2,
-  ShieldCheck,
-  ShieldOff,
   Square,
   Trash2,
   X,
@@ -70,6 +68,7 @@ import { ImageAttachmentsPreview } from "@/components/image-attachments-preview"
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
 import { ReasoningEffortSelector } from "@/components/reasoning-effort-selector";
+import { PermissionModeSelector } from "@/components/permission-mode-selector";
 import { isReasoningCapableModel, sanitizeReasoningEffort } from "@/lib/model-reasoning";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
@@ -1187,7 +1186,7 @@ export function SessionChatContent({
     updateChatModel,
     updateChatReasoningEffort,
     updateSessionTitle,
-    updateFullAccess,
+    updatePermissionMode,
     preferredSandboxType,
     supportsDiff,
     supportsRepoCreation,
@@ -1253,23 +1252,27 @@ export function SessionChatContent({
     session.repoName &&
     (session.autoCommitPushOverride ?? preferences?.autoCommitPush ?? false),
   );
-  const fullAccessEnabled = Boolean(
-    session.autoApproveToolsOverride ?? preferences?.autoApproveTools ?? false,
+  const permissionMode = (session.permissionModeOverride ??
+    preferences?.defaultPermissionMode ??
+    "ask") as "ask" | "autoAccept" | "fullAccess";
+  const [isTogglingPermissionMode, setIsTogglingPermissionMode] =
+    useState(false);
+  const handlePermissionModeChange = useCallback(
+    (mode: "ask" | "autoAccept" | "fullAccess") => {
+      if (isTogglingPermissionMode || mode === permissionMode) {
+        return;
+      }
+      setIsTogglingPermissionMode(true);
+      void updatePermissionMode(mode)
+        .catch((toggleError) => {
+          console.error("Failed to update permission mode:", toggleError);
+        })
+        .finally(() => {
+          setIsTogglingPermissionMode(false);
+        });
+    },
+    [isTogglingPermissionMode, permissionMode, updatePermissionMode],
   );
-  const [isTogglingFullAccess, setIsTogglingFullAccess] = useState(false);
-  const handleToggleFullAccess = useCallback(() => {
-    if (isTogglingFullAccess) {
-      return;
-    }
-    setIsTogglingFullAccess(true);
-    void updateFullAccess(!fullAccessEnabled)
-      .catch((toggleError) => {
-        console.error("Failed to update full access setting:", toggleError);
-      })
-      .finally(() => {
-        setIsTogglingFullAccess(false);
-      });
-  }, [isTogglingFullAccess, fullAccessEnabled, updateFullAccess]);
   const { isAutoCommitting, markAutoCommitStarted } = useAutoCommitStatus(
     autoCommitEnabled,
     gitStatus,
@@ -4256,33 +4259,11 @@ export function SessionChatContent({
                                   />
                                 </div>
                               )}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={handleToggleFullAccess}
-                                  disabled={isArchived || isTogglingFullAccess}
-                                  className={`h-8 w-8 rounded-full ${
-                                    fullAccessEnabled
-                                      ? "text-amber-500 hover:text-amber-600"
-                                      : "text-muted-foreground hover:text-foreground"
-                                  }`}
-                                >
-                                  {fullAccessEnabled ? (
-                                    <ShieldOff className="h-4 w-4" />
-                                  ) : (
-                                    <ShieldCheck className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" sideOffset={8}>
-                                {fullAccessEnabled
-                                  ? "Full access is on for this session \u2013 tool approvals are skipped. Click to turn off."
-                                  : "Turn on full access to skip tool approval prompts for this session."}
-                              </TooltipContent>
-                            </Tooltip>
+                            <PermissionModeSelector
+                              value={permissionMode}
+                              onChange={handlePermissionModeChange}
+                              disabled={isArchived || isTogglingPermissionMode}
+                            />
                             <ContextUsageIndicator
                               inputTokens={tokenUsage.inputTokens}
                               conversationInputTokens={

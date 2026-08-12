@@ -14,7 +14,7 @@ export interface UserPreferences {
   defaultDiffMode: DiffMode;
   autoCommitPush: boolean;
   autoCreatePr: boolean;
-  autoApproveTools: boolean;
+  defaultPermissionMode: "ask" | "autoAccept" | "fullAccess";
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;

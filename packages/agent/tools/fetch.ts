@@ -245,9 +245,20 @@ const fetchOutputSchema = z.union([
 ]);
 
 export const webFetchTool = tool({
-  needsApproval: async (_args, { experimental_context }) =>
-    !(experimental_context as { fullAccess?: boolean } | undefined)
-      ?.fullAccess,
+  needsApproval: async (_args, { experimental_context }) => {
+    const mode = (
+      experimental_context as
+        | { permissionMode?: "ask" | "autoAccept" | "fullAccess" }
+        | undefined
+    )?.permissionMode;
+    // Unlike bash/read/write (which only gate genuinely dangerous
+    // actions), every web_fetch needs approval in "ask" mode -- it's the
+    // one truly blanket gate. "autoAccept" exists specifically to lift
+    // this one, since it fires on every single outbound request and is
+    // the noisiest gate by far; it still leaves dangerous bash and .env
+    // access gated. "fullAccess" skips this too, obviously.
+    return (mode ?? "ask") === "ask";
+  },
   description: `Fetch a URL from the web.
 
 USAGE:

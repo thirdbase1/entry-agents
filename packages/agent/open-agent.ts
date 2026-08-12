@@ -45,12 +45,15 @@ const callOptionsSchema = z.object({
   subagentModel: z.custom<OpenAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
-  // "Full access" mode: when true, tool-level needsApproval gates (bash
-  // dangerous commands, web_fetch, sensitive file read/write) are skipped
-  // entirely for this call. Threaded through to every tool via
-  // experimental_context.fullAccess -- see tools/bash.ts, tools/read.ts,
-  // tools/write.ts, tools/fetch.ts.
-  fullAccess: z.boolean().optional(),
+  // Permission mode for this call, threaded to every tool via
+  // experimental_context.permissionMode -- see tools/bash.ts,
+  // tools/read.ts, tools/write.ts, tools/fetch.ts.
+  // "ask" (default): gate dangerous bash, .env reads/writes, and every
+  //   web_fetch behind a manual approval click.
+  // "autoAccept": skip the web_fetch gate only (it fires on every single
+  //   outbound request) -- still gates dangerous bash and .env access.
+  // "fullAccess": skip every approval gate entirely.
+  permissionMode: z.enum(["ask", "autoAccept", "fullAccess"]).optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -156,7 +159,7 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
-        fullAccess: options.fullAccess ?? false,
+        permissionMode: options.permissionMode ?? "ask",
       },
     };
   },

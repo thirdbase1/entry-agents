@@ -152,10 +152,22 @@ export const sessions = pgTable(
     // Optional per-session override for auto PR creation after auto-commit.
     // null means "use the user's default preference".
     autoCreatePrOverride: boolean("auto_create_pr_override"),
-    // Optional per-session override for full-access (auto-approve tool
-    // calls) mode. null means "use the user's default preference". See
-    // userPreferences.autoApproveTools for what this actually disables.
+    // Optional per-session override for the permission mode. null means
+    // "use the user's default preference" (userPreferences.defaultPermissionMode).
+    // "ask": gate dangerous bash, .env reads/writes, and every web_fetch
+    //   (unchanged legacy default behavior).
+    // "autoAccept": skip the web_fetch approval gate only -- it's the
+    //   noisiest one, firing on every single outbound request -- while
+    //   still gating dangerous bash and .env access.
+    // "fullAccess": skip every approval gate entirely.
+    // Deprecated 2026-08-12: autoApproveToolsOverride (boolean) is
+    // superseded by this 3-way enum. Left in place, unread, for one
+    // release cycle in case any in-flight session still has it set;
+    // safe to drop in a later migration.
     autoApproveToolsOverride: boolean("auto_approve_tools_override"),
+    permissionModeOverride: text("permission_mode_override", {
+      enum: ["ask", "autoAccept", "fullAccess"],
+    }),
     globalSkillRefs: jsonb("global_skill_refs")
       .$type<GlobalSkillRef[]>()
       .notNull()
@@ -362,13 +374,21 @@ export const userPreferences = pgTable("user_preferences", {
   }).default("unified"),
   autoCommitPush: boolean("auto_commit_push").notNull().default(false),
   autoCreatePr: boolean("auto_create_pr").notNull().default(false),
-  // "Full access" mode: when true, the agent's bash/write/edit/web_fetch
-  // tools skip their needsApproval gate entirely (dangerous commands,
-  // dotenv/secret file reads and writes, and outbound fetches all run
-  // without a manual approval click). Off by default -- this is an
-  // explicit, informed opt-in since it removes the safety net against
-  // prompt-injection-driven secret exfiltration or destructive commands.
+  // Deprecated 2026-08-12: superseded by defaultPermissionMode (3-way
+  // enum). Left in place, unread, for one release cycle; safe to drop
+  // later. See defaultPermissionMode for the current behavior.
   autoApproveTools: boolean("auto_approve_tools").notNull().default(false),
+  // "ask" (default): gate dangerous bash, .env reads/writes, and every
+  //   web_fetch behind a manual approval click.
+  // "autoAccept": skip the web_fetch approval gate only -- still gates
+  //   dangerous bash and .env access. A middle ground for people who
+  //   trust the agent's browsing but not its shell/secret access.
+  // "fullAccess": skip every approval gate entirely. Explicit, informed
+  //   opt-in -- removes the safety net against prompt-injection-driven
+  //   secret exfiltration or destructive commands.
+  defaultPermissionMode: text("default_permission_mode", {
+    enum: ["ask", "autoAccept", "fullAccess"],
+  }).notNull().default("ask"),
   alertsEnabled: boolean("alerts_enabled").notNull().default(true),
   alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
   publicUsageEnabled: boolean("public_usage_enabled").notNull().default(false),

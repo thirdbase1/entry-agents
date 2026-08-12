@@ -18,7 +18,7 @@ interface UpdatePreferencesRequest {
   defaultDiffMode?: DiffMode;
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
-  autoApproveTools?: boolean;
+  defaultPermissionMode?: "ask" | "autoAccept" | "fullAccess";
   alertsEnabled?: boolean;
   alertSoundEnabled?: boolean;
   publicUsageEnabled?: boolean;
@@ -127,16 +127,18 @@ export async function PATCH(req: Request) {
   }
 
   if (
-    body.autoApproveTools !== undefined &&
-    typeof body.autoApproveTools !== "boolean"
+    body.defaultPermissionMode !== undefined &&
+    !(["ask", "autoAccept", "fullAccess"] as const).includes(
+      body.defaultPermissionMode,
+    )
   ) {
     return Response.json(
-      { error: "Invalid autoApproveTools value" },
+      { error: "Invalid defaultPermissionMode value" },
       { status: 400 },
     );
   }
-  if (body.autoApproveTools !== undefined) {
-    updates.autoApproveTools = body.autoApproveTools;
+  if (body.defaultPermissionMode !== undefined) {
+    updates.defaultPermissionMode = body.defaultPermissionMode;
   }
 
   if (

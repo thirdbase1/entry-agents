@@ -118,7 +118,9 @@ type SessionChatContextValue = {
   archiveSession: () => Promise<void>;
   unarchiveSession: () => Promise<void>;
   updateSessionTitle: (title: string) => Promise<void>;
-  updateFullAccess: (fullAccessOverride: boolean | null) => Promise<void>;
+  updatePermissionMode: (
+    permissionModeOverride: "ask" | "autoAccept" | "fullAccess" | null,
+  ) => Promise<void>;
   updateChatModel: (modelId: string) => Promise<void>;
   updateChatReasoningEffort: (
     reasoningEffort: string | null,
@@ -254,7 +256,7 @@ type SessionChatMetadataContextValue = Pick<
   | "archiveSession"
   | "unarchiveSession"
   | "updateSessionTitle"
-  | "updateFullAccess"
+  | "updatePermissionMode"
   | "updateChatModel"
   | "updateChatReasoningEffort"
   | "updateSessionSnapshot"
@@ -999,25 +1001,27 @@ export function SessionChatProvider({
     [sessionRecord, mutate],
   );
 
-  const updateFullAccess = useCallback(
-    async (fullAccessOverride: boolean | null) => {
+  const updatePermissionMode = useCallback(
+    async (
+      permissionModeOverride: "ask" | "autoAccept" | "fullAccess" | null,
+    ) => {
       const res = await fetch(`/api/sessions/${sessionRecord.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          autoApproveToolsOverride: fullAccessOverride,
+          permissionModeOverride,
         }),
       });
 
       const data = (await res.json()) as { session?: Session; error?: string };
 
       if (!res.ok) {
-        throw new Error(data.error ?? "Failed to update full access setting");
+        throw new Error(data.error ?? "Failed to update permission mode");
       }
 
       const nextSession = data.session ?? {
         ...sessionRecord,
-        autoApproveToolsOverride: fullAccessOverride,
+        permissionModeOverride,
       };
       setSessionRecord(nextSession);
     },
@@ -1147,7 +1151,7 @@ export function SessionChatProvider({
       archiveSession,
       unarchiveSession,
       updateSessionTitle,
-      updateFullAccess,
+      updatePermissionMode,
       updateChatModel,
       updateChatReasoningEffort,
       updateSessionSnapshot,
@@ -1175,7 +1179,7 @@ export function SessionChatProvider({
       archiveSession,
       unarchiveSession,
       updateSessionTitle,
-      updateFullAccess,
+      updatePermissionMode,
       updateChatModel,
       updateChatReasoningEffort,
       updateSessionSnapshot,

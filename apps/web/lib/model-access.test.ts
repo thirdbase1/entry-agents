@@ -35,7 +35,7 @@ const basePreferences: UserPreferencesData = {
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,
-      autoApproveTools: false,
+      defaultPermissionMode: "ask",
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,

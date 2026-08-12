@@ -51,6 +51,32 @@ const DIFF_MODE_OPTIONS: Array<{ id: DiffMode; name: string }> = [
   { id: "split", name: "Split" },
 ];
 
+type PermissionMode = "ask" | "autoAccept" | "fullAccess";
+
+const PERMISSION_MODE_OPTIONS: Array<{
+  id: PermissionMode;
+  name: string;
+  description: string;
+}> = [
+  {
+    id: "ask",
+    name: "Ask",
+    description:
+      "Approve dangerous bash commands, .env access, and every web request.",
+  },
+  {
+    id: "autoAccept",
+    name: "Auto Accept",
+    description:
+      "Skip approval for web requests only. Bash and .env access still gated.",
+  },
+  {
+    id: "fullAccess",
+    name: "Full Access",
+    description: "Skip every approval gate entirely.",
+  },
+];
+
 function isThemePreference(value: string): value is ThemePreference {
   return THEME_OPTIONS.some((option) => option.id === value);
 }
@@ -290,12 +316,12 @@ function usePreferencesSectionState() {
     }
   };
 
-  const handleAutoApproveToolsChange = async (enabled: boolean) => {
+  const handlePermissionModeChange = async (mode: PermissionMode) => {
     setIsSaving(true);
     try {
-      await updatePreferences({ autoApproveTools: enabled });
+      await updatePreferences({ defaultPermissionMode: mode });
     } catch (error) {
-      console.error("Failed to update full access preference:", error);
+      console.error("Failed to update default permission mode:", error);
     } finally {
       setIsSaving(false);
     }
@@ -488,7 +514,7 @@ function usePreferencesSectionState() {
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
-    handleAutoApproveToolsChange,
+    handlePermissionModeChange,
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
     handlePublicUsageEnabledChange,
@@ -525,7 +551,7 @@ export function PreferencesSection() {
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
-    handleAutoApproveToolsChange,
+    handlePermissionModeChange,
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
     handlePublicUsageEnabledChange,
@@ -636,22 +662,33 @@ export function PreferencesSection() {
                 disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
               />
             </div>
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="auto-approve-tools">
-                  Full access by default
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Skip tool approval prompts (bash, file edits, fetch) for
-                  new sessions. Can be overridden per session.
-                </p>
-              </div>
-              <Switch
-                id="auto-approve-tools"
-                checked={preferences?.autoApproveTools ?? false}
-                onCheckedChange={handleAutoApproveToolsChange}
+            <div className="grid gap-2">
+              <Label htmlFor="permission-mode">
+                Default permission mode
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Controls which tool approval prompts new sessions skip
+                (bash, .env access, web requests). Can be overridden per
+                session.
+              </p>
+              <Select
+                value={preferences?.defaultPermissionMode ?? "ask"}
+                onValueChange={(value) =>
+                  handlePermissionModeChange(value as PermissionMode)
+                }
                 disabled={isSaving}
-              />
+              >
+                <SelectTrigger id="permission-mode" className="w-full">
+                  <SelectValue placeholder="Select a permission mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERMISSION_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-0.5">

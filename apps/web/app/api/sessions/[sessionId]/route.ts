@@ -15,10 +15,12 @@ interface UpdateSessionRequest {
   linesRemoved?: number;
   prNumber?: number;
   prStatus?: "open" | "merged" | "closed";
-  // Per-session override for "Full access" mode (skips tool approval
-  // gates for bash/write/edit/fetch). null clears the override so the
-  // session falls back to the user's default preference.
-  autoApproveToolsOverride?: boolean | null;
+  // Per-session override for the permission mode ("ask" | "autoAccept"
+  // | "fullAccess" -- see packages/agent/open-agent.ts and
+  // tools/{bash,read,write,fetch}.ts for what each mode gates). null
+  // clears the override so the session falls back to the user's
+  // default preference.
+  permissionModeOverride?: "ask" | "autoAccept" | "fullAccess" | null;
 }
 
 export async function GET(

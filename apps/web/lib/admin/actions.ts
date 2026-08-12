@@ -4,8 +4,10 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
 import {
   getAdminActivityTrend,
+  getAdminModelAlerts,
   getAdminModelHealth,
   type AdminActivityDayRow,
+  type AdminModelAlertRow,
   type AdminModelHealthRow,
 } from "@/lib/db/admin-activity";
 import {
@@ -14,6 +16,16 @@ import {
   type AdminSignupRow,
   type AdminUserLookupRow,
 } from "@/lib/db/admin-directory";
+import {
+  getAdminUserModelBreakdown,
+  getAdminUserProfile,
+  getAdminUserSessions,
+  getAdminUserUsageTrend,
+  type AdminUserModelRow,
+  type AdminUserProfile,
+  type AdminUserSessionRow,
+  type AdminUserUsageDayRow,
+} from "@/lib/db/admin-user-detail";
 import {
   getAdminPlatformStats,
   type AdminPlatformStats,
@@ -330,4 +342,37 @@ export async function lookupAdminUsers(
   await requireAdmin();
   const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
   return searchAdminUsers(query, modelCostCatalog);
+}
+
+/**
+ * Live model error-rate alerts for the admin dashboard banner. Admin-only.
+ */
+export async function getAdminAlerts(): Promise<AdminModelAlertRow[]> {
+  await requireAdmin();
+  return getAdminModelAlerts();
+}
+
+/**
+ * Full drill-down bundle for one user: profile + usage trend + model
+ * breakdown + recent sessions. Admin-only. Returns null in `profile` if
+ * the user doesn't exist (deleted account, bad id, etc.).
+ */
+export async function getAdminUserDetail(userId: string): Promise<{
+  profile: AdminUserProfile | null;
+  usageTrend: AdminUserUsageDayRow[];
+  modelBreakdown: AdminUserModelRow[];
+  sessions: AdminUserSessionRow[];
+}> {
+  await requireAdmin();
+
+  const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
+
+  const [profile, usageTrend, modelBreakdown, sessions] = await Promise.all([
+    getAdminUserProfile(userId, modelCostCatalog),
+    getAdminUserUsageTrend(userId, modelCostCatalog),
+    getAdminUserModelBreakdown(userId, modelCostCatalog),
+    getAdminUserSessions(userId),
+  ]);
+
+  return { profile, usageTrend, modelBreakdown, sessions };
 }

@@ -2,6 +2,7 @@
 
 import { formatTokens } from "@open-agents/shared";
 import { AlertTriangle, Loader2, Search } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +38,7 @@ function initialsFor(row: AdminUserLookupRow): string {
  * Free-text search box for looking up a single user's connections,
  * session count, and all-time estimated spend -- an admin support tool
  * so "how much has this person used" doesn't require a database
- * console.
+ * console. Each row links through to the full drill-down page.
  */
 export function AdminUserLookupSection() {
   const [query, setQuery] = useState("");
@@ -128,7 +129,10 @@ export function AdminUserLookupSection() {
               {results.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
-                    <div className="flex items-center gap-2.5">
+                    <Link
+                      href={`/settings/admin/users/${row.id}`}
+                      className="flex items-center gap-2.5 hover:underline"
+                    >
                       <Avatar className="size-7">
                         {row.avatarUrl && (
                           <AvatarImage
@@ -151,7 +155,7 @@ export function AdminUserLookupSection() {
                           {row.email ?? `@${row.username}`}
                         </span>
                       </div>
-                    </div>
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1.5">

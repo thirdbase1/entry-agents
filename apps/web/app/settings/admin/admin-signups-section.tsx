@@ -3,6 +3,7 @@
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -86,7 +87,10 @@ export function AdminSignupsSection() {
               {data.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
-                    <div className="flex items-center gap-2.5">
+                    <Link
+                      href={`/settings/admin/users/${row.id}`}
+                      className="flex items-center gap-2.5 hover:underline"
+                    >
                       <Avatar className="size-7">
                         {row.avatarUrl && (
                           <AvatarImage
@@ -106,7 +110,7 @@ export function AdminSignupsSection() {
                           {row.email ?? `@${row.username}`}
                         </span>
                       </div>
-                    </div>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(row.createdAt)}

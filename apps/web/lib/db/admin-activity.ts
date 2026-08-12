@@ -96,3 +96,59 @@ export async function getAdminModelHealth(
     }))
     .toSorted((a, b) => b.totalRuns - a.totalRuns);
 }
+
+export interface AdminModelAlertRow {
+  modelId: string;
+  totalRuns: number;
+  failedRuns: number;
+  errorRatePct: number;
+  windowHours: number;
+}
+
+/** Default lookback window for the live error-rate alert check. */
+export const MODEL_ALERT_WINDOW_HOURS = 24;
+/** Minimum sample size before a model's error rate is trusted. */
+export const MODEL_ALERT_MIN_RUNS = 5;
+/** Error rate (%) above which a model is flagged as unhealthy. */
+export const MODEL_ALERT_ERROR_RATE_THRESHOLD_PCT = 15;
+
+/**
+ * Models whose recent error rate has crossed the alert threshold --
+ * feeds the admin dashboard's alert banner. Deliberately windowed much
+ * tighter (24h) than the 7-day model-health table so a fresh regression
+ * (bad deploy, provider outage) surfaces fast, and gated on a minimum
+ * sample size so a model with 1 failed run out of 2 doesn't false-alarm.
+ */
+export async function getAdminModelAlerts(
+  windowHours = MODEL_ALERT_WINDOW_HOURS,
+  minRuns = MODEL_ALERT_MIN_RUNS,
+  errorRateThresholdPct = MODEL_ALERT_ERROR_RATE_THRESHOLD_PCT,
+): Promise<AdminModelAlertRow[]> {
+  const since = new Date();
+  since.setHours(since.getHours() - windowHours);
+
+  const rows = await db
+    .select({
+      modelId: workflowRuns.modelId,
+      totalRuns: sql<number>`count(*)::int`,
+      failedRuns: sql<number>`coalesce(sum(case when ${workflowRuns.status} = 'failed' then 1 else 0 end), 0)::int`,
+    })
+    .from(workflowRuns)
+    .where(sql`${workflowRuns.startedAt} >= ${since.toISOString()}`)
+    .groupBy(workflowRuns.modelId);
+
+  return rows
+    .map((row) => ({
+      modelId: row.modelId ?? "unknown",
+      totalRuns: row.totalRuns,
+      failedRuns: row.failedRuns,
+      errorRatePct:
+        row.totalRuns > 0 ? (row.failedRuns / row.totalRuns) * 100 : 0,
+      windowHours,
+    }))
+    .filter(
+      (row) =>
+        row.totalRuns >= minRuns && row.errorRatePct >= errorRateThresholdPct,
+    )
+    .toSorted((a, b) => b.errorRatePct - a.errorRatePct);
+}

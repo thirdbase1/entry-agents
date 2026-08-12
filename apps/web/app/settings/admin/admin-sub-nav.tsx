@@ -37,7 +37,10 @@ export function AdminSubNav() {
   return (
     <div className="flex gap-1 rounded-md border p-0.5">
       {ADMIN_TABS.map((tab) => {
-        const isActive = pathname === tab.href;
+        const isActive =
+          tab.href === "/settings/admin"
+            ? pathname === tab.href
+            : pathname.startsWith(tab.href);
         return (
           <Link
             key={tab.id}

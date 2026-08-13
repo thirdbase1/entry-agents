@@ -17,6 +17,7 @@ import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
+  DEFAULT_SANDBOX_VCPUS,
 } from "../apps/web/lib/sandbox/config.ts";
 
 const SANDBOX_BASE_SNAPSHOT_CONFIG_PATH = "apps/web/lib/sandbox/config.ts";
@@ -25,6 +26,7 @@ interface CliOptions {
   baseSnapshotId?: string;
   sandboxTimeoutMs?: number;
   commandTimeoutMs?: number;
+  vcpus?: number;
   commands: string[];
 }
 
@@ -42,6 +44,7 @@ Options:
   --command <shell-command>    Command to run inside the sandbox. Repeat as needed.
   --sandbox-timeout-ms <ms>    Sandbox lifetime for the refresh run
   --command-timeout-ms <ms>    Timeout for each setup command (default: ${DEFAULT_BASE_SNAPSHOT_COMMAND_TIMEOUT_MS})
+  --vcpus <n>                   vCPU count for the prep sandbox (default: ${DEFAULT_SANDBOX_VCPUS}, matches account tier)
   --help                       Show this message
 
 Current configured base snapshot:
@@ -75,6 +78,7 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
   let baseSnapshotId: string | undefined;
   let sandboxTimeoutMs: number | undefined;
   let commandTimeoutMs: number | undefined;
+  let vcpus: number | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -113,6 +117,12 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
       continue;
     }
 
+    if (arg === "--vcpus") {
+      vcpus = parsePositiveNumber(requireOptionValue(argv, index, arg), arg);
+      index += 1;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -120,6 +130,7 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
     baseSnapshotId,
     sandboxTimeoutMs,
     commandTimeoutMs,
+    vcpus,
     commands,
   };
 }
@@ -136,6 +147,7 @@ async function main() {
     commands: parsed.commands,
     sandboxTimeoutMs: parsed.sandboxTimeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
     commandTimeoutMs: parsed.commandTimeoutMs,
+    vcpus: parsed.vcpus ?? DEFAULT_SANDBOX_VCPUS,
     ports: DEFAULT_SANDBOX_PORTS,
     log: (message) => console.log(message),
   });

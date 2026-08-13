@@ -1,6 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": [".agents/skills/**", "apps/web/components/ui/**"],
+  "ignorePatterns": [
+    ".agents/skills/**",
+    "apps/web/components/ui/**",
+    "packages/agent/skills/builtin/generated.ts"
+  ],
   "rules": {
     "arrow-body-style": "off",
     "complexity": "off",

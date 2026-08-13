@@ -21,6 +21,14 @@ export interface RefreshBaseSnapshotOptions {
   commandTimeoutMs?: number;
   ports?: number[];
   env?: Record<string, string>;
+  /**
+   * vCPU count for the sandbox used to prepare the snapshot. Defaults to the
+   * SDK's own default (4) when omitted, which exceeds what Hobby-tier
+   * Vercel accounts are entitled to and returns an HTTP 400. Callers on
+   * Hobby should pass 1 (see apps/web/lib/sandbox/config.ts's
+   * DEFAULT_SANDBOX_VCPUS, which already accounts for this).
+   */
+  vcpus?: number;
   log?: (message: string) => void;
 }
 
@@ -97,6 +105,7 @@ export async function refreshBaseSnapshot(
         skipGitWorkspaceBootstrap: true,
         ...(options.ports !== undefined && { ports: options.ports }),
         ...(options.env !== undefined && { env: options.env }),
+        ...(options.vcpus !== undefined && { vcpus: options.vcpus }),
       },
     });
 

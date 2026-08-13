@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-const CODE_EDITOR_PID_FILE = "/tmp/open-agents-code-server.pid";
-const CODE_EDITOR_LOCK_DIR = "/tmp/open-agents-code-server.lock";
+const CODE_EDITOR_PID_FILE = "/tmp/entry-code-server.pid";
+const CODE_EDITOR_LOCK_DIR = "/tmp/entry-code-server.lock";
 const RUNNING_CODE_SERVER_PID = "9001";
 
 const currentSessionRecord = {
@@ -144,7 +144,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireOwnedSessionWithSandboxGuard: requireOwnedSessionWithSandboxGuardMock,
 }));
 
-mock.module("@open-agents/sandbox", () => ({
+mock.module("@entry/sandbox", () => ({
   connectSandbox: connectSandboxMock,
 }));
 
@@ -260,11 +260,11 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
     };
     const { POST } = await routeModulePromise;
     const expectedError =
-      "The code editor is disabled in the hosted demo. Deploy your own copy to unlock the full Open Agents template.";
+      "The code editor is disabled in the hosted demo. Deploy your own copy to unlock the full Entry template.";
 
     const response = await POST(
       new Request(
-        "https://open-agents.dev/api/sessions/session-1/code-editor",
+        "https://entry.dev/api/sessions/session-1/code-editor",
         {
           method: "POST",
         },

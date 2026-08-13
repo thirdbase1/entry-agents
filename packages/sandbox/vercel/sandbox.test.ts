@@ -379,7 +379,7 @@ describe("GitHub setup credential brokering", () => {
     await sandboxModule.VercelSandbox.create({
       githubToken: "github-user-token",
       source: {
-        url: "https://github.com/open-agents/example",
+        url: "https://github.com/entry/example",
         branch: "main",
       },
     });
@@ -423,7 +423,7 @@ describe("GitHub setup credential brokering", () => {
     });
     expect(createCalls[0]?.source).toEqual({
       type: "git",
-      url: "https://github.com/open-agents/example",
+      url: "https://github.com/entry/example",
       revision: "main",
     });
     expect(updateNetworkPolicyCalls).toEqual([{ allow: { "*": [] } }]);
@@ -444,7 +444,7 @@ describe("VercelSandbox.create", () => {
     await sandboxModule.VercelSandbox.create({
       baseSnapshotId: "snap-base-1",
       source: {
-        url: "https://github.com/open-agents/example",
+        url: "https://github.com/entry/example",
         branch: "main",
       },
     });
@@ -460,7 +460,7 @@ describe("VercelSandbox.create", () => {
         "clone",
         "--branch",
         "main",
-        "https://github.com/open-agents/example",
+        "https://github.com/entry/example",
         ".",
       ],
       cwd: "/vercel/sandbox",

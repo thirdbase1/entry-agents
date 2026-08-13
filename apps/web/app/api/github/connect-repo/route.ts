@@ -1,4 +1,4 @@
-import { connectSandbox } from "@open-agents/sandbox";
+import { connectSandbox } from "@entry/sandbox";
 import { performAutoCommit } from "@/lib/chat/auto-commit-direct";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { generateBranchName, isSafeBranchName } from "@/lib/git/helpers";

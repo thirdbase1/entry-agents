@@ -208,7 +208,7 @@ export function getProviderOptionsForModel(
  * GATEWAY_BASE_URL/GATEWAY_API_KEY or constructs a real network client.
  *
  * Used for module-scope placeholders like `defaultModel` in
- * open-agent.ts: those get immediately overridden per-request by
+ * entry-agent.ts: those get immediately overridden per-request by
  * `prepareCall`, so they're never actually invoked -- but ToolLoopAgent's
  * constructor reads properties like `specificationVersion` off `model`
  * synchronously at construction time, so even a *lazy* Proxy that defers
@@ -247,8 +247,8 @@ export function sharedProvider(
   const { config, providerOptionsOverrides, appName, appUrl } = options;
 
   const attributionHeaders = {
-    "http-referer": appUrl ?? "https://open-agents.dev",
-    "x-title": appName ?? "Open Agents",
+    "http-referer": appUrl ?? "https://entry.dev",
+    "x-title": appName ?? "Entry",
   };
 
   const { baseURL, apiKey } = config ?? getSharedProviderConfig();

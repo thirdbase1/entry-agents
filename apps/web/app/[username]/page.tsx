@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { formatTokens } from "@open-agents/shared/lib/tool-state";
+import { formatTokens } from "@entry/shared/lib/tool-state";
 import { ContributionChart } from "@/components/contribution-chart";
 import { getPublicUsageProfile } from "@/lib/db/public-usage-profile";
 import { UsageInsightsSection } from "../settings/usage/usage-insights-section";
@@ -36,7 +36,7 @@ export async function generateMetadata({
   if (!profile) {
     return {
       title: "Public profile",
-      description: "Public Open Agents usage profile.",
+      description: "Public Entry usage profile.",
     };
   }
 
@@ -306,16 +306,16 @@ export default async function PublicUsagePage({
         {/* Footer */}
         <div className="mt-16 flex items-center justify-between gap-4 border-t border-border/50 pt-6">
           <span className="font-mono text-xs text-muted-foreground">
-            open-agents.dev{publicProfilePath}
+            entry.dev{publicProfilePath}
             {profile.dateSelection.value
               ? `?date=${profile.dateSelection.value}`
               : ""}
           </span>
           <a
-            href="https://open-agents.dev"
+            href="https://entry.dev"
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Open Agents ↗
+            Entry ↗
           </a>
         </div>
       </div>

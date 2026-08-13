@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ProviderOptionsByProvider } from "@open-agents/agent";
+import type { ProviderOptionsByProvider } from "@entry/agent";
 
 export const REASONING_EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORT_LEVELS)[number];

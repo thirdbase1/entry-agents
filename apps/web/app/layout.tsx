@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 const themeInitializationScript = `
 (() => {
-  const storageKey = "open-agents-theme";
+  const storageKey = "entry-theme";
   const darkModeMediaQuery = "(prefers-color-scheme: dark)";
   const storedTheme = window.localStorage.getItem(storageKey);
 
@@ -46,13 +46,13 @@ const metadataBase =
     ? new URL(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
     : process.env.VERCEL_URL
       ? new URL(`https://${process.env.VERCEL_URL}`)
-      : new URL("https://open-agents.dev");
+      : new URL("https://entry.dev");
 
 export const metadata: Metadata = {
   metadataBase,
   title: {
-    default: "Open Agents",
-    template: "%s | Open Agents",
+    default: "Entry",
+    template: "%s | Entry",
   },
   description:
     "Spawn coding agents that run infinitely in the cloud. Powered by AI SDK, Gateway, Sandbox, and Workflow SDK.",

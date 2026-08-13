@@ -48,7 +48,7 @@ const ORDER: PermissionMode[] = ["ask", "autoAccept", "fullAccess"];
 /**
  * Composer toolbar control for the 3-way tool-approval permission mode.
  * Replaces the old single on/off "full access" toggle -- see
- * packages/agent/open-agent.ts and tools/{bash,read,write,fetch}.ts for
+ * packages/agent/entry-agent.ts and tools/{bash,read,write,fetch}.ts for
  * what each mode actually gates.
  */
 export function PermissionModeSelector({

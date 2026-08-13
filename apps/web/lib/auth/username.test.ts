@@ -13,7 +13,7 @@ describe("auth username helpers", () => {
       deriveAuthUsername({
         preferred_username: "gioacchinoalbanese-2373",
         email: "gioacchinoalbanese@icloud.com",
-        name: "na-test-open-agents",
+        name: "na-test-entry",
       }),
     ).toBe("gioacchinoalbanese-2373");
   });
@@ -22,7 +22,7 @@ describe("auth username helpers", () => {
     expect(
       deriveAuthUsername({
         email: "gioacchinoalbanese@icloud.com",
-        name: "na-test-open-agents",
+        name: "na-test-entry",
       }),
     ).toBe("gioacchinoalbanese");
   });

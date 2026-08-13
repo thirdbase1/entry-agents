@@ -10,10 +10,10 @@ export {
 export type {
   AgentModelSelection,
   AgentSandboxContext,
-  OpenAgentCallOptions,
-  OpenAgentModelInput,
-} from "./open-agent";
-export { defaultModel, defaultModelLabel, openAgent } from "./open-agent";
+  EntryCallOptions,
+  EntryModelInput,
+} from "./entry";
+export { defaultModel, defaultModelLabel, openAgent } from "./entry";
 // Skills exports
 export { discoverSkills, parseSkillFrontmatter } from "./skills/discovery";
 export { seedBuiltinSkills } from "./skills/builtin/seed";

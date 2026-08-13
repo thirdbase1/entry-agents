@@ -27,7 +27,7 @@ Then search for these identifiers and strings to catch older or newer variants:
 - `isManagedTemplateTrialUser`
 - `MANAGED_TEMPLATE_TRIAL_`
 - `deploy-your-own`
-- `open-agents.dev`
+- `entry.dev`
 - `vercel.com`
 - `This hosted deployment includes`
 - `does not allow message deletion`

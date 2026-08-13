@@ -335,7 +335,7 @@ mock.module("ai", () => ({
     }),
 }));
 
-mock.module("@open-agents/agent", () => ({}));
+mock.module("@entry/agent", () => ({}));
 
 mock.module("@/lib/db/sessions", () => ({
   getChatById: async () => testChatRecord,

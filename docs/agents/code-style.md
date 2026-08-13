@@ -1,6 +1,6 @@
 # Code Style & Patterns
 
-Detailed coding conventions, tool implementation patterns, and common patterns for the Open Agents codebase.
+Detailed coding conventions, tool implementation patterns, and common patterns for the Entry codebase.
 
 ## Package Manager
 
@@ -121,7 +121,7 @@ Use `workspace:*` for internal packages:
 ```json
 {
   "dependencies": {
-    "@open-agents/sandbox": "workspace:*"
+    "@entry/sandbox": "workspace:*"
   }
 }
 ```

@@ -18,7 +18,7 @@ type FakeSession = {
 const sessions: readonly FakeSession[] = [
   {
     title: "Auth flow",
-    repo: "open-agents",
+    repo: "entry",
     branch: "feat/auth-flow",
     prompt: "Build the auth flow with GitHub OAuth",
     summary:
@@ -35,7 +35,7 @@ const sessions: readonly FakeSession[] = [
   },
   {
     title: "API refactor",
-    repo: "open-agents",
+    repo: "entry",
     branch: "feat/edge-api",
     prompt: "Refactor the chat API routes to use edge runtime",
     summary:
@@ -48,7 +48,7 @@ const sessions: readonly FakeSession[] = [
   },
   {
     title: "Fix tests",
-    repo: "open-agents",
+    repo: "entry",
     branch: "fix/test-suite",
     prompt: "Run the test suite and fix any failing tests",
     summary:

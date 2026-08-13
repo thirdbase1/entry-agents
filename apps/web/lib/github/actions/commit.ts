@@ -8,7 +8,7 @@ import {
   syncToRemotePreservingChanges,
   withTemporaryGitHubAuth,
   hasUncommittedChanges as checkUncommitted,
-} from "@open-agents/sandbox";
+} from "@entry/sandbox";
 import {
   mintInstallationToken,
   revokeInstallationToken,

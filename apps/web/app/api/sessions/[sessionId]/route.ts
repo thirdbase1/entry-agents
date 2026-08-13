@@ -16,7 +16,7 @@ interface UpdateSessionRequest {
   prNumber?: number;
   prStatus?: "open" | "merged" | "closed";
   // Per-session override for the permission mode ("ask" | "autoAccept"
-  // | "fullAccess" -- see packages/agent/open-agent.ts and
+  // | "fullAccess" -- see packages/agent/entry-agent.ts and
   // tools/{bash,read,write,fetch}.ts for what each mode gates). null
   // clears the override so the session falls back to the user's
   // default preference.

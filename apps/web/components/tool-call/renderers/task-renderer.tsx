@@ -1,8 +1,8 @@
 "use client";
 
-import type { TaskPendingToolCall } from "@open-agents/agent";
-import { formatTokens, toRelativePath } from "@open-agents/shared";
-import type { ToolRenderState } from "@open-agents/shared/lib/tool-state";
+import type { TaskPendingToolCall } from "@entry/agent";
+import { formatTokens, toRelativePath } from "@entry/shared";
+import type { ToolRenderState } from "@entry/shared/lib/tool-state";
 import {
   Bot,
   FileText,

@@ -4,7 +4,7 @@ import {
   connectSandbox,
   type Sandbox,
   type SandboxState,
-} from "@open-agents/sandbox";
+} from "@entry/sandbox";
 import {
   getSessionById,
   updateSessionIfNotArchived,

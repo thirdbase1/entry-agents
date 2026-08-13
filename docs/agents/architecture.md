@@ -1,6 +1,6 @@
 # Architecture
 
-This is a Turborepo monorepo for "Open Agents" - an AI coding agent built with AI SDK.
+This is a Turborepo monorepo for "Entry" - an AI coding agent built with AI SDK.
 
 ## Core Flow
 
@@ -30,8 +30,8 @@ The `task` tool delegates to specialized subagents:
 apps/
   web/           # Web interface
 packages/
-  agent/         # Core agent logic (@open-agents/agent)
-  sandbox/       # Sandbox abstraction (@open-agents/sandbox)
-  shared/        # Shared utilities (@open-agents/shared)
+  agent/         # Core agent logic (@entry/agent)
+  sandbox/       # Sandbox abstraction (@entry/sandbox)
+  shared/        # Shared utilities (@entry/shared)
   tsconfig/      # Shared TypeScript configs
 ```

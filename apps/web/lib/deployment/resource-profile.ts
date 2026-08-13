@@ -1,11 +1,11 @@
-export type OpenAgentsResourceProfile = "standard" | "hobby";
+export type EntryResourceProfile = "standard" | "hobby";
 
-export function getOpenAgentsResourceProfile(): OpenAgentsResourceProfile {
-  return process.env.OPEN_AGENTS_RESOURCE_PROFILE === "hobby"
+export function getEntryResourceProfile(): EntryResourceProfile {
+  return process.env.ENTRY_RESOURCE_PROFILE === "hobby"
     ? "hobby"
     : "standard";
 }
 
 export function isHobbyResourceProfile(): boolean {
-  return getOpenAgentsResourceProfile() === "hobby";
+  return getEntryResourceProfile() === "hobby";
 }

@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { discoverSkills } from "@open-agents/agent";
+import { discoverSkills } from "@entry/agent";
 import {
   connectSandbox,
   type Sandbox,
   type SandboxState,
-} from "@open-agents/sandbox";
+} from "@entry/sandbox";
 import { getSessionById } from "@/lib/db/sessions";
 import {
   kickSandboxProvisioningWorkflow,

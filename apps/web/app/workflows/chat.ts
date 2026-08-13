@@ -8,7 +8,7 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import type { OpenAgentCallOptions } from "@open-agents/agent";
+import type { EntryCallOptions } from "@entry/agent";
 import { getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -73,7 +73,7 @@ type Options = {
   authSession: AuthSessionContext;
   selectedModelId?: string;
   modelId?: string;
-  agentOptions?: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
+  agentOptions?: Omit<EntryCallOptions, "sandbox" | "skills">;
   assistantId?: string;
   inputMessagesPersisted?: boolean;
   maxSteps?: number;
@@ -84,7 +84,7 @@ type Options = {
 type ChatModelRuntime = {
   selectedModelId: string;
   modelId: string;
-  agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
+  agentOptions: Omit<EntryCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
 };
@@ -107,7 +107,7 @@ type SerializableGithubContext = {
   repoOwner?: string;
   repoName?: string;
 };
-type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github"> & {
+type WorkflowAgentOptions = Omit<EntryCallOptions, "github"> & {
   github?: SerializableGithubContext;
 };
 
@@ -307,7 +307,7 @@ async function resolveChatModelRuntime(params: {
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
   // Permission mode: session-level override wins, otherwise fall back to
   // the user's default preference, otherwise "ask". See
-  // packages/agent/open-agent.ts (experimental_context.permissionMode)
+  // packages/agent/entry-agent.ts (experimental_context.permissionMode)
   // and tools/{bash,read,write,fetch}.ts for what each mode actually
   // gates.
   const permissionMode: "ask" | "autoAccept" | "fullAccess" =
@@ -783,7 +783,7 @@ async function sendDataPart(
  * not the connected client) since step boundaries are checkpointed.
  */
 async function performAgentCommitAndPush(params: {
-  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  sandboxState: EntryCallOptions["sandbox"]["state"];
   userId: string;
   sessionId: string;
   sessionTitle: string;
@@ -799,7 +799,7 @@ async function performAgentCommitAndPush(params: {
 }> {
   "use step";
 
-  const { connectSandbox } = await import("@open-agents/sandbox");
+  const { connectSandbox } = await import("@entry/sandbox");
   const { performAutoCommit } = await import("@/lib/chat/auto-commit-direct");
 
   const sandbox = await connectSandbox(params.sandboxState);
@@ -953,7 +953,7 @@ export async function runAgentWorkflow(options: Options) {
   let streamClosed = false;
   let workflowStatus: WorkflowRunStatus = "completed";
   let caughtError: unknown;
-  let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
+  let sandboxState: EntryCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
 
   try {
@@ -1361,7 +1361,7 @@ const runAgentStep = async (
     // workflow-to-step serialization boundary. This runs with full
     // Node/DB access since we're already inside a step.
     const githubContext = agentOptions.github;
-    const fullAgentOptions: OpenAgentCallOptions = {
+    const fullAgentOptions: EntryCallOptions = {
       ...agentOptions,
       github: githubContext
         ? {

@@ -1,4 +1,4 @@
-import type { SandboxState } from "@open-agents/sandbox";
+import type { SandboxState } from "@entry/sandbox";
 import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
 import { addCacheControl } from "./context-management";
@@ -33,7 +33,7 @@ export interface AgentModelSelection {
   providerOptionsOverrides?: ProviderOptionsByProvider;
 }
 
-export type OpenAgentModelInput = SharedProviderModelId | AgentModelSelection;
+export type EntryModelInput = SharedProviderModelId | AgentModelSelection;
 
 export interface AgentSandboxContext {
   state: SandboxState;
@@ -44,8 +44,8 @@ export interface AgentSandboxContext {
 
 const callOptionsSchema = z.object({
   sandbox: z.custom<AgentSandboxContext>(),
-  model: z.custom<OpenAgentModelInput>().optional(),
-  subagentModel: z.custom<OpenAgentModelInput>().optional(),
+  model: z.custom<EntryModelInput>().optional(),
+  subagentModel: z.custom<EntryModelInput>().optional(),
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
   // Permission mode for this call, threaded to every tool via
@@ -65,7 +65,7 @@ const callOptionsSchema = z.object({
   github: z.custom<GithubToolContext>().optional(),
 });
 
-export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
+export type EntryCallOptions = z.infer<typeof callOptionsSchema>;
 
 // Free-tier model -- kept working regardless of Opencode Zen billing
 // status (see apps/web/lib/model-availability.ts, which currently hides
@@ -83,7 +83,7 @@ export const defaultModelLabel = "deepseek-v4-flash" as const;
 export const defaultModel = createInertPlaceholderModel(defaultModelLabel);
 
 function normalizeAgentModelSelection(
-  selection: OpenAgentModelInput | undefined,
+  selection: EntryModelInput | undefined,
   fallbackId: SharedProviderModelId,
 ): AgentModelSelection {
   if (!selection) {
@@ -125,7 +125,7 @@ export const openAgent = new ToolLoopAgent({
   },
   prepareCall: ({ options, ...settings }) => {
     if (!options) {
-      throw new Error("Open Agent requires call options with sandbox.");
+      throw new Error("Entry requires call options with sandbox.");
     }
 
     const mainSelection = normalizeAgentModelSelection(
@@ -177,4 +177,4 @@ export const openAgent = new ToolLoopAgent({
   },
 });
 
-export type OpenAgent = typeof openAgent;
+export type Entry = typeof openAgent;

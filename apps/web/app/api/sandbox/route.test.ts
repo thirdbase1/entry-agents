@@ -199,7 +199,7 @@ mock.module("@/lib/skills/global-skill-installer", () => ({
   },
 }));
 
-mock.module("@open-agents/sandbox", () => ({
+mock.module("@entry/sandbox", () => ({
   connectSandbox: async (config: ConnectConfig) => {
     connectConfigs.push(config);
 
@@ -262,7 +262,7 @@ describe("/api/sandbox lifecycle kicks", () => {
       lifecycleVersion: 3,
       sandboxState: { type: "vercel" },
       vercelProjectId: "project-1",
-      vercelProjectName: "open-agents-web",
+      vercelProjectName: "entry-web",
       vercelTeamId: "team-1",
       globalSkillRefs: [],
     };

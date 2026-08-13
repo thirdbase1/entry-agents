@@ -6,7 +6,7 @@ import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Model pricing for every provider available in Open Agents.",
+  description: "Model pricing for every provider available in Entry.",
 };
 
 export const dynamic = "force-dynamic";

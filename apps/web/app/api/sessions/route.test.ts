@@ -162,18 +162,18 @@ describe("/api/sessions POST vercel project linking", () => {
       createJsonRequest(
         {
           branch: "main",
-          cloneUrl: "https://github.com/vercel-labs/open-agents",
+          cloneUrl: "https://github.com/vercel-labs/entry",
           repoOwner: "vercel-labs",
-          repoName: "open-agents",
+          repoName: "entry",
         },
-        "https://open-agents.dev/api/sessions",
+        "https://entry.dev/api/sessions",
       ),
     );
     const body = (await response.json()) as { error: string };
 
     expect(response.status).toBe(403);
     expect(body.error).toBe(
-      "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Open Agents template.",
+      "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Entry template.",
     );
     expect(createCalls).toHaveLength(0);
   });
@@ -195,9 +195,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         branch: "main",
-        cloneUrl: "https://github.com/vercel-labs/open-agents",
+        cloneUrl: "https://github.com/vercel-labs/entry",
         repoOwner: "vercel-labs",
-        repoName: "open-agents",
+        repoName: "entry",
       }),
     );
     const body = (await response.json()) as { error: string };
@@ -277,9 +277,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         repoOwner: "vercel",
-        repoName: "open-agents",
+        repoName: "entry",
         branch: "main",
-        cloneUrl: "https://github.com/vercel/open-agents",
+        cloneUrl: "https://github.com/vercel/entry",
         vercelProject: {
           projectId: "project-999",
           projectName: "rogue-project",
@@ -311,9 +311,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         repoOwner: "vercel",
-        repoName: "open-agents",
+        repoName: "entry",
         branch: "main",
-        cloneUrl: "https://github.com/vercel/open-agents",
+        cloneUrl: "https://github.com/vercel/entry",
       }),
     );
     const body = (await response.json()) as {
@@ -344,9 +344,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         repoOwner: "vercel",
-        repoName: "open-agents",
+        repoName: "entry",
         branch: "main",
-        cloneUrl: "https://github.com/vercel/open-agents",
+        cloneUrl: "https://github.com/vercel/entry",
         vercelProject: null,
       }),
     );
@@ -371,9 +371,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         repoOwner: "vercel",
-        repoName: "open-agents",
+        repoName: "entry",
         branch: "main",
-        cloneUrl: "https://github.com/vercel/open-agents",
+        cloneUrl: "https://github.com/vercel/entry",
       }),
     );
 
@@ -389,9 +389,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         repoOwner: 'vercel" && echo nope && "',
-        repoName: "open-agents",
+        repoName: "entry",
         branch: "main",
-        cloneUrl: "https://github.com/vercel/open-agents",
+        cloneUrl: "https://github.com/vercel/entry",
       }),
     );
     const body = (await response.json()) as { error: string };
@@ -407,9 +407,9 @@ describe("/api/sessions POST vercel project linking", () => {
     const response = await POST(
       createJsonRequest({
         repoOwner: "vercel",
-        repoName: "open-agents",
+        repoName: "entry",
         branch: "feature/auto-pr",
-        cloneUrl: "https://github.com/vercel/open-agents",
+        cloneUrl: "https://github.com/vercel/entry",
         autoCommitPush: true,
         autoCreatePr: true,
       }),

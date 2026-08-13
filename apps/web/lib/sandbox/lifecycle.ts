@@ -1,6 +1,6 @@
 import "server-only";
 
-import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
+import { connectSandbox, type SandboxState } from "@entry/sandbox";
 import {
   getChatsBySessionId,
   getSessionById,

@@ -7,7 +7,7 @@ import { getUserGitHubToken } from "@/lib/github/token";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { Octokit } from "@octokit/rest";
 import { generateText } from "ai";
-import { gateway } from "@open-agents/agent";
+import { gateway } from "@entry/agent";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;

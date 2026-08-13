@@ -131,7 +131,7 @@ describe("GET /api/auth/info", () => {
     const { GET } = await routeModulePromise;
 
     const response = await GET(
-      createRequest("https://open-agents.dev/api/auth/info"),
+      createRequest("https://entry.dev/api/auth/info"),
     );
 
     expect(response.status).toBe(200);

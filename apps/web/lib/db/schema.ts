@@ -1,4 +1,4 @@
-import type { SandboxState } from "@open-agents/sandbox";
+import type { SandboxState } from "@entry/sandbox";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
   boolean,

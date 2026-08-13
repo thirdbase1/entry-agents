@@ -432,7 +432,7 @@ export async function syncToRemotePreservingChanges(
 
   const stashResult = await exec(
     sandbox,
-    "git stash push --include-untracked -m open-agents-pre-commit-sync",
+    "git stash push --include-untracked -m entry-pre-commit-sync",
     30000,
   );
   if (!stashResult.success) {

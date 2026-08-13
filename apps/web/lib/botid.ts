@@ -14,7 +14,7 @@ export const botIdConfig = {
       "*.vercel.com",
       "*.vercel.dev",
       "*.vercel.run",
-      "*.open-agents.dev",
+      "*.entry.dev",
     ],
   },
 };

@@ -30,6 +30,13 @@ export interface AutoCommitParams {
   repoName: string;
   /** base branch for new branches that don't exist on remote yet */
   baseBranch?: string;
+  /**
+   * Caller-supplied commit message (e.g. from the agent's github tool or the
+   * manual commit dialog). When omitted, one is generated from the staged
+   * diff via `generateCommitMessage` below -- same as the background
+   * auto-commit-after-each-step flow.
+   */
+  commitMessage?: string;
 }
 
 export interface AutoCommitResult {
@@ -37,6 +44,8 @@ export interface AutoCommitResult {
   pushed: boolean;
   commitMessage?: string;
   commitSha?: string;
+  /** https://github.com/<owner>/<repo>/commit/<sha>, set whenever commitSha is */
+  commitUrl?: string;
   error?: string;
 }
 
@@ -56,6 +65,7 @@ export async function performAutoCommit(
     repoOwner,
     repoName,
     baseBranch,
+    commitMessage: presetCommitMessage,
   } = params;
 
   // 1. check for uncommitted changes
@@ -145,8 +155,10 @@ export async function performAutoCommit(
     };
   }
 
-  // 4. generate commit message from staged diff
-  const commitMessage = await generateCommitMessage(sandbox, sessionTitle);
+  // 4. use the caller-supplied message, or generate one from the staged diff
+  const commitMessage =
+    presetCommitMessage?.trim() ||
+    (await generateCommitMessage(sandbox, sessionTitle));
 
   const coAuthor = await buildCoAuthor(userId);
 
@@ -234,6 +246,7 @@ export async function performAutoCommit(
     pushed: true,
     commitMessage,
     commitSha: result.commitSha,
+    commitUrl: `https://github.com/${repoOwner}/${repoName}/commit/${result.commitSha}`,
   };
 }
 

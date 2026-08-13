@@ -900,6 +900,7 @@ export async function runAgentWorkflow(options: Options) {
       ),
     };
 
+    const hasRepo = Boolean(runtime.repoOwner && runtime.repoName);
     const agentOptions: OpenAgentCallOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
@@ -910,6 +911,50 @@ export async function runAgentWorkflow(options: Options) {
         environmentDetails: runtime.environmentDetails,
       },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
+      // Always force the real injected implementation here (after the
+      // agentOptions spreads above) -- same treatment as sandbox/skills.
+      // Reuses the exact verified-commit path as the manual "Commit &
+      // Push" button and the background auto-commit (performAutoCommit),
+      // see apps/web/lib/chat/auto-commit-direct.ts.
+      github: {
+        hasRepo,
+        repoOwner: runtime.repoOwner,
+        repoName: runtime.repoName,
+        commitAndPush: async (input) => {
+          if (!hasRepo || !runtime.repoOwner || !runtime.repoName) {
+            return {
+              committed: false,
+              pushed: false,
+              error: "No GitHub repository is connected to this session yet.",
+            };
+          }
+          const { connectSandbox } = await import("@open-agents/sandbox");
+          const { performAutoCommit } =
+            await import("@/lib/chat/auto-commit-direct");
+          const sandbox = await connectSandbox(runtime.sandboxState);
+          const commitMessage = input.commitTitle
+            ? input.commitBody
+              ? `${input.commitTitle}\n\n${input.commitBody}`
+              : input.commitTitle
+            : undefined;
+          const result = await performAutoCommit({
+            sandbox,
+            userId: options.userId,
+            sessionId: options.sessionId,
+            sessionTitle: runtime.sessionTitle,
+            repoOwner: runtime.repoOwner,
+            repoName: runtime.repoName,
+            ...(commitMessage ? { commitMessage } : {}),
+          });
+          return {
+            committed: result.committed,
+            pushed: result.pushed,
+            commitSha: result.commitSha,
+            commitUrl: result.commitUrl,
+            error: result.error,
+          };
+        },
+      },
     };
     sandboxState = runtime.sandboxState;
 

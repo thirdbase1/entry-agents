@@ -169,11 +169,12 @@ const ClosePrDialog = dynamic(
   { ssr: false },
 );
 
-const CreateRepoDialog = dynamic(
+const ConnectRepoDialog = dynamic(
   () =>
-    import("@/components/create-repo-dialog").then((m) => m.CreateRepoDialog),
+    import("@/components/connect-repo-dialog").then((m) => m.ConnectRepoDialog),
   { ssr: false },
 );
+
 const Streamdown = dynamic(
   () => import("streamdown").then((m) => m.Streamdown),
   { ssr: false },
@@ -4421,14 +4422,19 @@ export function SessionChatContent({
         />
       )}
 
-      {/* Create Repo Dialog */}
+      {/* Connect Repo Dialog -- links an existing GitHub repo to a
+          session that doesn't have one yet, then pushes the session's
+          current work as the first commit on a new branch. Repo
+          *creation* from the app is still disabled server-side (see
+          /api/github/create-repo); this only links repos the user
+          already created on GitHub. */}
       {session && (
-        <CreateRepoDialog
+        <ConnectRepoDialog
           open={repoDialogOpen}
           onOpenChange={setRepoDialogOpen}
           session={session}
           hasSandbox={sandboxInfo !== null}
-          onRepoCreated={(result) => {
+          onRepoConnected={(result) => {
             updateSessionRepo({
               cloneUrl: result.cloneUrl,
               repoOwner: result.owner,

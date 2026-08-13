@@ -10,11 +10,13 @@ import {
 } from "./models";
 
 import type { SkillMetadata } from "./skills/types";
+import type { GithubToolContext } from "./types";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
   bashTool,
   editFileTool,
+  githubCommitTool,
   globTool,
   grepTool,
   readFileTool,
@@ -55,6 +57,12 @@ const callOptionsSchema = z.object({
   //   outbound request) -- still gates dangerous bash and .env access.
   // "fullAccess": skip every approval gate entirely.
   permissionMode: z.enum(["ask", "autoAccept", "fullAccess"]).optional(),
+  // Injected by apps/web (see app/workflows/chat.ts) so the
+  // github_commit_and_push tool can reuse the exact same verified-commit
+  // path as the manual "Commit & Push" button. Undefined in any host that
+  // doesn't wire up GitHub (e.g. tests) -- the tool degrades to a clear
+  // error in that case rather than throwing.
+  github: z.custom<GithubToolContext>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -98,6 +106,7 @@ const tools = {
   skill: skillTool,
   web_fetch: webFetchTool,
   web_search: webSearchTool,
+  github_commit_and_push: githubCommitTool(),
 } satisfies ToolSet;
 
 export const openAgent = new ToolLoopAgent({
@@ -162,6 +171,7 @@ export const openAgent = new ToolLoopAgent({
         model: callModel,
         subagentModel,
         permissionMode: options.permissionMode ?? "ask",
+        github: options.github,
       },
     };
   },

@@ -5,6 +5,7 @@ import {
   type LanguageModel,
 } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
@@ -41,6 +42,17 @@ function getSharedProviderConfig(): { baseURL: string; apiKey: string } {
   }
 
   return { baseURL, apiKey };
+}
+
+/**
+ * True for Claude models routed through the gateway's "woino" provider
+ * (claude-sonnet-4.5, claude-haiku-4.5, and any future claude-* additions).
+ * These need the real @ai-sdk/anthropic client (native Anthropic Messages
+ * protocol) instead of the shared OpenAI-compatible client -- see the
+ * comment in sharedProvider() for why.
+ */
+function isClaudeModelId(modelId: string): boolean {
+  return modelId.includes("claude");
 }
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
@@ -149,8 +161,14 @@ export function getProviderOptionsForModel(
 ): ProviderOptionsByProvider {
   const defaultProviderOptions: ProviderOptionsByProvider = {};
 
-  // Apply anthropic defaults
-  if (modelId.startsWith("anthropic/")) {
+  // Apply anthropic defaults. Uses isClaudeModelId (flat catalog ID match,
+  // e.g. "claude-sonnet-4.5"), not a "anthropic/" prefix check -- that
+  // prefix belonged to the old Vercel AI Gateway namespaced-ID scheme and
+  // stopped matching anything after the 2026-08-10 migration to
+  // entry-gateway's flat catalog IDs, silently disabling extended-thinking
+  // settings for every Claude model since (found alongside the woino
+  // caching bug, 2026-08-13).
+  if (isClaudeModelId(modelId)) {
     defaultProviderOptions.anthropic = toProviderOptionsRecord(
       getAnthropicSettings(modelId),
     );
@@ -253,30 +271,57 @@ export function sharedProvider(
 
   const { baseURL, apiKey } = config ?? getSharedProviderConfig();
 
-  // Use @ai-sdk/openai-compatible, NOT @ai-sdk/openai, even though this is
-  // a standard OpenAI Chat Completions-shaped API. Reason (found 2026-08-11):
-  // Opencode Zen's reasoning models (deepseek-v4-pro, glm-5.2) return their
-  // thinking text in a non-standard `reasoning_content` field on
-  // choices[].delta / choices[].message -- a DeepSeek-style convention, not
-  // part of real OpenAI's API. @ai-sdk/openai's chat-completions parser has
-  // no code path for that field at all (it only knows OpenAI's own Responses
-  // API reasoning shape), so it silently dropped every reasoning token before
-  // it ever reached the UI -- the whole ThinkingBlock/"Pondering..." UI was
-  // built and wired correctly, but had nothing to render.
-  // @ai-sdk/openai-compatible's chat model *does* parse `reasoning_content`
-  // (both delta.reasoning_content while streaming and message.reasoning_content
-  // for non-streaming) into proper reasoning-start/delta/end parts.
-  // `name: "openai"` keeps the providerOptions namespace as `openai` so every
-  // existing `providerOptions.openai.*` call site (reasoningEffort, GPT-5
-  // defaults, etc.) keeps working unchanged.
-  const openCodeZen = createOpenAICompatible({
-    name: "openai",
-    baseURL,
-    apiKey,
-    headers: attributionHeaders,
-  });
+  // Claude models (routed through the gateway's "woino" provider, e.g.
+  // claude-sonnet-4.5/claude-haiku-4.5) go over the gateway's native
+  // Anthropic Messages passthrough (POST {GATEWAY_BASE_URL}/messages),
+  // NOT the shared OpenAI-compatible chat endpoint. Found 2026-08-13:
+  // @ai-sdk/openai-compatible's Chat Completions wire format has no field
+  // for Anthropic's `cache_control` breakpoints at all -- routing Claude
+  // through it meant addCacheControl()'s providerOptions.anthropic.cacheControl
+  // was silently dropped on every single request, so prompt caching for
+  // every woino/Claude model never worked, regardless of what cache-control.ts
+  // did. Using the real @ai-sdk/anthropic client against the gateway's native
+  // /messages route lets those cache_control blocks actually reach the wire
+  // and get forwarded byte-for-byte to woino -> real Anthropic. authToken
+  // (not apiKey) is used so the SDK sends `Authorization: Bearer <key>`,
+  // matching the gateway's own bearer-token auth middleware, instead of the
+  // `x-api-key` header Anthropic's own API expects (the gateway ignores
+  // x-api-key -- it rebuilds upstream headers itself from route config).
+  let model: LanguageModel;
+  if (isClaudeModelId(modelId)) {
+    const anthropicProvider = createAnthropic({
+      name: "anthropic",
+      baseURL,
+      authToken: apiKey,
+      headers: attributionHeaders,
+    });
+    model = anthropicProvider(modelId);
+  } else {
+    // Use @ai-sdk/openai-compatible, NOT @ai-sdk/openai, even though this is
+    // a standard OpenAI Chat Completions-shaped API. Reason (found 2026-08-11):
+    // Opencode Zen's reasoning models (deepseek-v4-pro, glm-5.2) return their
+    // thinking text in a non-standard `reasoning_content` field on
+    // choices[].delta / choices[].message -- a DeepSeek-style convention, not
+    // part of real OpenAI's API. @ai-sdk/openai's chat-completions parser has
+    // no code path for that field at all (it only knows OpenAI's own Responses
+    // API reasoning shape), so it silently dropped every reasoning token before
+    // it ever reached the UI -- the whole ThinkingBlock/"Pondering..." UI was
+    // built and wired correctly, but had nothing to render.
+    // @ai-sdk/openai-compatible's chat model *does* parse `reasoning_content`
+    // (both delta.reasoning_content while streaming and message.reasoning_content
+    // for non-streaming) into proper reasoning-start/delta/end parts.
+    // `name: "openai"` keeps the providerOptions namespace as `openai` so every
+    // existing `providerOptions.openai.*` call site (reasoningEffort, GPT-5
+    // defaults, etc.) keeps working unchanged.
+    const openCodeZen = createOpenAICompatible({
+      name: "openai",
+      baseURL,
+      apiKey,
+      headers: attributionHeaders,
+    });
 
-  let model: LanguageModel = openCodeZen.chatModel(modelId);
+    model = openCodeZen.chatModel(modelId);
+  }
 
   const providerOptions = getProviderOptionsForModel(
     modelId,

@@ -21,21 +21,26 @@ interface ConnectRepoBody {
   sessionId?: string;
   owner?: string;
   repo?: string;
+  /** Confirms switching a session that's already connected to a different repo. */
+  force?: boolean;
 }
 
 /**
- * Links an EXISTING GitHub repository to a session that doesn't have one
- * yet (sessions can currently only get a repo at creation time -- there's
- * no way to add one later, which this closes). Repo creation itself stays
- * disabled (see /api/github/create-repo); the user must pick a repo they
- * already have push access to.
+ * Links an EXISTING GitHub repository to a session. Also supports
+ * *switching* an already-connected session to a different repo -- pass
+ * `force: true` to confirm the switch (the client shows an explicit
+ * confirmation before doing so, since it re-points the session away from
+ * whatever repo it was on). Without `force`, connecting a session that
+ * already has a repo is rejected with 409, same as before. Repo creation
+ * itself stays disabled (see /api/github/create-repo); the user must pick
+ * a repo they already have push access to.
  *
- * On success this also pushes the session's current sandbox state as the
- * first commit, on a fresh branch off the repo's default branch -- reusing
+ * On success this also pushes the session's current sandbox state as a
+ * commit, on a fresh branch off the (new) repo's default branch -- reusing
  * `performAutoCommit`, the exact same verified-commit path as the manual
  * "Commit & Push" button and the background auto-commit. If there's
- * nothing to commit yet (brand new, untouched session), the repo is still
- * linked; the first real commit happens naturally once work starts.
+ * nothing to commit yet, the repo is still linked; the first real commit
+ * happens naturally once work starts.
  */
 export async function POST(req: Request) {
   const session = await getServerSession();
@@ -50,7 +55,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { sessionId, owner, repo } = body;
+  const { sessionId, owner, repo, force } = body;
 
   if (!sessionId || typeof sessionId !== "string") {
     return Response.json({ error: "sessionId is required" }, { status: 400 });
@@ -72,10 +77,29 @@ export async function POST(req: Request) {
   if (sessionRecord.userId !== session.user.id) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (sessionRecord.repoOwner && sessionRecord.repoName) {
+  const isAlreadyConnected = Boolean(
+    sessionRecord.repoOwner && sessionRecord.repoName,
+  );
+  const isSameRepo =
+    isAlreadyConnected &&
+    sessionRecord.repoOwner === owner &&
+    sessionRecord.repoName === repo;
+  if (isSameRepo) {
     return Response.json(
       {
         error: `This session is already connected to ${sessionRecord.repoOwner}/${sessionRecord.repoName}.`,
+      },
+      { status: 409 },
+    );
+  }
+  if (isAlreadyConnected && !force) {
+    return Response.json(
+      {
+        error: `This session is already connected to ${sessionRecord.repoOwner}/${sessionRecord.repoName}. Pass force to switch repos.`,
+        alreadyConnected: {
+          repoOwner: sessionRecord.repoOwner,
+          repoName: sessionRecord.repoName,
+        },
       },
       { status: 409 },
     );
@@ -110,6 +134,25 @@ export async function POST(req: Request) {
 
   const cloneUrl = `https://github.com/${owner}/${repo}.git`;
 
+  // If this is a switch away from an existing repo, remember its fields so
+  // a failure below can roll back to the repo that was actually still
+  // working, instead of nulling the session out to "no repo connected".
+  const previousRepoState = isAlreadyConnected
+    ? {
+        repoOwner: sessionRecord.repoOwner,
+        repoName: sessionRecord.repoName,
+        cloneUrl: sessionRecord.cloneUrl,
+        branch: sessionRecord.branch,
+        isNewBranch: sessionRecord.isNewBranch,
+      }
+    : {
+        repoOwner: null,
+        repoName: null,
+        cloneUrl: null,
+        branch: sessionRecord.branch,
+        isNewBranch: false,
+      };
+
   // Link first so a crash after this point still leaves the session
   // pointed at the repo (surfaced to the user, retryable), rather than
   // silently doing nothing.
@@ -129,12 +172,7 @@ export async function POST(req: Request) {
       10_000,
     );
     if (!checkoutResult.success) {
-      await updateSession(sessionId, {
-        repoOwner: null,
-        repoName: null,
-        cloneUrl: null,
-        isNewBranch: false,
-      });
+      await updateSession(sessionId, previousRepoState);
       return Response.json(
         { error: `Failed to create branch: ${checkoutResult.stdout}` },
         { status: 500 },
@@ -153,12 +191,7 @@ export async function POST(req: Request) {
     });
 
     if (result.error) {
-      await updateSession(sessionId, {
-        repoOwner: null,
-        repoName: null,
-        cloneUrl: null,
-        isNewBranch: false,
-      });
+      await updateSession(sessionId, previousRepoState);
       return Response.json({ error: result.error }, { status: 500 });
     }
 
@@ -173,12 +206,7 @@ export async function POST(req: Request) {
       commitUrl: result.commitUrl,
     });
   } catch (error) {
-    await updateSession(sessionId, {
-      repoOwner: null,
-      repoName: null,
-      cloneUrl: null,
-      isNewBranch: false,
-    }).catch(() => {});
+    await updateSession(sessionId, previousRepoState).catch(() => {});
     return Response.json(
       {
         error:

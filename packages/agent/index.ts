@@ -4,6 +4,7 @@ export {
   type ProviderOptionsByProvider,
   type SharedProviderModelId,
   createInertPlaceholderModel,
+  isGeminiModelId,
   sharedProvider,
   gateway,
 } from "./models";

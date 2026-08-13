@@ -1,5 +1,8 @@
 import { z } from "zod";
-import type { ProviderOptionsByProvider } from "@open-agents/agent";
+import {
+  isGeminiModelId,
+  type ProviderOptionsByProvider,
+} from "@open-agents/agent";
 
 export const REASONING_EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORT_LEVELS)[number];
@@ -38,6 +41,14 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   // length scales with effort (low < high). Same OpenAI-compatible param
   // shape as the others.
   "hy3",
+  // Gemini 3.x models (native @ai-sdk/google client, not the OpenAI-compat
+  // shape -- see toReasoningProviderOptions below). Gemma models are
+  // deliberately excluded: Google's free-tier Gemma line has no thinking
+  // support at all, so a thinkingConfig field would just be an unsupported
+  // no-op (or a rejected request, depending on the endpoint).
+  "gemini-3.1-flash-lite",
+  "gemini-3.5-flash-lite",
+  "gemini-3.5-flash",
 ]);
 
 export function isReasoningCapableModel(modelId: string): boolean {
@@ -62,19 +73,36 @@ export function sanitizeReasoningEffort(
 }
 
 /**
- * All model calls in this app go through a single createOpenAI()-based
+ * Most model calls in this app go through a single createOpenAI()-based
  * client pointed at entry-gateway (see packages/agent/models.ts), regardless
  * of which upstream model actually serves the request (Kimi K3, DeepSeek,
  * Qwen, GLM, ...). The AI SDK's OpenAI provider always looks up its settings
  * under the literal key "openai" in providerOptions -- NOT a key derived
  * from the model id -- so a reasoning-effort override must be nested under
  * "openai" no matter what the base model actually is.
+ *
+ * Gemini models are the one exception (native @ai-sdk/google client, see
+ * models.ts's isGeminiModelId branch of sharedProvider()) -- that client
+ * only reads thinking settings from providerOptions.google.thinkingConfig,
+ * so `effort` needs a modelId-aware branch here rather than always
+ * assuming the shared "openai" shape. thinkingLevel accepts the same
+ * low/medium/high vocabulary as the UI's reasoning selector, so `effort`
+ * maps straight across with no translation.
  */
 export function toReasoningProviderOptions(
   effort: ReasoningEffort | null,
+  modelId: string,
 ): ProviderOptionsByProvider | undefined {
   if (!effort) {
     return undefined;
+  }
+
+  if (isGeminiModelId(modelId)) {
+    return {
+      google: {
+        thinkingConfig: { includeThoughts: true, thinkingLevel: effort },
+      },
+    };
   }
 
   return {

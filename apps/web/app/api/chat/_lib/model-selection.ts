@@ -28,12 +28,13 @@ export function resolveChatModelSelection({
   }
 
   const effort = sanitizeReasoningEffort(availableModelId, reasoningEffort);
-  const providerOptionsOverrides = toReasoningProviderOptions(effort);
+  const providerOptionsOverrides = toReasoningProviderOptions(
+    effort,
+    availableModelId,
+  );
 
   return {
     id: availableModelId as AgentModelSelection["id"],
-    ...(providerOptionsOverrides
-      ? { providerOptionsOverrides }
-      : {}),
+    ...(providerOptionsOverrides ? { providerOptionsOverrides } : {}),
   };
 }

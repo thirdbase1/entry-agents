@@ -1058,12 +1058,24 @@ export function SessionChatContent({
     gitPanelOpen,
     shareRequested,
     setShareRequested,
+    changeRepoRequested,
+    setChangeRepoRequested,
     setHasActionNeeded,
     setChangesCount,
     setHasCommittedChanges,
     panelPortalRef,
     headerActionsRef,
   } = useGitPanel();
+
+  // Header's "change repo" chevron sets changeRepoRequested; open the same
+  // connect-repo dialog here (it auto-detects "already connected" via
+  // session.repoOwner/repoName and switches into change-repo mode).
+  useEffect(() => {
+    if (changeRepoRequested) {
+      setRepoDialogOpen(true);
+      setChangeRepoRequested(false);
+    }
+  }, [changeRepoRequested, setChangeRepoRequested]);
   const { preferences } = useUserPreferences();
   const isIosDevice = useMemo(() => {
     if (typeof navigator === "undefined") {

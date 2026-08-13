@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ExternalLink, GitBranch, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, GitBranch, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +44,7 @@ export function ConnectRepoDialog({
   hasSandbox,
   onRepoConnected,
 }: ConnectRepoDialogProps) {
+  const isChangingRepo = Boolean(session.repoOwner && session.repoName);
   const [selectedOwner, setSelectedOwner] = useState("");
   const [selectedRepo, setSelectedRepo] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
@@ -74,6 +75,16 @@ export function ConnectRepoDialog({
       setError("Sandbox not active. Please wait for it to start.");
       return;
     }
+    if (
+      isChangingRepo &&
+      selectedOwner === session.repoOwner &&
+      selectedRepo === session.repoName
+    ) {
+      setError(
+        `This session is already connected to ${session.repoOwner}/${session.repoName}. Pick a different repository to switch.`,
+      );
+      return;
+    }
 
     setIsConnecting(true);
     setError(null);
@@ -86,6 +97,7 @@ export function ConnectRepoDialog({
           sessionId: session.id,
           owner: selectedOwner,
           repo: selectedRepo,
+          ...(isChangingRepo ? { force: true } : {}),
         }),
       });
 
@@ -133,13 +145,34 @@ export function ConnectRepoDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitBranch className="h-5 w-5" />
-            Connect Repository
+            {isChangingRepo ? "Change Repository" : "Connect Repository"}
           </DialogTitle>
           <DialogDescription>
-            Link this session to a GitHub repository you already have write
-            access to, then push its current work as a new branch.
+            {isChangingRepo ? (
+              <>
+                This session is currently connected to{" "}
+                <span className="font-medium text-foreground">
+                  {session.repoOwner}/{session.repoName}
+                </span>
+                . Pick a different repository you have write access to and
+                this chat will switch to it.
+              </>
+            ) : (
+              "Link this session to a GitHub repository you already have write access to, then push its current work as a new branch."
+            )}
           </DialogDescription>
         </DialogHeader>
+
+        {isChangingRepo && !result && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {session.repoOwner}/{session.repoName} itself is untouched on
+              GitHub -- this only disconnects it from this chat and starts a
+              fresh branch on the new repo.
+            </span>
+          </div>
+        )}
 
         {result ? (
           <div className="flex flex-col items-center gap-4 py-6">
@@ -147,7 +180,11 @@ export function ConnectRepoDialog({
               <Check className="h-6 w-6 text-green-500" />
             </div>
             <div className="text-center">
-              <p className="font-medium">Repository connected!</p>
+              <p className="font-medium">
+                {isChangingRepo
+                  ? "Switched to the new repository!"
+                  : "Repository connected!"}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {result.repoOwner}/{result.repoName} · branch {result.branch}
               </p>
@@ -180,9 +217,9 @@ export function ConnectRepoDialog({
               <RepoSelector onRepoSelect={handleRepoSelect} />
               {selectedOwner && selectedRepo && (
                 <p className="text-xs text-muted-foreground">
-                  Will connect to {selectedOwner}/{selectedRepo} and push this
-                  session&apos;s current work as a new branch off its default
-                  branch.
+                  {isChangingRepo
+                    ? `Will switch to ${selectedOwner}/${selectedRepo} and push this session's current work as a new branch off its default branch.`
+                    : `Will connect to ${selectedOwner}/${selectedRepo} and push this session's current work as a new branch off its default branch.`}
                 </p>
               )}
               {error && <p className="text-sm text-destructive">{error}</p>}
@@ -202,8 +239,10 @@ export function ConnectRepoDialog({
                 {isConnecting ? (
                   <>
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Connecting...
+                    {isChangingRepo ? "Switching..." : "Connecting..."}
                   </>
+                ) : isChangingRepo ? (
+                  "Switch Repository"
                 ) : (
                   "Connect"
                 )}

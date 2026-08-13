@@ -72,6 +72,12 @@ type GitPanelContextValue = {
   shareRequested: boolean;
   setShareRequested: (requested: boolean) => void;
 
+  /** Change-repo dialog trigger (set by header, called by per-chat page) --
+   * opens the same connect-repo dialog but in "switch to a different repo"
+   * mode for a session that's already connected. */
+  changeRepoRequested: boolean;
+  setChangeRepoRequested: (requested: boolean) => void;
+
   /** Ref to the DOM node where the git panel should be portaled into */
   panelPortalRef: RefObject<HTMLDivElement | null>;
 
@@ -98,6 +104,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
   const [focusedFilePath, setFocusedFilePath] = useState<string | null>(null);
   const [fileTabDismissed, setFileTabDismissed] = useState(false);
   const [shareRequested, setShareRequested] = useState(false);
+  const [changeRepoRequested, setChangeRepoRequested] = useState(false);
   const panelPortalRef = useRef<HTMLDivElement | null>(null);
   const headerActionsRef = useRef<HTMLDivElement | null>(null);
 
@@ -151,6 +158,8 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       openFileTab,
       shareRequested,
       setShareRequested,
+      changeRepoRequested,
+      setChangeRepoRequested,
       panelPortalRef,
       headerActionsRef,
     }),
@@ -170,6 +179,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       changesCount,
       hasCommittedChanges,
       shareRequested,
+      changeRepoRequested,
     ],
   );
 

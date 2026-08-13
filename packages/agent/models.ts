@@ -6,6 +6,8 @@ import {
 } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import type { GoogleGenerativeAIProviderOptions } from "@ai-sdk/google";
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
@@ -53,6 +55,24 @@ function getSharedProviderConfig(): { baseURL: string; apiKey: string } {
  */
 function isClaudeModelId(modelId: string): boolean {
   return modelId.includes("claude");
+}
+
+/**
+ * True for Google models routed through the gateway's "google" provider
+ * (gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-3.5-flash,
+ * gemma-4-26b, gemma-4-31b, and any future "gemini-" or "gemma-" additions).
+ * These need the real @ai-sdk/google client (native Gemini generateContent
+ * protocol, POST {root}/v1beta/models/{id}:generateContent) instead of the
+ * shared OpenAI-compatible client -- Google's own OpenAI-compat shim wraps
+ * thinking text in literal `<thought>...</thought>` tags inside the plain
+ * content string instead of a separate reasoning field (confirmed via a
+ * live probe against the real Gemini OpenAI-compat endpoint, 2026-08-13),
+ * so routing it through @ai-sdk/openai-compatible would leak raw thinking
+ * markup straight into the visible chat text -- same class of bug as the
+ * Claude/cache_control issue above, different provider.
+ */
+export function isGeminiModelId(modelId: string): boolean {
+  return modelId.startsWith("gemini-") || modelId.startsWith("gemma-");
 }
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
@@ -172,6 +192,22 @@ export function getProviderOptionsForModel(
     defaultProviderOptions.anthropic = toProviderOptionsRecord(
       getAnthropicSettings(modelId),
     );
+  }
+
+  // Gemini/Gemma models: enable thinking by default (Google's models think
+  // by default when the flag is supported, but the free-tier Gemma models
+  // don't support thinking at all -- gating this to "gemini-" only, not
+  // "gemma-", avoids sending an unsupported field the API would reject).
+  // includeThoughts surfaces thought summaries through the same
+  // reasoning-start/delta/end stream parts the UI's ThinkingBlock already
+  // renders for every other reasoning model. sanitizeReasoningEffort's
+  // explicit low/medium/high UI selection (mapped in model-reasoning.ts to
+  // providerOptions.google.thinkingConfig.thinkingLevel) overrides this
+  // "medium" default via providerOptionsOverrides below.
+  if (modelId.startsWith("gemini-")) {
+    defaultProviderOptions.google = toProviderOptionsRecord({
+      thinkingConfig: { includeThoughts: true, thinkingLevel: "medium" },
+    } satisfies GoogleGenerativeAIProviderOptions);
   }
 
   // OpenAI model responses should never be persisted.
@@ -296,6 +332,31 @@ export function sharedProvider(
       headers: attributionHeaders,
     });
     model = anthropicProvider(modelId);
+  } else if (isGeminiModelId(modelId)) {
+    // Google models go over the gateway's native Gemini passthrough
+    // (POST {root}/v1beta/models/{id}:generateContent, or
+    // :streamGenerateContent?alt=sse while streaming), same rationale as
+    // the Claude branch above: the shared OpenAI-compatible endpoint can't
+    // carry Gemini's thinking output cleanly (see isGeminiModelId's
+    // comment). GATEWAY_BASE_URL is the gateway's *OpenAI-compat* root
+    // (".../v1"), but @ai-sdk/google always appends
+    // "/models/{id}:generateContent" directly to whatever baseURL it's
+    // given -- so the "/v1" suffix has to be swapped for "/v1beta" to land
+    // on the gateway's actual Gemini route, not "/v1/models/...".
+    // `Authorization: Bearer <key>` (added via `headers`, not `apiKey`) is
+    // what the gateway's own bearer-auth middleware checks; the SDK's
+    // default `x-goog-api-key` header is sent alongside but ignored by the
+    // gateway, which rebuilds the real `x-goog-api-key` to Google itself
+    // from its own route config (WOINO_API_KEY-style env var, here
+    // GOOGLE_API_KEY) -- same pattern as the gateway ignoring Claude's
+    // `x-api-key` header in the branch above.
+    const geminiBaseURL = `${baseURL.replace(/\/v1$/, "")}/v1beta`;
+    const googleProvider = createGoogleGenerativeAI({
+      baseURL: geminiBaseURL,
+      apiKey,
+      headers: { ...attributionHeaders, Authorization: `Bearer ${apiKey}` },
+    });
+    model = googleProvider(modelId);
   } else {
     // Use @ai-sdk/openai-compatible, NOT @ai-sdk/openai, even though this is
     // a standard OpenAI Chat Completions-shaped API. Reason (found 2026-08-11):

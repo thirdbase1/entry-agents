@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChevronDown,
   ExternalLink,
   FolderGit2,
   GitMerge,
@@ -35,6 +36,7 @@ export function SessionHeader() {
     changesCount,
     hasCommittedChanges,
     setShareRequested,
+    setChangeRepoRequested,
     headerActionsRef,
   } = useGitPanel();
   const { session } = useSessionLayout();
@@ -169,6 +171,20 @@ export function SessionHeader() {
                     </span>
                   </>
                 )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setChangeRepoRequested(true)}
+                      className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:text-foreground"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    Change connected repository
+                  </TooltipContent>
+                </Tooltip>
                 <span className="text-muted-foreground/40">/</span>
               </div>
             )}

@@ -22,6 +22,7 @@ import {
   taskTool,
   todoWriteTool,
   webFetchTool,
+  webSearchTool,
   writeFileTool,
 } from "./tools";
 
@@ -96,6 +97,7 @@ const tools = {
   ask_user_question: askUserQuestionTool,
   skill: skillTool,
   web_fetch: webFetchTool,
+  web_search: webSearchTool,
 } satisfies ToolSet;
 
 export const openAgent = new ToolLoopAgent({

@@ -746,6 +746,59 @@ async function sendDataPart(
   }
 }
 
+/**
+ * Runs the actual GitHub commit/push work for the agent's
+ * `github_commit_and_push` tool as a step, NOT inline in the workflow
+ * function. `performAutoCommit` (and everything it touches -- the
+ * sandbox client, git helpers, the GitHub App/Octokit client) pulls in
+ * Node.js built-ins (`path`, and `nanoid` transitively) that the
+ * Workflow SDK's bundler refuses to include in the restricted
+ * "use workflow" environment, even behind a dynamic `import()`. Steps
+ * run in a normal Node.js function environment with no such
+ * restriction, so this needs to be its own step, called from the
+ * workflow's `github.commitAndPush` closure below rather than inlined
+ * there. Takes/returns only plain, serializable data (sandbox *state*,
+ * not the connected client) since step boundaries are checkpointed.
+ */
+async function performAgentCommitAndPush(params: {
+  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  userId: string;
+  sessionId: string;
+  sessionTitle: string;
+  repoOwner: string;
+  repoName: string;
+  commitMessage?: string;
+}): Promise<{
+  committed: boolean;
+  pushed: boolean;
+  commitSha?: string;
+  commitUrl?: string;
+  error?: string;
+}> {
+  "use step";
+
+  const { connectSandbox } = await import("@open-agents/sandbox");
+  const { performAutoCommit } = await import("@/lib/chat/auto-commit-direct");
+
+  const sandbox = await connectSandbox(params.sandboxState);
+  const result = await performAutoCommit({
+    sandbox,
+    userId: params.userId,
+    sessionId: params.sessionId,
+    sessionTitle: params.sessionTitle,
+    repoOwner: params.repoOwner,
+    repoName: params.repoName,
+    ...(params.commitMessage ? { commitMessage: params.commitMessage } : {}),
+  });
+  return {
+    committed: result.committed,
+    pushed: result.pushed,
+    commitSha: result.commitSha,
+    commitUrl: result.commitUrl,
+    error: result.error,
+  };
+}
+
 export async function runAgentWorkflow(options: Options) {
   "use workflow";
 
@@ -928,17 +981,13 @@ export async function runAgentWorkflow(options: Options) {
               error: "No GitHub repository is connected to this session yet.",
             };
           }
-          const { connectSandbox } = await import("@open-agents/sandbox");
-          const { performAutoCommit } =
-            await import("@/lib/chat/auto-commit-direct");
-          const sandbox = await connectSandbox(runtime.sandboxState);
           const commitMessage = input.commitTitle
             ? input.commitBody
               ? `${input.commitTitle}\n\n${input.commitBody}`
               : input.commitTitle
             : undefined;
-          const result = await performAutoCommit({
-            sandbox,
+          return performAgentCommitAndPush({
+            sandboxState: runtime.sandboxState,
             userId: options.userId,
             sessionId: options.sessionId,
             sessionTitle: runtime.sessionTitle,
@@ -946,13 +995,6 @@ export async function runAgentWorkflow(options: Options) {
             repoName: runtime.repoName,
             ...(commitMessage ? { commitMessage } : {}),
           });
-          return {
-            committed: result.committed,
-            pushed: result.pushed,
-            commitSha: result.commitSha,
-            commitUrl: result.commitUrl,
-            error: result.error,
-          };
         },
       },
     };

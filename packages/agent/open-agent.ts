@@ -1,7 +1,7 @@
 import type { SandboxState } from "@open-agents/sandbox";
 import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
-import { addCacheControl } from "./context-management";
+import { addCacheControl, maybeCompactMessages } from "./context-management";
 import {
   type SharedProviderModelId,
   createInertPlaceholderModel,
@@ -118,7 +118,7 @@ export const openAgent = new ToolLoopAgent({
   prepareStep: ({ messages, model, steps: _steps }) => {
     return {
       messages: addCacheControl({
-        messages,
+        messages: maybeCompactMessages({ messages, model }),
         model,
       }),
     };

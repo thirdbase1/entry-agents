@@ -3,6 +3,30 @@ export const APP_DEFAULT_MODEL_ID = "deepseek-v4-flash"; // TEMP: same outage, s
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 const TOKENS_PER_MILLION = 1_000_000;
 
+/**
+ * True for Google models (gemini-*, gemma-*) routed through the gateway's
+ * native Gemini passthrough via @ai-sdk/google -- see the identically-
+ * named isGeminiModelId in packages/agent/models.ts for the full
+ * rationale (thinking-tag leak through the OpenAI-compat shim).
+ *
+ * Deliberately duplicated here instead of importing the one in
+ * packages/agent/models.ts: this file (apps/web/lib/models.ts) has zero
+ * imports and is safe to pull into Client Component bundles (e.g. the
+ * model picker). @open-agents/agent's barrel index.ts re-exports
+ * open-agent.ts -> tools/task.ts -> packages/sandbox, which requires
+ * Node-only built-ins (stream/promises) that Next's Client Component SSR
+ * webpack config can't resolve -- any *value* import from
+ * "@open-agents/agent" (not just a `import type`) drags that whole graph
+ * into any client-reachable bundle and breaks the build. Confirmed
+ * 2026-08-13: this exact failure when apps/web/lib/model-reasoning.ts
+ * (imported by the Client Component session-chat-content.tsx) switched
+ * from a type-only import of that package to importing this function as
+ * a value.
+ */
+export function isGeminiModelId(modelId: string): boolean {
+  return modelId.startsWith("gemini-") || modelId.startsWith("gemma-");
+}
+
 export interface GatewayAvailableModel {
   id: string;
   name: string;
@@ -104,10 +128,7 @@ export function estimateModelUsageCost(
     return undefined;
   }
 
-  const cacheWriteInputTokens = Math.max(
-    0,
-    usage.cacheWriteInputTokens ?? 0,
-  );
+  const cacheWriteInputTokens = Math.max(0, usage.cacheWriteInputTokens ?? 0);
   const cachedInputTokens = Math.max(0, usage.cachedInputTokens);
   // inputTokens is the *total* prompt size, which already includes both
   // the cache-read and cache-write portions -- subtract both so the

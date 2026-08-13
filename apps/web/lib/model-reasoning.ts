@@ -1,8 +1,6 @@
 import { z } from "zod";
-import {
-  isGeminiModelId,
-  type ProviderOptionsByProvider,
-} from "@open-agents/agent";
+import type { ProviderOptionsByProvider } from "@open-agents/agent";
+import { isGeminiModelId } from "@/lib/models";
 
 export const REASONING_EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORT_LEVELS)[number];
@@ -49,6 +47,11 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
   "gemini-3.5-flash",
+  // Confirmed 2026-08-13 via Google's own docs (ai.google.dev/gemini-api/
+  // docs/latest-model): GA release, default thinking_level=medium, tunable
+  // low/medium/high. Same native @ai-sdk/google path as the other 3.x
+  // Flash models above.
+  "gemini-3.7-flash",
 ]);
 
 export function isReasoningCapableModel(modelId: string): boolean {

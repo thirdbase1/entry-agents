@@ -60,7 +60,7 @@ function isClaudeModelId(modelId: string): boolean {
 /**
  * True for Google models routed through the gateway's "google" provider
  * (gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-3.5-flash,
- * gemma-4-26b, gemma-4-31b, and any future "gemini-" or "gemma-" additions).
+ * gemma-4-26b, gemma-4-31b, gemini-3.7-flash, and any future "gemini-" or "gemma-" additions).
  * These need the real @ai-sdk/google client (native Gemini generateContent
  * protocol, POST {root}/v1beta/models/{id}:generateContent) instead of the
  * shared OpenAI-compatible client -- Google's own OpenAI-compat shim wraps

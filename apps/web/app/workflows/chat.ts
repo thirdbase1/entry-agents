@@ -91,6 +91,26 @@ type ChatModelRuntime = {
 
 type Writable = WritableStream<UIMessageChunk>;
 
+// The `github.commitAndPush` closure below captures live runtime state
+// (sandbox connections, DB handles) and cannot cross a workflow-step
+// serialization boundary -- Workflow SDK only serializes plain data
+// (see workflow-sdk.dev/docs/foundations/serialization), not functions.
+// Passing a closure as a step argument works fine until the workflow
+// actually needs to durably suspend/resume mid-turn, at which point
+// serializing that argument throws a SerializationError and silently
+// kills the run (the chat then "thinks" forever with no error surfaced).
+// So we thread only serializable data across the boundary here, and
+// rebuild the real `commitAndPush` closure *inside* runAgentStep (which
+// is already a step function with full Node/DB access).
+type SerializableGithubContext = {
+  hasRepo: boolean;
+  repoOwner?: string;
+  repoName?: string;
+};
+type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github"> & {
+  github?: SerializableGithubContext;
+};
+
 const shouldPauseForToolInteraction = (parts: WebAgentUIMessage["parts"]) =>
   parts.some(
     (part) =>
@@ -956,7 +976,12 @@ export async function runAgentWorkflow(options: Options) {
     };
 
     const hasRepo = Boolean(runtime.repoOwner && runtime.repoName);
-    const agentOptions: OpenAgentCallOptions = {
+    // NOTE: `github` here is intentionally the serializable-only shape
+    // (no `commitAndPush` closure) -- see WorkflowAgentOptions above.
+    // The real closure is rebuilt inside runAgentStep, right before it's
+    // needed, so it never has to cross a workflow-step serialization
+    // boundary.
+    const agentOptions: WorkflowAgentOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
       sandbox: {
@@ -966,38 +991,10 @@ export async function runAgentWorkflow(options: Options) {
         environmentDetails: runtime.environmentDetails,
       },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
-      // Always force the real injected implementation here (after the
-      // agentOptions spreads above) -- same treatment as sandbox/skills.
-      // Reuses the exact verified-commit path as the manual "Commit &
-      // Push" button and the background auto-commit (performAutoCommit),
-      // see apps/web/lib/chat/auto-commit-direct.ts.
       github: {
         hasRepo,
         repoOwner: runtime.repoOwner,
         repoName: runtime.repoName,
-        commitAndPush: async (input) => {
-          if (!hasRepo || !runtime.repoOwner || !runtime.repoName) {
-            return {
-              committed: false,
-              pushed: false,
-              error: "No GitHub repository is connected to this session yet.",
-            };
-          }
-          const commitMessage = input.commitTitle
-            ? input.commitBody
-              ? `${input.commitTitle}\n\n${input.commitBody}`
-              : input.commitTitle
-            : undefined;
-          return performAgentCommitAndPush({
-            sandboxState: runtime.sandboxState,
-            userId: options.userId,
-            sessionId: options.sessionId,
-            sessionTitle: runtime.sessionTitle,
-            repoOwner: runtime.repoOwner,
-            repoName: runtime.repoName,
-            ...(commitMessage ? { commitMessage } : {}),
-          });
-        },
       },
     };
     sandboxState = runtime.sandboxState;
@@ -1022,7 +1019,7 @@ export async function runAgentWorkflow(options: Options) {
             userId: options.userId,
             sessionId: options.sessionId,
           });
-      const stepAgentOptions: OpenAgentCallOptions = {
+      const stepAgentOptions: WorkflowAgentOptions = {
         ...agentOptions,
         permissionMode: livePermissionMode,
       };
@@ -1036,6 +1033,8 @@ export async function runAgentWorkflow(options: Options) {
           workflowRunId,
           options.chatId,
           options.sessionId,
+          options.userId,
+          runtime.sessionTitle,
           selectedModelId,
           modelId,
           stepAgentOptions,
@@ -1315,9 +1314,11 @@ const runAgentStep = async (
   workflowRunId: string,
   chatId: string,
   sessionId: string,
+  userId: string,
+  sessionTitle: string,
   selectedModelId: string,
   modelId: string,
-  agentOptions: OpenAgentCallOptions,
+  agentOptions: WorkflowAgentOptions,
   stepNumber: number,
   modelCostCatalog: AvailableModel[],
 ) => {
@@ -1354,9 +1355,54 @@ const runAgentStep = async (
     let totalMessageUsage = existingTotalMessageUsage;
     let totalMessageCost = existingTotalMessageCost;
 
+    // Rebuild the real `commitAndPush` closure here, inside the step --
+    // it was intentionally left out of `agentOptions` (see
+    // WorkflowAgentOptions) because functions cannot cross the
+    // workflow-to-step serialization boundary. This runs with full
+    // Node/DB access since we're already inside a step.
+    const githubContext = agentOptions.github;
+    const fullAgentOptions: OpenAgentCallOptions = {
+      ...agentOptions,
+      github: githubContext
+        ? {
+            hasRepo: githubContext.hasRepo,
+            repoOwner: githubContext.repoOwner,
+            repoName: githubContext.repoName,
+            commitAndPush: async (input) => {
+              if (
+                !githubContext.hasRepo ||
+                !githubContext.repoOwner ||
+                !githubContext.repoName
+              ) {
+                return {
+                  committed: false,
+                  pushed: false,
+                  error:
+                    "No GitHub repository is connected to this session yet.",
+                };
+              }
+              const commitMessage = input.commitTitle
+                ? input.commitBody
+                  ? `${input.commitTitle}\n\n${input.commitBody}`
+                  : input.commitTitle
+                : undefined;
+              return performAgentCommitAndPush({
+                sandboxState: agentOptions.sandbox.state,
+                userId,
+                sessionId,
+                sessionTitle,
+                repoOwner: githubContext.repoOwner,
+                repoName: githubContext.repoName,
+                ...(commitMessage ? { commitMessage } : {}),
+              });
+            },
+          }
+        : undefined,
+    };
+
     const result = await webAgent.stream({
       messages,
-      options: agentOptions,
+      options: fullAgentOptions,
       abortSignal: abortController.signal,
     });
 

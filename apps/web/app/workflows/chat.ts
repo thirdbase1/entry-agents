@@ -42,6 +42,7 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import { toFriendlyChatErrorText } from "@/lib/chat/friendly-error";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
@@ -433,19 +434,20 @@ function markProviderQuotaExhausted(
 }
 
 function getSetupErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Workspace setup failed. Try again in a moment.";
+  if (error instanceof Error) {
+    if (error.message.includes("Connect GitHub")) {
+      return "Connect GitHub to access this repository, then try again.";
+    }
+
+    if (error.message === "Session is archived") {
+      return "This session is archived. Unarchive it to continue.";
+    }
   }
 
-  if (error.message.includes("Connect GitHub")) {
-    return "Connect GitHub to access this repository, then try again.";
-  }
-
-  if (error.message === "Session is archived") {
-    return "This session is archived. Unarchive it to continue.";
-  }
-
-  return "Workspace setup failed. Try again in a moment.";
+  // Anything else (gateway/provider failures, transport errors, unexpected
+  // exceptions) goes through the same sanitizer used for in-stream errors
+  // -- never surface the raw error text here either.
+  return toFriendlyChatErrorText(error);
 }
 
 function isStepTimingError(
@@ -1293,7 +1295,15 @@ export async function runAgentWorkflow(options: Options) {
   }
 
   if (caughtError) {
-    throw caughtError;
+    // Log the real error server-side for debugging, but never let its raw
+    // text (which can carry gateway response bodies, stack traces, or
+    // other infrastructure detail) escape the workflow. Anything that
+    // observes this run's failure -- the Workflow SDK's stream, a client
+    // reconnect, etc. -- only ever sees the sanitized message.
+    console.error("[workflow] agent run failed:", caughtError);
+    throw new Error(toFriendlyChatErrorText(caughtError), {
+      cause: caughtError,
+    });
   }
 }
 
@@ -1355,6 +1365,11 @@ const runAgentStep = async (
       generateMessageId: () => messageId,
       sendStart: false,
       sendFinish: false,
+      // Never let raw provider/gateway error text (Opencode Zen, upstream
+      // model APIs, etc.) reach the client as an in-stream "error" chunk --
+      // route it through the same sanitizer used for setup/transport
+      // failures below.
+      onError: toFriendlyChatErrorText,
       messageMetadata: ({ part: streamPart }) => {
         if (streamPart.type === "finish-step") {
           lastStepUsage = streamPart.usage;

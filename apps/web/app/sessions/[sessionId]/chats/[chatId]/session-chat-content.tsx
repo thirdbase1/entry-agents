@@ -123,6 +123,7 @@ import {
 } from "@/lib/chat-streaming-state";
 import { ACCEPT_IMAGE_TYPES, isValidImageType } from "@/lib/image-utils";
 import { isLargeText } from "@/lib/text-attachment-utils";
+import { toFriendlyChatErrorText } from "@/lib/chat/friendly-error";
 import {
   type AvailableModelCost,
   DEFAULT_CONTEXT_LIMIT,
@@ -3310,7 +3311,14 @@ export function SessionChatContent({
               {/* Transient error banner (e.g. iOS "Load failed" after sleep) */}
               {error && (
                 <div className="flex items-center justify-between gap-3 border-b border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-                  <p className="min-w-0 truncate">{error.message}</p>
+                  {/* Last line of defense: never render error.message
+                      directly. Transport-level failures (network errors,
+                      non-2xx responses from the Workflow SDK's fetch) can
+                      still carry raw gateway/provider text that never went
+                      through the backend's sanitizer in app/workflows/chat.ts. */}
+                  <p className="min-w-0 truncate">
+                    {toFriendlyChatErrorText(error)}
+                  </p>
                   <Button
                     variant="outline"
                     size="sm"

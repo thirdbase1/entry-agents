@@ -2,8 +2,8 @@ import type { Session } from "@/lib/session/types";
 
 const ALLOWED_VERCEL_EMAIL_DOMAIN = "vercel.com";
 const MANAGED_TEMPLATE_HOSTS = new Set([
-  "entry.dev",
-  "www.entry.dev",
+  "entry-agent.dev",
+  "www.entry-agent.dev",
 ]);
 const LOCAL_DEVELOPMENT_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 

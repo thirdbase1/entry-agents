@@ -42,7 +42,7 @@ const DEPLOY_TEMPLATE_URL = (() => {
       "demo-description",
       "Open-source reference app for building and running background coding agents on Vercel.",
     ],
-    ["demo-url", "https://entry.dev/"],
+    ["demo-url", "https://entry-agent.dev/"],
     ["env", DEPLOY_ENV_VARS.join(",")],
     [
       "envDescription",
@@ -57,8 +57,7 @@ const DEPLOY_TEMPLATE_URL = (() => {
 
 export const metadata: Metadata = {
   title: "Deploy your own",
-  description:
-    "Deploy your own copy of Entry to unlock the full template.",
+  description: "Deploy your own copy of Entry to unlock the full template.",
 };
 
 export default function DeployYourOwnPage() {

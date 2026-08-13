@@ -21,9 +21,10 @@ describe("repo-identifiers", () => {
   });
 
   test("parses only real github.com HTTPS repo URLs", () => {
-    expect(
-      parseGitHubHttpsUrl("https://github.com/vercel/entry.git"),
-    ).toEqual({ owner: "vercel", repo: "entry" });
+    expect(parseGitHubHttpsUrl("https://github.com/vercel/entry.git")).toEqual({
+      owner: "vercel",
+      repo: "entry",
+    });
     expect(
       parseGitHubHttpsUrl("https://attacker.example/github.com/vercel/repo"),
     ).toBeNull();

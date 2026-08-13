@@ -26,7 +26,7 @@ const vercelSession = {
   },
 };
 
-const requestUrl = "https://entry.dev/api/test";
+const requestUrl = "https://entry-agent.dev/api/test";
 
 const basePreferences: UserPreferencesData = {
   defaultModelId: "kimi-k3",
@@ -35,7 +35,7 @@ const basePreferences: UserPreferencesData = {
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,
-      defaultPermissionMode: "ask",
+  defaultPermissionMode: "ask",
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,

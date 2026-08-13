@@ -248,7 +248,7 @@ describe("gateway attribution headers", () => {
     expect(createGatewayCalls).toEqual([
       {
         headers: {
-          "http-referer": "https://entry.dev",
+          "http-referer": "https://entry-agent.dev",
           "x-title": "Entry",
         },
       },
@@ -283,7 +283,7 @@ describe("gateway attribution headers", () => {
         baseURL: "https://custom.api",
         apiKey: "sk-test",
         headers: {
-          "http-referer": "https://entry.dev",
+          "http-referer": "https://entry-agent.dev",
           "x-title": "Entry",
         },
       },

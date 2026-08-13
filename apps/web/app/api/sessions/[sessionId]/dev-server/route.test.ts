@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 const DEV_SERVER_PID_FILE =
   "/vercel/sandbox/apps/web/.entry-dev-server-3000.pid";
-const DEV_SERVER_STATE_FILE =
-  "/vercel/sandbox/.entry-dev-server-state.json";
+const DEV_SERVER_STATE_FILE = "/vercel/sandbox/.entry-dev-server-state.json";
 const RUNNING_PID = "4242";
 
 const currentSessionRecord = {

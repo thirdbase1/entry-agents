@@ -26,7 +26,10 @@ async function probeModel(trimmedBase: string, apiKey: string, model: string) {
           {
             role: "user",
             content: [
-              { type: "text", text: "What color is this 1x1 pixel image? Answer in one word." },
+              {
+                type: "text",
+                text: "What color is this 1x1 pixel image? Answer in one word.",
+              },
               { type: "image_url", image_url: { url: TEST_IMAGE_DATA_URL } },
             ],
           },
@@ -41,7 +44,10 @@ async function probeModel(trimmedBase: string, apiKey: string, model: string) {
     } catch {
       parsed = bodyText.slice(0, 300);
     }
-    return [model, { httpStatus: res.status, ok: res.ok, body: parsed }] as const;
+    return [
+      model,
+      { httpStatus: res.status, ok: res.ok, body: parsed },
+    ] as const;
   } catch (err) {
     return [model, { error: String(err) }] as const;
   } finally {
@@ -59,7 +65,10 @@ export async function GET(request: Request) {
   const apiKey = process.env.GATEWAY_API_KEY;
   if (!baseURL || !apiKey) {
     return NextResponse.json(
-      { error: "GATEWAY_BASE_URL / GATEWAY_API_KEY not set", baseURL: baseURL ?? null },
+      {
+        error: "GATEWAY_BASE_URL / GATEWAY_API_KEY not set",
+        baseURL: baseURL ?? null,
+      },
       { status: 500 },
     );
   }

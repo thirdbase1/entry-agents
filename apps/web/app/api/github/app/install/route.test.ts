@@ -121,7 +121,7 @@ describe("GET /api/github/app/install", () => {
 
     const response = await GET(
       createRequest(
-        "https://entry.dev/api/github/app/install?next=/settings/connections",
+        "https://entry-agent.dev/api/github/app/install?next=/settings/connections",
       ),
     );
 

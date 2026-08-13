@@ -121,7 +121,6 @@ export async function resolveChatSandboxRuntime(params: {
   };
 }
 
-
 // ── Image attachment offload ────────────────────────────────────────
 //
 // Owner decision (2026-08-12): images attached in chat should never be

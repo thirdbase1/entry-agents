@@ -88,7 +88,7 @@ const baseSidebarItems = [
     label: "Models",
     href: "/settings/models",
     icon: Router,
-  SlidersHorizontal,
+    SlidersHorizontal,
   },
   {
     id: "leaderboard",

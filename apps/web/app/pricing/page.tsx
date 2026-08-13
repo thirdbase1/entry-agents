@@ -30,8 +30,8 @@ export default async function PricingPage() {
                 Pricing.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Pay-as-you-go, per token. No markup, no subscription required
-                to start. Free models cost nothing to run.
+                Pay-as-you-go, per token. No markup, no subscription required to
+                start. Free models cost nothing to run.
               </p>
             </div>
 

@@ -1,8 +1,5 @@
 import type { ProviderMetadata } from "ai";
-import {
-  estimateModelUsageCost,
-  type AvailableModelCost,
-} from "@/lib/models";
+import { estimateModelUsageCost, type AvailableModelCost } from "@/lib/models";
 
 /**
  * Shape of the (legacy) Vercel AI Gateway entry in `providerMetadata`.

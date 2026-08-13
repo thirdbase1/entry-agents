@@ -166,7 +166,7 @@ describe("/api/sessions POST vercel project linking", () => {
           repoOwner: "vercel-labs",
           repoName: "entry",
         },
-        "https://entry.dev/api/sessions",
+        "https://entry-agent.dev/api/sessions",
       ),
     );
     const body = (await response.json()) as { error: string };

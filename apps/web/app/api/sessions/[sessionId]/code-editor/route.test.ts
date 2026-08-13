@@ -264,7 +264,7 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
 
     const response = await POST(
       new Request(
-        "https://entry.dev/api/sessions/session-1/code-editor",
+        "https://entry-agent.dev/api/sessions/session-1/code-editor",
         {
           method: "POST",
         },

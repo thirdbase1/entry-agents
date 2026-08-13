@@ -58,7 +58,10 @@ export function ReasoningEffortSelector({
           )}
         >
           <CheckIcon
-            className={cn("size-3.5 shrink-0", value ? "opacity-0" : "opacity-100")}
+            className={cn(
+              "size-3.5 shrink-0",
+              value ? "opacity-0" : "opacity-100",
+            )}
           />
           Auto
         </button>

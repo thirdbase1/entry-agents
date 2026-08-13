@@ -128,7 +128,9 @@ describe("diff utils", () => {
     // No NUL bytes or other raw binary content should ever end up in the
     // diff string -- this is what previously broke the Postgres write.
     expect(file.diff).not.toContain("\u0000");
-    expect(file.diff).toContain("Binary files /dev/null and b/uploads/photo.webp differ");
+    expect(file.diff).toContain(
+      "Binary files /dev/null and b/uploads/photo.webp differ",
+    );
   });
 
   test("buildUntrackedDiffFile returns null for unreadable content", () => {

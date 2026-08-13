@@ -32,8 +32,6 @@ export function resolveChatModelSelection({
 
   return {
     id: availableModelId as AgentModelSelection["id"],
-    ...(providerOptionsOverrides
-      ? { providerOptionsOverrides }
-      : {}),
+    ...(providerOptionsOverrides ? { providerOptionsOverrides } : {}),
   };
 }

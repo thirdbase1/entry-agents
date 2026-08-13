@@ -98,7 +98,7 @@ describe("/api/settings/preferences", () => {
     preferencesState.enabledModelIds = ["kimi-k3", "openai/gpt-5"];
 
     const response = await GET(
-      new Request("https://entry.dev/api/settings/preferences"),
+      new Request("https://entry-agent.dev/api/settings/preferences"),
     );
     const body = (await response.json()) as {
       preferences: typeof preferencesState;

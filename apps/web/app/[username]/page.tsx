@@ -306,13 +306,13 @@ export default async function PublicUsagePage({
         {/* Footer */}
         <div className="mt-16 flex items-center justify-between gap-4 border-t border-border/50 pt-6">
           <span className="font-mono text-xs text-muted-foreground">
-            entry.dev{publicProfilePath}
+            entry-agent.dev{publicProfilePath}
             {profile.dateSelection.value
               ? `?date=${profile.dateSelection.value}`
               : ""}
           </span>
           <a
-            href="https://entry.dev"
+            href="https://entry-agent.dev"
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             Entry ↗

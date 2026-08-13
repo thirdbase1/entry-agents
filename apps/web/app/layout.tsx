@@ -46,7 +46,7 @@ const metadataBase =
     ? new URL(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
     : process.env.VERCEL_URL
       ? new URL(`https://${process.env.VERCEL_URL}`)
-      : new URL("https://entry.dev");
+      : new URL("https://entry-agent.dev");
 
 export const metadata: Metadata = {
   metadataBase,

@@ -170,7 +170,7 @@ export default function OgImage() {
                 letterSpacing: "0.01em",
               }}
             >
-              entry.dev
+              entry-agent.dev
             </span>
           </div>
         </div>

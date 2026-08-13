@@ -247,7 +247,7 @@ export function sharedProvider(
   const { config, providerOptionsOverrides, appName, appUrl } = options;
 
   const attributionHeaders = {
-    "http-referer": appUrl ?? "https://entry.dev",
+    "http-referer": appUrl ?? "https://entry-agent.dev",
     "x-title": appName ?? "Entry",
   };
 

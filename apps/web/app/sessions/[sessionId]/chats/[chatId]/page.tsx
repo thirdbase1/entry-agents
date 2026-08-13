@@ -179,11 +179,8 @@ export default async function SessionChatPage({
     requestHost,
   );
   const chatModelId =
-    sanitizeSelectedModelIdForSession(
-      chat.modelId,
-      session,
-      requestHost,
-    ) ?? chat.modelId;
+    sanitizeSelectedModelIdForSession(chat.modelId, session, requestHost) ??
+    chat.modelId;
   const initialModelOptions = withMissingModelOption(
     buildSessionChatModelOptions(filteredModels),
     chatModelId,

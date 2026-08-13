@@ -347,7 +347,7 @@ export async function GET(request: Request, context: OgRouteContext) {
               letterSpacing: "0.01em",
             }}
           >
-            entry.dev
+            entry-agent.dev
           </span>
         </div>
       </div>

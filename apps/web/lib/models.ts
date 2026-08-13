@@ -104,10 +104,7 @@ export function estimateModelUsageCost(
     return undefined;
   }
 
-  const cacheWriteInputTokens = Math.max(
-    0,
-    usage.cacheWriteInputTokens ?? 0,
-  );
+  const cacheWriteInputTokens = Math.max(0, usage.cacheWriteInputTokens ?? 0);
   const cachedInputTokens = Math.max(0, usage.cachedInputTokens);
   // inputTokens is the *total* prompt size, which already includes both
   // the cache-read and cache-write portions -- subtract both so the

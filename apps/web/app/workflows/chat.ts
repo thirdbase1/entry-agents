@@ -21,6 +21,7 @@ import type {
   WebAgentMessageMetadata,
   WebAgentPrData,
   WebAgentPrDataPart,
+  WebAgentStepCostBreakdown,
   WebAgentStepFinishMetadata,
   WebAgentUIMessage,
 } from "@/app/types";
@@ -1248,6 +1249,10 @@ const runAgentStep = async (
       lastOriginalMessage?.role === "assistant"
         ? lastOriginalMessage.metadata?.totalMessageCost
         : undefined;
+    const existingStepBreakdown: WebAgentStepCostBreakdown[] =
+      lastOriginalMessage?.role === "assistant"
+        ? [...(lastOriginalMessage.metadata?.stepBreakdown ?? [])]
+        : [];
     let stepFinishReasons = existingStepFinishReasons;
     let totalMessageUsage = existingTotalMessageUsage;
     let totalMessageCost = existingTotalMessageCost;
@@ -1357,6 +1362,32 @@ const runAgentStep = async (
       }
       return (sum ?? 0) + cost;
     }, undefined);
+
+    // Per-step breakdown for the "what made up this cost" dropdown on the
+    // usage pill -- one entry per model step in this turn, carrying the
+    // model, token usage, estimated cost, and which tools it called.
+    const newStepBreakdown: WebAgentStepCostBreakdown[] = steps.map((step) => ({
+      stepNumber: existingStepBreakdown.length + step.stepNumber + 1,
+      modelId: step.model?.modelId ?? modelId,
+      finishReason: step.finishReason,
+      rawFinishReason: step.rawFinishReason,
+      usage: step.usage,
+      cost: estimateStepCost(
+        step.providerMetadata,
+        modelId,
+        step.usage,
+        modelCostCatalog,
+      ),
+      toolCallNames: step.toolCalls.map((toolCall) => toolCall.toolName),
+    }));
+    const stepBreakdown = [...existingStepBreakdown, ...newStepBreakdown];
+    responseMessage = {
+      ...responseMessage,
+      metadata: {
+        ...responseMessage.metadata,
+        stepBreakdown,
+      },
+    };
 
     if (stepsCost !== undefined) {
       const carriedCost = (existingTotalMessageCost ?? 0) + stepsCost;

@@ -40,6 +40,10 @@ function commandOutput(result: ExecResult): string {
   return result.stderr?.trim() || result.stdout?.trim() || "Git command failed";
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 function isMissingRemoteRef(result: ExecResult): boolean {
   const output = `${result.stderr}\n${result.stdout}`;
   return output.includes("couldn't find remote ref");
@@ -135,9 +139,39 @@ export async function hasUncommittedChanges(
 }
 
 /**
+ * Remove any embedded `.git` directories nested inside the working tree
+ * (excluding the repo's own top-level `.git`) before staging.
+ *
+ * If left in place, `git add -A` records a nested `.git` directory's parent
+ * as a gitlink (tree mode 160000, i.e. a submodule reference) instead of
+ * walking into its files. This commonly happens by accident -- e.g. a
+ * template, vendored package, or `git clone` performed inside the repo
+ * without cleaning up its own `.git` folder. A gitlink can't be committed
+ * through GitHub's contents/tree API (there's no real submodule to point
+ * at), so without this cleanup the *entire* commit fails with an opaque
+ * "Unsupported git file mode '160000'" error -- even when the nested `.git`
+ * folder is unrelated to the actual change being committed. Stripping it
+ * here means the directory's real files just get tracked normally instead.
+ */
+async function stripNestedGitDirectories(sandbox: Sandbox): Promise<void> {
+  const result = await exec(
+    sandbox,
+    "find . -mindepth 2 -type d -name .git -prune -print0 | xargs -0 -r rm -rf --",
+    15000,
+  );
+  if (!result.success) {
+    throw new Error(
+      `Failed to clean up nested .git directories: ${commandOutput(result)}`,
+    );
+  }
+}
+
+/**
  * Stage all changes in the sandbox working directory.
  */
 export async function stageAll(sandbox: Sandbox): Promise<void> {
+  await stripNestedGitDirectories(sandbox);
+
   const result = await exec(sandbox, "git add -A", 10000);
   if (!result.success) {
     throw new Error(`Failed to stage changes: ${result.stdout}`);
@@ -294,6 +328,30 @@ export async function readFileContents(
   }
 
   return results;
+}
+
+/**
+ * Read a symlink's target from the git index (stage 0), i.e. what will
+ * actually be committed as the blob content for a mode-120000 tree entry.
+ * Reading from the index rather than the filesystem keeps this in sync
+ * with whatever is staged, even if the working tree symlink changes again
+ * before the commit is built.
+ */
+export async function getSymlinkTarget(
+  sandbox: Sandbox,
+  path: string,
+): Promise<string> {
+  const result = await exec(
+    sandbox,
+    `git cat-file -p :${shellQuote(path)}`,
+    10000,
+  );
+  if (!result.success) {
+    throw new Error(
+      `Failed to read symlink target for '${path}': ${commandOutput(result)}`,
+    );
+  }
+  return result.stdout.trim();
 }
 
 /**

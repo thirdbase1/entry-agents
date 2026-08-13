@@ -31,6 +31,7 @@ export {
   detectBinaryFiles,
   readFileContents,
   getFileModes,
+  getSymlinkTarget,
   syncToRemote,
   syncToRemotePreservingChanges,
   withTemporaryGitHubAuth,

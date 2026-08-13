@@ -18,6 +18,20 @@ export type WebAgentStepFinishMetadata = {
   rawFinishReason?: string;
 };
 
+export type WebAgentStepCostBreakdown = {
+  /** 1-indexed step number within this assistant turn. */
+  stepNumber: number;
+  /** The model that actually produced this step (may differ from the requested modelId on fallback). */
+  modelId?: string;
+  finishReason: FinishReason;
+  rawFinishReason?: string;
+  usage?: LanguageModelUsage;
+  /** Gateway/catalog-estimated cost of this single step, in USD. */
+  cost?: number;
+  /** Names of tools invoked during this step, if any (e.g. ["bash", "write"]). */
+  toolCallNames?: string[];
+};
+
 export type WebAgentMessageMetadata = {
   selectedModelId?: string;
   modelId?: string;
@@ -30,6 +44,8 @@ export type WebAgentMessageMetadata = {
   lastStepFinishReason?: FinishReason;
   lastStepRawFinishReason?: string;
   stepFinishReasons?: WebAgentStepFinishMetadata[];
+  /** Full per-step cost/usage breakdown for the "what made up this cost" dropdown. */
+  stepBreakdown?: WebAgentStepCostBreakdown[];
   /**
    * True when the upstream model provider reported its own quota/capacity
    * as exhausted (e.g. a monthly token cap on the provider's side) but

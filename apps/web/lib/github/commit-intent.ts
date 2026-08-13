@@ -4,6 +4,7 @@ import {
   getChangedFiles,
   getFileModes,
   getHeadSha,
+  getSymlinkTarget,
 } from "@open-agents/sandbox";
 import type { GitIdentity } from "./commit";
 
@@ -11,7 +12,7 @@ const MAX_COMMIT_FILES = 500;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
-export type GitTreeFileMode = "100644" | "100755";
+export type GitTreeFileMode = "100644" | "100755" | "120000";
 export type CommitFileEncoding = "utf-8" | "base64";
 
 export interface CommitIntentFile {
@@ -42,7 +43,27 @@ export type BuildCommitIntentResult =
   | { ok: false; error: string; empty?: boolean };
 
 function isValidGitTreeFileMode(value: string): value is GitTreeFileMode {
-  return value === "100644" || value === "100755";
+  return value === "100644" || value === "100755" || value === "120000";
+}
+
+// GitHub's contents/tree API has no equivalent of a "commit" tree entry, so
+// a real submodule reference (mode 160000) can never be committed through
+// it -- there's nothing to point at. In practice this mode almost always
+// shows up by accident (a vendored package or `git clone` left its own
+// `.git` folder inside the repo), which stageAll() now strips before
+// staging (see packages/sandbox/git.ts). If one still reaches here, say so
+// plainly instead of just naming the raw mode.
+function describeUnsupportedGitTreeFileMode(
+  mode: string,
+  path: string,
+): string {
+  if (mode === "160000") {
+    return (
+      `'${path}' is a nested git repository (it has its own .git folder), which git records as a submodule reference (mode 160000) rather than tracking its files individually. ` +
+      "That can't be committed through the GitHub API. Delete its .git folder to include the files directly, or add it to .gitignore to exclude it, then try again."
+    );
+  }
+  return `Unsupported git file mode '${mode}' for '${path}'`;
 }
 
 export function getRepoRelativePathError(path: string): string | null {
@@ -150,7 +171,7 @@ export async function buildCommitIntentFromSandbox(params: {
     if (!isValidGitTreeFileMode(rawMode)) {
       return {
         ok: false,
-        error: `Unsupported git file mode '${rawMode}' for '${change.path}'`,
+        error: describeUnsupportedGitTreeFileMode(rawMode, change.path),
       };
     }
 
@@ -167,12 +188,22 @@ export async function buildCommitIntentFromSandbox(params: {
       continue;
     }
 
-    const file = await readCommitFile({
-      sandbox: params.sandbox,
-      cwd: params.sandbox.workingDirectory,
-      path: change.path,
-      isBinary: binaryFiles.has(change.path),
-    });
+    const file =
+      rawMode === "120000"
+        ? {
+            content: await getSymlinkTarget(params.sandbox, change.path),
+            encoding: "utf-8" as const,
+            byteSize: 0,
+          }
+        : await readCommitFile({
+            sandbox: params.sandbox,
+            cwd: params.sandbox.workingDirectory,
+            path: change.path,
+            isBinary: binaryFiles.has(change.path),
+          });
+    if (rawMode === "120000") {
+      file.byteSize = Buffer.byteLength(file.content, "utf-8");
+    }
 
     if (file.byteSize > MAX_FILE_BYTES) {
       return {

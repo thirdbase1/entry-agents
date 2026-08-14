@@ -25,6 +25,30 @@ export type TodoItem = z.infer<typeof todoItemSchema>;
  * background auto-commit) and threads it through call options, same as it
  * threads `sandbox` itself.
  */
+export interface GithubApiRequestInput {
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  /**
+   * Relative to this session's connected repo by default (resolves to
+   * /repos/{owner}/{repo}/{path}) -- e.g. "pulls/12/comments",
+   * "issues/3/labels". Prefix with "/" for any other GitHub REST
+   * endpoint, e.g. "/user" or "/orgs/{org}/repos".
+   */
+  path: string;
+  /**
+   * Octokit-style: keys matching {templates} in the resolved path fill
+   * the URL, everything else becomes query params (GET/HEAD/DELETE) or
+   * JSON body fields (POST/PATCH/PUT).
+   */
+  params?: Record<string, unknown>;
+}
+
+export interface GithubApiResult {
+  success: boolean;
+  status?: number;
+  data?: unknown;
+  error?: string;
+}
+
 export interface GithubToolContext {
   hasRepo: boolean;
   repoOwner?: string;
@@ -34,13 +58,15 @@ export interface GithubToolContext {
     commitBody?: string;
   }) => Promise<GithubCommitToolResult>;
   /**
-   * Fetch every comment/review left on the pull request for this
-   * session's branch (inline review comments, general conversation
-   * comments, and review summaries). Backed by the same GitHub App
-   * Octokit client as commitAndPush -- see apps/web/lib/github/pulls.ts
-   * getPullRequestComments().
+   * Generic passthrough to any GitHub REST API endpoint (list/create
+   * PRs and issues, comments, reviews, labels, merges, branch
+   * protection, releases, etc.) -- same one-tool-many-actions shape as
+   * VercelToolContext.run below. Backed by the same GitHub App Octokit
+   * client as commitAndPush -- see apps/web/lib/github/client.ts
+   * getOctokit(). Path resolves relative to this session's connected
+   * repo unless it starts with "/".
    */
-  listPrComments: () => Promise<GithubPrCommentsResult>;
+  request: (input: GithubApiRequestInput) => Promise<GithubApiResult>;
 }
 
 export interface GithubCommitToolResult {
@@ -48,22 +74,6 @@ export interface GithubCommitToolResult {
   pushed: boolean;
   commitSha?: string;
   commitUrl?: string;
-  error?: string;
-}
-
-export interface GithubPrCommentsResult {
-  success: boolean;
-  prNumber?: number;
-  comments: {
-    id: number;
-    author: string | null;
-    body: string;
-    createdAt: string;
-    htmlUrl: string;
-    path?: string;
-    line?: number | null;
-    isReviewSummary?: boolean;
-  }[];
   error?: string;
 }
 
@@ -75,13 +85,13 @@ export interface GithubPrCommentsResult {
  */
 export interface GithubCliToolResult {
   success: boolean;
-  action: "commit_and_push" | "pr_comments";
+  action: "commit_and_push" | "api";
   committed?: boolean;
   pushed?: boolean;
   commitSha?: string;
   commitUrl?: string;
-  prNumber?: number;
-  comments?: GithubPrCommentsResult["comments"];
+  status?: number;
+  data?: unknown;
   error?: string;
 }
 

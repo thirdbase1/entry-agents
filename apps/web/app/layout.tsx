@@ -51,8 +51,8 @@ const metadataBase =
 export const metadata: Metadata = {
   metadataBase,
   title: {
-    default: "Open Agents",
-    template: "%s | Open Agents",
+    default: "Entry Agent",
+    template: "%s | Entry Agent",
   },
   description:
     "Spawn coding agents that run infinitely in the cloud. Powered by AI SDK, Gateway, Sandbox, and Workflow SDK.",

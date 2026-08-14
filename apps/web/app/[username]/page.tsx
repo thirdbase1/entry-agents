@@ -36,7 +36,7 @@ export async function generateMetadata({
   if (!profile) {
     return {
       title: "Public profile",
-      description: "Public Open Agents usage profile.",
+      description: "Public Entry Agent usage profile.",
     };
   }
 
@@ -306,16 +306,16 @@ export default async function PublicUsagePage({
         {/* Footer */}
         <div className="mt-16 flex items-center justify-between gap-4 border-t border-border/50 pt-6">
           <span className="font-mono text-xs text-muted-foreground">
-            open-agents.dev{publicProfilePath}
+            entry-agents.vercel.app{publicProfilePath}
             {profile.dateSelection.value
               ? `?date=${profile.dateSelection.value}`
               : ""}
           </span>
           <a
-            href="https://open-agents.dev"
+            href="https://entry-agents.vercel.app"
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Open Agents ↗
+            Entry Agent ↗
           </a>
         </div>
       </div>

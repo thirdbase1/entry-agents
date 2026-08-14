@@ -13,13 +13,13 @@ import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 
 type StepId = 1 | 2;
 
-function OpenAgentsLogo({ className }: { className?: string }) {
+function EntryAgentLogo({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       className={className}
-      aria-label="Open Agents"
+      aria-label="Entry Agent"
     >
       <path
         d="M4 17L10 11L4 5"
@@ -91,9 +91,9 @@ export function GetStartedFlow() {
       {/* left panel */}
       <div className="flex shrink-0 flex-col justify-between bg-black px-6 py-6 md:w-1/2 md:px-12 md:py-10">
         <div className="flex items-center gap-3">
-          <OpenAgentsLogo className="size-7 text-white/50" />
+          <EntryAgentLogo className="size-7 text-white/50" />
           <span className="text-lg font-semibold tracking-tight text-white/50">
-            Open Agents
+            Entry Agent
           </span>
         </div>
         <p className="hidden max-w-sm text-sm leading-relaxed text-zinc-600 md:block">

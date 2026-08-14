@@ -132,7 +132,7 @@ export const openAgent = new ToolLoopAgent({
   },
   prepareCall: ({ options, ...settings }) => {
     if (!options) {
-      throw new Error("Open Agent requires call options with sandbox.");
+      throw new Error("Entry Agent requires call options with sandbox.");
     }
 
     const mainSelection = normalizeAgentModelSelection(

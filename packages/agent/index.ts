@@ -46,6 +46,7 @@ export type {
 } from "./tools/task";
 export type {
   AgentContext,
+  GithubCliToolResult,
   GithubCommitToolResult,
   GithubPrCommentsResult,
   GithubToolContext,

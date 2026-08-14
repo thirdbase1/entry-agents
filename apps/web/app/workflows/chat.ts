@@ -8,7 +8,11 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import type { OpenAgentCallOptions } from "@open-agents/agent";
+import type {
+  GithubApiResult,
+  OpenAgentCallOptions,
+  VercelCliToolResult,
+} from "@open-agents/agent";
 import { getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -107,8 +111,16 @@ type SerializableGithubContext = {
   repoOwner?: string;
   repoName?: string;
 };
-type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github"> & {
+// Same reasoning as SerializableGithubContext above -- `vercel.run` is a
+// closure and can't cross the workflow-to-step serialization boundary,
+// so only the plain `connected` flag travels with the workflow; the real
+// closure is rebuilt inside runAgentStep, right next to `commitAndPush`.
+type SerializableVercelContext = {
+  connected: boolean;
+};
+type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github" | "vercel"> & {
   github?: SerializableGithubContext;
+  vercel?: SerializableVercelContext;
 };
 
 const shouldPauseForToolInteraction = (parts: WebAgentUIMessage["parts"]) =>
@@ -821,6 +833,162 @@ async function performAgentCommitAndPush(params: {
   };
 }
 
+/**
+ * Cheap Vercel-account-linked check for the agent's `vercel_cli` tool,
+ * run as its own step -- same reasoning as performAgentCommitAndPush
+ * above: hasVercelAccountLinked's module touches the drizzle db client
+ * ("postgres") and, transitively via lib/auth/config, "nanoid", both
+ * Node built-ins the Workflow SDK's bundler refuses to include in the
+ * restricted "use workflow" environment even behind a dynamic import()
+ * -- the target function itself has to carry the "use step" directive
+ * for the bundler to extract it instead of inlining it. Kept separate
+ * from performAgentVercelCli (which needs the *real* token, refreshed
+ * via next/headers -- request-scoped, so only meaningful right before
+ * actually running a CLI command) since this only needs a cheap
+ * existence check to decide whether to surface the tool at all.
+ */
+async function checkVercelConnectedStep(userId: string): Promise<boolean> {
+  "use step";
+
+  const { hasVercelAccountLinked } = await import("@/lib/vercel/token");
+  return hasVercelAccountLinked(userId);
+}
+
+/**
+ * Runs one generic GitHub REST API call for the agent's `github_cli`
+ * tool's 'api' action, as a step -- same reasoning as
+ * performAgentCommitAndPush: the Octokit client pulls in Node built-ins
+ * the Workflow SDK's restricted "use workflow" bundler won't include, so
+ * this has to be its own step. Deliberately generic (method + path +
+ * params, not a fixed set of endpoints) so the agent can do essentially
+ * anything the GitHub API supports -- list/create/update/close/merge
+ * PRs and issues, comments, reviews, labels, branches, releases -- not
+ * just whatever handful of actions we thought to hardcode.
+ */
+async function performAgentGithubApiRequest(params: {
+  userId: string;
+  repoOwner: string;
+  repoName: string;
+  method: string;
+  path: string;
+  params?: Record<string, unknown>;
+}): Promise<GithubApiResult> {
+  "use step";
+
+  const { getUserOctokit } = await import("@/lib/github/client");
+
+  const octokit = await getUserOctokit(params.userId);
+  if (!octokit) {
+    return {
+      success: false,
+      error: "No GitHub token available for this repository.",
+    };
+  }
+
+  const rawPath = params.path.trim();
+  const fullPath = rawPath.startsWith("/")
+    ? rawPath
+    : `/repos/${params.repoOwner}/${params.repoName}/${rawPath.replace(/^\/+/, "")}`;
+
+  try {
+    const response = await octokit.request(
+      `${params.method} ${fullPath}`,
+      params.params ?? {},
+    );
+    return { success: true, status: response.status, data: response.data };
+  } catch (error) {
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? (error as { status?: number }).status
+        : undefined;
+    return {
+      success: false,
+      status,
+      error:
+        error instanceof Error ? error.message : "GitHub API request failed",
+    };
+  }
+}
+
+function shellEscapeForVercelEnv(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * Runs an arbitrary Vercel CLI command for the agent's `vercel_cli` tool
+ * as a step, same reasoning as the two steps above. Fetches a fresh
+ * per-user Vercel OAuth token (better-auth auto-refreshes it) plus the
+ * Vercel project already linked to this repo, then runs the command in
+ * the connected sandbox with the token set only for that single bash
+ * invocation's environment -- never written to disk, never passed to the
+ * model. Output is scrubbed of the raw token before it's returned, in
+ * case the command itself echoes its environment.
+ */
+async function performAgentVercelCli(params: {
+  userId: string;
+  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  workingDirectory: string;
+  repoOwner?: string;
+  repoName?: string;
+  args: string;
+}): Promise<VercelCliToolResult> {
+  "use step";
+
+  const { connectSandbox } = await import("@open-agents/sandbox");
+  const { getUserVercelToken } = await import("@/lib/vercel/token");
+  const { getVercelProjectLinkByRepo } = await import(
+    "@/lib/db/vercel-project-links"
+  );
+
+  let token: string | null;
+  try {
+    token = await getUserVercelToken(params.userId);
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? `Failed to read Vercel credentials: ${error.message}`
+          : "Failed to read Vercel credentials.",
+    };
+  }
+
+  if (!token) {
+    return {
+      success: false,
+      error: "No Vercel account is connected for this user.",
+    };
+  }
+
+  const projectLink =
+    params.repoOwner && params.repoName
+      ? await getVercelProjectLinkByRepo(
+          params.userId,
+          params.repoOwner,
+          params.repoName,
+        )
+      : null;
+
+  const sandbox = await connectSandbox(params.sandboxState);
+
+  const tokenArg = shellEscapeForVercelEnv(token);
+  const scopeFlag = projectLink?.teamSlug
+    ? ` --scope=${shellEscapeForVercelEnv(projectLink.teamSlug)}`
+    : "";
+  const command = `VERCEL_TOKEN=${tokenArg} vercel ${params.args}${scopeFlag}`;
+
+  const result = await sandbox.exec(command, params.workingDirectory, 120000);
+
+  const redact = (text: string) => (text ? text.split(token).join("[REDACTED]") : text);
+
+  return {
+    success: result.success,
+    exitCode: result.exitCode,
+    stdout: redact(result.stdout),
+    stderr: redact(result.stderr),
+  };
+}
+
 export async function runAgentWorkflow(options: Options) {
   "use workflow";
 
@@ -852,6 +1020,26 @@ export async function runAgentWorkflow(options: Options) {
     userId: options.userId,
     sessionId: options.sessionId,
   });
+  // Cheap existence check only (no live token refresh -- see
+  // hasVercelAccountLinked's own comment on why) so the workflow can
+  // decide whether to surface the vercel_cli tool at all, mirroring how
+  // `hasRepo` below is derived from plain columns rather than a live
+  // GitHub API call. Best-effort: if this fails, just hide the tool
+  // rather than failing the whole turn.
+  //
+  // Routed through its own tiny step (checkVercelConnectedStep, defined
+  // below) rather than calling hasVercelAccountLinked directly from this
+  // "use workflow" function: that module's static imports (drizzle db
+  // client -> "postgres", better-auth config -> "nanoid") are Node-only
+  // and the workflow bundler pulls in a statically-imported function's
+  // *entire* module graph even when unused by that one function, which
+  // fails the build. Every other DB/Node-module touchpoint in this file
+  // (performAgentCommitAndPush, performAgentGithubApiRequest,
+  // performAgentVercelCli) already avoids this via dynamic import()
+  // inside a "use step" function -- same fix here.
+  const vercelConnectedPromise = checkVercelConnectedStep(
+    options.userId,
+  ).catch(() => false);
 
   // Fast path (the common case, no attachments): convert messages straight
   // away, fully in parallel with sandbox resolution below. Only when there
@@ -957,13 +1145,15 @@ export async function runAgentWorkflow(options: Options) {
   let shouldRefreshCachedDiff = false;
 
   try {
-    const [, runtime, modelRuntime, modelMessages] = await Promise.all([
-      activeStreamClaimPromise,
-      runtimePromise,
-      modelRuntimePromise,
-      modelMessagesPromise,
-      inputMessagesPersistPromise,
-    ]);
+    const [, runtime, modelRuntime, modelMessages, , vercelConnected] =
+      await Promise.all([
+        activeStreamClaimPromise,
+        runtimePromise,
+        modelRuntimePromise,
+        modelMessagesPromise,
+        inputMessagesPersistPromise,
+        vercelConnectedPromise,
+      ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
     pendingAssistantResponse = {
@@ -995,6 +1185,9 @@ export async function runAgentWorkflow(options: Options) {
         hasRepo,
         repoOwner: runtime.repoOwner,
         repoName: runtime.repoName,
+      },
+      vercel: {
+        connected: vercelConnected,
       },
     };
     sandboxState = runtime.sandboxState;
@@ -1361,6 +1554,7 @@ const runAgentStep = async (
     // workflow-to-step serialization boundary. This runs with full
     // Node/DB access since we're already inside a step.
     const githubContext = agentOptions.github;
+    const vercelContext = agentOptions.vercel;
     const fullAgentOptions: OpenAgentCallOptions = {
       ...agentOptions,
       github: githubContext
@@ -1394,6 +1588,48 @@ const runAgentStep = async (
                 repoOwner: githubContext.repoOwner,
                 repoName: githubContext.repoName,
                 ...(commitMessage ? { commitMessage } : {}),
+              });
+            },
+            request: async (input) => {
+              if (
+                !githubContext.hasRepo ||
+                !githubContext.repoOwner ||
+                !githubContext.repoName
+              ) {
+                return {
+                  success: false,
+                  error:
+                    "No GitHub repository is connected to this session yet.",
+                };
+              }
+              return performAgentGithubApiRequest({
+                userId,
+                repoOwner: githubContext.repoOwner,
+                repoName: githubContext.repoName,
+                method: input.method,
+                path: input.path,
+                params: input.params,
+              });
+            },
+          }
+        : undefined,
+      vercel: vercelContext
+        ? {
+            connected: vercelContext.connected,
+            run: async (input) => {
+              if (!vercelContext.connected) {
+                return {
+                  success: false,
+                  error: "No Vercel account is connected for this user.",
+                };
+              }
+              return performAgentVercelCli({
+                userId,
+                sandboxState: agentOptions.sandbox.state,
+                workingDirectory: agentOptions.sandbox.workingDirectory,
+                repoOwner: githubContext?.repoOwner,
+                repoName: githubContext?.repoName,
+                args: input.args,
               });
             },
           }

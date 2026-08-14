@@ -10,19 +10,20 @@ import {
 } from "./models";
 
 import type { SkillMetadata } from "./skills/types";
-import type { GithubToolContext } from "./types";
+import type { GithubToolContext, VercelToolContext } from "./types";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
   bashTool,
   editFileTool,
-  githubCommitTool,
+  githubCliTool,
   globTool,
   grepTool,
   readFileTool,
   skillTool,
   taskTool,
   todoWriteTool,
+  vercelCliTool,
   webFetchTool,
   webSearchTool,
   writeFileTool,
@@ -63,6 +64,11 @@ const callOptionsSchema = z.object({
   // doesn't wire up GitHub (e.g. tests) -- the tool degrades to a clear
   // error in that case rather than throwing.
   github: z.custom<GithubToolContext>().optional(),
+  // Injected by apps/web the same way `github` is -- see
+  // AgentContext.vercel in ./types and app/workflows/chat.ts. Undefined
+  // in any host that doesn't wire up Vercel (e.g. tests) -- the
+  // vercel_cli tool degrades to a clear error in that case.
+  vercel: z.custom<VercelToolContext>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -106,7 +112,8 @@ const tools = {
   skill: skillTool,
   web_fetch: webFetchTool,
   web_search: webSearchTool,
-  github_commit_and_push: githubCommitTool(),
+  github_cli: githubCliTool(),
+  vercel_cli: vercelCliTool(),
 } satisfies ToolSet;
 
 export const openAgent = new ToolLoopAgent({
@@ -172,6 +179,7 @@ export const openAgent = new ToolLoopAgent({
         subagentModel,
         permissionMode: options.permissionMode ?? "ask",
         github: options.github,
+        vercel: options.vercel,
       },
     };
   },

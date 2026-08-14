@@ -21,6 +21,26 @@ async function getVercelAccountId(userId: string): Promise<string> {
 }
 
 /**
+ * Cheap existence check for whether this user has a linked Vercel
+ * account -- a single indexed row lookup, no live token refresh (that
+ * needs next/headers() via better-auth, which only works within an
+ * actual request context, not durable workflow/step scope). Used by
+ * runAgentWorkflow (see app/workflows/chat.ts) to decide whether to
+ * surface the vercel_cli tool's `connected` flag to the agent, mirroring
+ * how `github.hasRepo` is derived from plain session columns rather than
+ * a live GitHub API call.
+ */
+export async function hasVercelAccountLinked(userId: string): Promise<boolean> {
+  try {
+    const accountId = await getVercelAccountId(userId);
+    return accountId.length > 0;
+  } catch (error) {
+    console.error("Error checking Vercel account link:", error);
+    return false;
+  }
+}
+
+/**
  * Get a valid Vercel access token plus CLI-relevant metadata for the given user.
  * better-auth auto-refreshes expired tokens via stored refresh token.
  */

@@ -17,5 +17,6 @@ export {
 } from "./ask-user-question";
 export { skillTool, type SkillToolInput } from "./skill";
 export { webFetchTool } from "./fetch";
-export { githubCommitTool, type GithubCommitToolInput } from "./github";
+export { githubCliTool, type GithubCliToolInput } from "./github";
+export { vercelCliTool, type VercelCliToolInput } from "./vercel";
 export { webSearchTool } from "./web-search";

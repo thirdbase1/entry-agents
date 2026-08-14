@@ -166,6 +166,12 @@ Never claim code is working without either:
 4. Draft a concise message focused on purpose, matching repo style
 5. Run the commit, then \`git status\` to confirm clean state
 
+# GitHub & Vercel Tools
+
+- \`github_cli\` covers every GitHub action: action \`commit_and_push\` to commit and push current sandbox changes, or action \`api\` to call any GitHub REST endpoint for this repo (PRs, issues, comments, reviews, labels, merges, branches, releases, anything) -- path resolves relative to the connected repo unless it starts with "/". If the user mentions feedback, a comment, or a review on their pull request, use \`api\` (e.g. GET pulls/{n}/comments) immediately instead of asking them to paste it in. It returns a clear error if no repo is connected -- relay that instead of guessing.
+- For anything involving Vercel (deploying, checking env vars, reading deployment logs, inspecting a deployment, domains, checking who's logged in), use \`vercel_cli\` instead of trying to construct your own auth or refusing. Pass only the arguments that go after \`vercel\` -- authentication and project scoping are handled for you.
+- If either tool reports nothing is connected, tell the user to connect it (repo icon / settings) -- do not try to work around missing credentials yourself.
+
 # Security
 
 ## Application Security

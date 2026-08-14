@@ -44,7 +44,18 @@ export type {
   TaskToolOutput,
   TaskToolUIPart,
 } from "./tools/task";
-export type { TodoItem, TodoStatus } from "./types";
+export type {
+  AgentContext,
+  GithubApiRequestInput,
+  GithubApiResult,
+  GithubCliToolResult,
+  GithubCommitToolResult,
+  GithubToolContext,
+  TodoItem,
+  TodoStatus,
+  VercelCliToolResult,
+  VercelToolContext,
+} from "./types";
 export {
   addLanguageModelUsage,
   collectTaskToolUsage,

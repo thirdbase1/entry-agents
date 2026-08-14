@@ -1391,3 +1391,117 @@ export async function findDeploymentUrl(params: {
     };
   }
 }
+
+export type PullRequestComment = {
+  id: number;
+  author: string | null;
+  body: string;
+  createdAt: string;
+  htmlUrl: string;
+  path?: string;
+  line?: number | null;
+  isReviewSummary?: boolean;
+};
+
+/**
+ * Fetch every comment left on a pull request: inline code-review comments,
+ * general PR conversation comments, and review summaries (approve/request
+ * changes/comment bodies). Used by the agent's github_pr_comments tool so
+ * it can answer "what's the feedback on my PR" without the user having to
+ * paste anything.
+ */
+export async function getPullRequestComments(params: {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  token?: string;
+}): Promise<{
+  success: boolean;
+  comments: PullRequestComment[];
+  error?: string;
+}> {
+  const { owner, repo, prNumber, token } = params;
+
+  try {
+    const result = await getOctokit(token);
+
+    if (!result.authenticated) {
+      return { success: false, comments: [], error: "GitHub account not connected" };
+    }
+
+    const [reviewCommentsResponse, issueCommentsResponse, reviewsResponse] =
+      await Promise.all([
+        result.octokit.rest.pulls.listReviewComments({
+          owner,
+          repo,
+          pull_number: prNumber,
+          per_page: 100,
+        }),
+        result.octokit.rest.issues.listComments({
+          owner,
+          repo,
+          issue_number: prNumber,
+          per_page: 100,
+        }),
+        result.octokit.rest.pulls.listReviews({
+          owner,
+          repo,
+          pull_number: prNumber,
+          per_page: 100,
+        }),
+      ]);
+
+    const comments: PullRequestComment[] = [];
+
+    for (const comment of reviewCommentsResponse.data) {
+      comments.push({
+        id: comment.id,
+        author: comment.user?.login ?? null,
+        body: comment.body,
+        createdAt: comment.created_at,
+        htmlUrl: comment.html_url,
+        path: comment.path,
+        line: comment.line ?? comment.original_line ?? null,
+      });
+    }
+
+    for (const comment of issueCommentsResponse.data) {
+      if (!comment.body) {
+        continue;
+      }
+      comments.push({
+        id: comment.id,
+        author: comment.user?.login ?? null,
+        body: comment.body,
+        createdAt: comment.created_at,
+        htmlUrl: comment.html_url,
+      });
+    }
+
+    for (const review of reviewsResponse.data) {
+      if (!review.body) {
+        continue;
+      }
+      comments.push({
+        id: review.id,
+        author: review.user?.login ?? null,
+        body: `[Review: ${review.state}] ${review.body}`,
+        createdAt: review.submitted_at ?? new Date(0).toISOString(),
+        htmlUrl: review.html_url,
+        isReviewSummary: true,
+      });
+    }
+
+    comments.sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+
+    return { success: true, comments };
+  } catch {
+    return {
+      success: false,
+      comments: [],
+      error: "Failed to fetch pull request comments",
+    };
+  }
+}

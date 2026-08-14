@@ -8,7 +8,11 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import type { OpenAgentCallOptions } from "@open-agents/agent";
+import type {
+  GithubPrCommentsResult,
+  OpenAgentCallOptions,
+  VercelCliToolResult,
+} from "@open-agents/agent";
 import { getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -44,6 +48,7 @@ import {
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import { toFriendlyChatErrorText } from "@/lib/chat/friendly-error";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
+import { hasVercelAccountLinked } from "@/lib/vercel/token";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   sanitizeSelectedModelIdForSession,
@@ -107,8 +112,16 @@ type SerializableGithubContext = {
   repoOwner?: string;
   repoName?: string;
 };
-type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github"> & {
+// Same reasoning as SerializableGithubContext above -- `vercel.run` is a
+// closure and can't cross the workflow-to-step serialization boundary,
+// so only the plain `connected` flag travels with the workflow; the real
+// closure is rebuilt inside runAgentStep, right next to `commitAndPush`.
+type SerializableVercelContext = {
+  connected: boolean;
+};
+type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github" | "vercel"> & {
   github?: SerializableGithubContext;
+  vercel?: SerializableVercelContext;
 };
 
 const shouldPauseForToolInteraction = (parts: WebAgentUIMessage["parts"]) =>
@@ -821,6 +834,154 @@ async function performAgentCommitAndPush(params: {
   };
 }
 
+/**
+ * Runs the actual GitHub PR-comments read for the agent's
+ * `github_pr_comments` tool as a step, mirroring
+ * performAgentCommitAndPush above: the Octokit client and DB lookups
+ * pull in Node built-ins the Workflow SDK's restricted "use workflow"
+ * bundler won't include, so this has to be its own step called from the
+ * workflow's `github.listPrComments` closure rather than inlined there.
+ */
+async function performAgentListPrComments(params: {
+  userId: string;
+  sessionId: string;
+  repoOwner: string;
+  repoName: string;
+}): Promise<GithubPrCommentsResult> {
+  "use step";
+
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { getUserGitHubToken } = await import("@/lib/github/token");
+  const { findPullRequest, getPullRequestComments } = await import(
+    "@/lib/github/pulls"
+  );
+
+  const token = await getUserGitHubToken(params.userId);
+  if (!token) {
+    return {
+      success: false,
+      comments: [],
+      error: "No GitHub token available for this repository.",
+    };
+  }
+
+  const sessionRecord = await getSessionById(params.sessionId);
+  let prNumber = sessionRecord?.prNumber ?? undefined;
+
+  if (!prNumber && sessionRecord?.branch) {
+    const found = await findPullRequest({
+      owner: params.repoOwner,
+      repo: params.repoName,
+      branchName: sessionRecord.branch,
+      token,
+    });
+    if (found.found && found.prNumber) {
+      prNumber = found.prNumber;
+    }
+  }
+
+  if (!prNumber) {
+    return {
+      success: false,
+      comments: [],
+      error: "No pull request found for this session's branch yet.",
+    };
+  }
+
+  const result = await getPullRequestComments({
+    owner: params.repoOwner,
+    repo: params.repoName,
+    prNumber,
+    token,
+  });
+
+  return {
+    success: result.success,
+    prNumber,
+    comments: result.comments,
+    error: result.error,
+  };
+}
+
+function shellEscapeForVercelEnv(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * Runs an arbitrary Vercel CLI command for the agent's `vercel_cli` tool
+ * as a step, same reasoning as the two steps above. Fetches a fresh
+ * per-user Vercel OAuth token (better-auth auto-refreshes it) plus the
+ * Vercel project already linked to this repo, then runs the command in
+ * the connected sandbox with the token set only for that single bash
+ * invocation's environment -- never written to disk, never passed to the
+ * model. Output is scrubbed of the raw token before it's returned, in
+ * case the command itself echoes its environment.
+ */
+async function performAgentVercelCli(params: {
+  userId: string;
+  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  workingDirectory: string;
+  repoOwner?: string;
+  repoName?: string;
+  args: string;
+}): Promise<VercelCliToolResult> {
+  "use step";
+
+  const { connectSandbox } = await import("@open-agents/sandbox");
+  const { getUserVercelToken } = await import("@/lib/vercel/token");
+  const { getVercelProjectLinkByRepo } = await import(
+    "@/lib/db/vercel-project-links"
+  );
+
+  let token: string | null;
+  try {
+    token = await getUserVercelToken(params.userId);
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? `Failed to read Vercel credentials: ${error.message}`
+          : "Failed to read Vercel credentials.",
+    };
+  }
+
+  if (!token) {
+    return {
+      success: false,
+      error: "No Vercel account is connected for this user.",
+    };
+  }
+
+  const projectLink =
+    params.repoOwner && params.repoName
+      ? await getVercelProjectLinkByRepo(
+          params.userId,
+          params.repoOwner,
+          params.repoName,
+        )
+      : null;
+
+  const sandbox = await connectSandbox(params.sandboxState);
+
+  const tokenArg = shellEscapeForVercelEnv(token);
+  const scopeFlag = projectLink?.teamSlug
+    ? ` --scope=${shellEscapeForVercelEnv(projectLink.teamSlug)}`
+    : "";
+  const command = `VERCEL_TOKEN=${tokenArg} vercel ${params.args}${scopeFlag}`;
+
+  const result = await sandbox.exec(command, params.workingDirectory, 120000);
+
+  const redact = (text: string) => (text ? text.split(token).join("[REDACTED]") : text);
+
+  return {
+    success: result.success,
+    exitCode: result.exitCode,
+    stdout: redact(result.stdout),
+    stderr: redact(result.stderr),
+  };
+}
+
 export async function runAgentWorkflow(options: Options) {
   "use workflow";
 
@@ -852,6 +1013,15 @@ export async function runAgentWorkflow(options: Options) {
     userId: options.userId,
     sessionId: options.sessionId,
   });
+  // Cheap existence check only (no live token refresh -- see
+  // hasVercelAccountLinked's own comment on why) so the workflow can
+  // decide whether to surface the vercel_cli tool at all, mirroring how
+  // `hasRepo` below is derived from plain columns rather than a live
+  // GitHub API call. Best-effort: if this fails, just hide the tool
+  // rather than failing the whole turn.
+  const vercelConnectedPromise = hasVercelAccountLinked(options.userId).catch(
+    () => false,
+  );
 
   // Fast path (the common case, no attachments): convert messages straight
   // away, fully in parallel with sandbox resolution below. Only when there
@@ -957,13 +1127,15 @@ export async function runAgentWorkflow(options: Options) {
   let shouldRefreshCachedDiff = false;
 
   try {
-    const [, runtime, modelRuntime, modelMessages] = await Promise.all([
-      activeStreamClaimPromise,
-      runtimePromise,
-      modelRuntimePromise,
-      modelMessagesPromise,
-      inputMessagesPersistPromise,
-    ]);
+    const [, runtime, modelRuntime, modelMessages, , vercelConnected] =
+      await Promise.all([
+        activeStreamClaimPromise,
+        runtimePromise,
+        modelRuntimePromise,
+        modelMessagesPromise,
+        inputMessagesPersistPromise,
+        vercelConnectedPromise,
+      ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
     pendingAssistantResponse = {
@@ -995,6 +1167,9 @@ export async function runAgentWorkflow(options: Options) {
         hasRepo,
         repoOwner: runtime.repoOwner,
         repoName: runtime.repoName,
+      },
+      vercel: {
+        connected: vercelConnected,
       },
     };
     sandboxState = runtime.sandboxState;
@@ -1361,6 +1536,7 @@ const runAgentStep = async (
     // workflow-to-step serialization boundary. This runs with full
     // Node/DB access since we're already inside a step.
     const githubContext = agentOptions.github;
+    const vercelContext = agentOptions.vercel;
     const fullAgentOptions: OpenAgentCallOptions = {
       ...agentOptions,
       github: githubContext
@@ -1394,6 +1570,47 @@ const runAgentStep = async (
                 repoOwner: githubContext.repoOwner,
                 repoName: githubContext.repoName,
                 ...(commitMessage ? { commitMessage } : {}),
+              });
+            },
+            listPrComments: async () => {
+              if (
+                !githubContext.hasRepo ||
+                !githubContext.repoOwner ||
+                !githubContext.repoName
+              ) {
+                return {
+                  success: false,
+                  comments: [],
+                  error:
+                    "No GitHub repository is connected to this session yet.",
+                };
+              }
+              return performAgentListPrComments({
+                userId,
+                sessionId,
+                repoOwner: githubContext.repoOwner,
+                repoName: githubContext.repoName,
+              });
+            },
+          }
+        : undefined,
+      vercel: vercelContext
+        ? {
+            connected: vercelContext.connected,
+            run: async (input) => {
+              if (!vercelContext.connected) {
+                return {
+                  success: false,
+                  error: "No Vercel account is connected for this user.",
+                };
+              }
+              return performAgentVercelCli({
+                userId,
+                sandboxState: agentOptions.sandbox.state,
+                workingDirectory: agentOptions.sandbox.workingDirectory,
+                repoOwner: githubContext?.repoOwner,
+                repoName: githubContext?.repoName,
+                args: input.args,
               });
             },
           }

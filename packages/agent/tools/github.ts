@@ -1,7 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { isAgentContext } from "./utils";
-import type { GithubCommitToolResult } from "../types";
+import type {
+  GithubCommitToolResult,
+  GithubPrCommentsResult,
+} from "../types";
 
 const githubCommitInputSchema = z.object({
   commitTitle: z
@@ -72,6 +75,67 @@ export function githubCommitTool() {
           committed: false,
           pushed: false,
           error: error instanceof Error ? error.message : "Commit failed",
+        };
+      }
+    },
+  });
+}
+
+
+const githubPrCommentsInputSchema = z.object({});
+
+/**
+ * Lets the agent read back comments and reviews left on the pull request
+ * for the current session's branch -- general PR conversation comments,
+ * inline code-review comments, and review summaries (approve / request
+ * changes / comment) -- instead of asking the user to copy-paste them.
+ *
+ * Same wiring pattern as githubCommitTool above: routes through a closure
+ * injected by apps/web (AgentContext.github.listPrComments, see
+ * apps/web/app/workflows/chat.ts), backed by
+ * apps/web/lib/github/pulls.ts getPullRequestComments(). This tool never
+ * touches GitHub credentials directly.
+ */
+export function githubPrCommentsTool() {
+  return tool({
+    description:
+      "Fetch every comment and review left on the pull request for this session's current branch -- both general PR conversation comments and inline code-review comments/reviews. Use this whenever the user mentions there's feedback, a comment, or a review on the PR, instead of asking them to paste it in. Returns a clear error if no repository or pull request is connected yet.",
+    inputSchema: githubPrCommentsInputSchema,
+    execute: async (
+      _input,
+      { experimental_context },
+    ): Promise<GithubPrCommentsResult> => {
+      if (
+        !isAgentContext(experimental_context) ||
+        !experimental_context.github
+      ) {
+        return {
+          success: false,
+          comments: [],
+          error: "GitHub PR comments aren't available in this environment.",
+        };
+      }
+
+      const { github } = experimental_context;
+      if (!github.hasRepo) {
+        return {
+          success: false,
+          comments: [],
+          error:
+            "No GitHub repository is connected to this session yet. Ask the user to connect one via the repo icon next to the chat, then try again.",
+        };
+      }
+
+      try {
+        return await github.listPrComments();
+      } catch (error) {
+        return {
+          success: false,
+          comments: [],
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch pull request comments",
         };
       }
     },

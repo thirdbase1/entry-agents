@@ -302,7 +302,7 @@ export function sharedProvider(
 
   const attributionHeaders = {
     "http-referer": appUrl ?? "https://open-agents.dev",
-    "x-title": appName ?? "Open Agents",
+    "x-title": appName ?? "Entry Agent",
   };
 
   const { baseURL, apiKey } = config ?? getSharedProviderConfig();

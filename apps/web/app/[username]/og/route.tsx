@@ -168,7 +168,7 @@ export async function GET(request: Request, context: OgRouteContext) {
       />
 
       {/* Content — using fixed positioning for reliable layout */}
-      {/* Top-left: Open Agents branding */}
+      {/* Top-left: Entry Agent branding */}
       <div
         style={{
           position: "absolute",
@@ -202,7 +202,7 @@ export async function GET(request: Request, context: OgRouteContext) {
             letterSpacing: "-0.01em",
           }}
         >
-          Open Agents
+          Entry Agent
         </span>
       </div>
 
@@ -347,7 +347,7 @@ export async function GET(request: Request, context: OgRouteContext) {
               letterSpacing: "0.01em",
             }}
           >
-            open-agents.dev
+            entry-agents.vercel.app
           </span>
         </div>
       </div>

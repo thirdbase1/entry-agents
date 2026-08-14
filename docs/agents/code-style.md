@@ -1,6 +1,6 @@
 # Code Style & Patterns
 
-Detailed coding conventions, tool implementation patterns, and common patterns for the Open Agents codebase.
+Detailed coding conventions, tool implementation patterns, and common patterns for the Entry Agent codebase.
 
 ## Package Manager
 

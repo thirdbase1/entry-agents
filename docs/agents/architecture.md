@@ -1,6 +1,6 @@
 # Architecture
 
-This is a Turborepo monorepo for "Open Agents" - an AI coding agent built with AI SDK.
+This is a Turborepo monorepo for "Entry Agent" - an AI coding agent built with AI SDK.
 
 ## Core Flow
 

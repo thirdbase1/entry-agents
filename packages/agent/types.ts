@@ -68,6 +68,24 @@ export interface GithubPrCommentsResult {
 }
 
 /**
+ * Normalized result for the unified github_cli tool (see
+ * tools/github.ts githubCliTool) -- a single shape covering both
+ * actions so the model gets one consistent result format regardless of
+ * which action it called, mirroring VercelCliToolResult below.
+ */
+export interface GithubCliToolResult {
+  success: boolean;
+  action: "commit_and_push" | "pr_comments";
+  committed?: boolean;
+  pushed?: boolean;
+  commitSha?: string;
+  commitUrl?: string;
+  prNumber?: number;
+  comments?: GithubPrCommentsResult["comments"];
+  error?: string;
+}
+
+/**
  * App-injected implementation for the vercel_cli tool -- same pattern as
  * GithubToolContext above. apps/web builds the real `run` closure (fetches
  * a fresh per-user Vercel OAuth token plus the Vercel project already

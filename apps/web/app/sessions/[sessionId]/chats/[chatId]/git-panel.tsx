@@ -130,6 +130,12 @@ type GitPanelProps = {
 
   // Actions
   onCreateRepoClick: () => void;
+  autoCommitEnabled: boolean;
+  autoCreatePrEnabled: boolean;
+  onAutoCommitToggle: (checked: boolean) => void;
+  onAutoCreatePrToggle: (checked: boolean) => void;
+  isTogglingAutoCommit: boolean;
+  isTogglingAutoCreatePr: boolean;
   refreshDiff: () => Promise<void>;
 
   // Merge
@@ -1661,6 +1667,7 @@ export function GitPanel(props: GitPanelProps) {
     diffScope,
     setDiffScope,
     openFileTab,
+    setChangeRepoRequested,
   } = useGitPanel();
 
   const {
@@ -1681,6 +1688,12 @@ export function GitPanel(props: GitPanelProps) {
     diffSummary,
     diffRefreshing,
     onCreateRepoClick,
+    autoCommitEnabled,
+    autoCreatePrEnabled,
+    onAutoCommitToggle,
+    onAutoCreatePrToggle,
+    isTogglingAutoCommit,
+    isTogglingAutoCreatePr,
     refreshDiff,
     onMerged,
     onCloseAndArchiveClick,
@@ -1892,8 +1905,69 @@ export function GitPanel(props: GitPanelProps) {
               Connect Repo
             </Button>
           )}
+
+          {/* Switch to a different repo. Mirrors the "change repo" chevron
+              in the session header, but that chevron is hidden below the
+              `sm` breakpoint -- this button gives mobile users (where the
+              header repo name/chevron is hidden) a way to reach the same
+              dialog from inside the git panel itself. */}
+          {hasRepo && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setChangeRepoRequested(true)}
+              title={`Currently connected to ${session.repoOwner}/${session.repoName} -- pick a different repository`}
+            >
+              <FolderGit2 className="mr-1.5 h-3.5 w-3.5" />
+              Switch Repo
+              <ChevronDown className="ml-1 h-3 w-3 text-muted-foreground" />
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Auto-commit / auto-PR toggles -- per-session overrides, take
+          effect on the very next message (see buildChatRunOptions in
+          app/workflows/chat.ts). Shown whenever a repo is connected so
+          they can be flipped on/off at any point in the chat, not just
+          at session creation. */}
+      {hasRepo && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/20 px-3 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <Switch
+              checked={autoCommitEnabled}
+              onCheckedChange={onAutoCommitToggle}
+              disabled={isTogglingAutoCommit}
+              className="scale-90"
+            />
+            <span className="text-xs text-muted-foreground">
+              Auto-commit
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Switch
+              checked={autoCreatePrEnabled}
+              onCheckedChange={onAutoCreatePrToggle}
+              disabled={isTogglingAutoCreatePr || !autoCommitEnabled}
+              className="scale-90"
+            />
+            <span
+              className={cn(
+                "text-xs text-muted-foreground",
+                !autoCommitEnabled && "opacity-50",
+              )}
+              title={
+                !autoCommitEnabled
+                  ? "Requires auto-commit to be on"
+                  : undefined
+              }
+            >
+              Auto-PR
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Tab bar — matches chat tabs sub-header height */}
       <div className="flex items-center gap-0.5 border-b border-border bg-muted/30 px-2 py-[7px]">

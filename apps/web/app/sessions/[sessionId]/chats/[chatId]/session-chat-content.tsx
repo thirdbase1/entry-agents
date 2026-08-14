@@ -1205,6 +1205,8 @@ export function SessionChatContent({
     updateChatReasoningEffort,
     updateSessionTitle,
     updatePermissionMode,
+    updateAutoCommitPush,
+    updateAutoCreatePr,
     preferredSandboxType,
     supportsDiff,
     supportsRepoCreation,
@@ -1269,6 +1271,47 @@ export function SessionChatContent({
     session.repoOwner &&
     session.repoName &&
     (session.autoCommitPushOverride ?? preferences?.autoCommitPush ?? false),
+  );
+  // Raw toggle state (independent of whether a repo is connected yet) --
+  // these drive the switches in the git panel, so a user can flip them
+  // before connecting a repo too.
+  const autoCommitToggleValue =
+    session.autoCommitPushOverride ?? preferences?.autoCommitPush ?? false;
+  const autoCreatePrToggleValue =
+    session.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false;
+  const [isTogglingAutoCommit, setIsTogglingAutoCommit] = useState(false);
+  const [isTogglingAutoCreatePr, setIsTogglingAutoCreatePr] = useState(false);
+  const handleAutoCommitToggle = useCallback(
+    (checked: boolean) => {
+      if (isTogglingAutoCommit) {
+        return;
+      }
+      setIsTogglingAutoCommit(true);
+      void updateAutoCommitPush(checked)
+        .catch((toggleError) => {
+          console.error("Failed to update auto-commit setting:", toggleError);
+        })
+        .finally(() => {
+          setIsTogglingAutoCommit(false);
+        });
+    },
+    [isTogglingAutoCommit, updateAutoCommitPush],
+  );
+  const handleAutoCreatePrToggle = useCallback(
+    (checked: boolean) => {
+      if (isTogglingAutoCreatePr) {
+        return;
+      }
+      setIsTogglingAutoCreatePr(true);
+      void updateAutoCreatePr(checked)
+        .catch((toggleError) => {
+          console.error("Failed to update auto-PR setting:", toggleError);
+        })
+        .finally(() => {
+          setIsTogglingAutoCreatePr(false);
+        });
+    },
+    [isTogglingAutoCreatePr, updateAutoCreatePr],
   );
   const permissionMode = (session.permissionModeOverride ??
     preferences?.defaultPermissionMode ??
@@ -3091,6 +3134,12 @@ export function SessionChatContent({
       diffSummary={diff?.summary ?? null}
       diffRefreshing={diffRefreshing}
       onCreateRepoClick={() => setRepoDialogOpen(true)}
+      autoCommitEnabled={autoCommitToggleValue}
+      autoCreatePrEnabled={autoCreatePrToggleValue}
+      onAutoCommitToggle={handleAutoCommitToggle}
+      onAutoCreatePrToggle={handleAutoCreatePrToggle}
+      isTogglingAutoCommit={isTogglingAutoCommit}
+      isTogglingAutoCreatePr={isTogglingAutoCreatePr}
       refreshDiff={refreshDiff}
       onMerged={handleMerged}
       onCloseAndArchiveClick={() => setCloseDialogOpen(true)}

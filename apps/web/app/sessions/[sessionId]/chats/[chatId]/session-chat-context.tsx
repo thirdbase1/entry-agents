@@ -121,6 +121,8 @@ type SessionChatContextValue = {
   updatePermissionMode: (
     permissionModeOverride: "ask" | "autoAccept" | "fullAccess" | null,
   ) => Promise<void>;
+  updateAutoCommitPush: (autoCommitPushOverride: boolean | null) => Promise<void>;
+  updateAutoCreatePr: (autoCreatePrOverride: boolean | null) => Promise<void>;
   updateChatModel: (modelId: string) => Promise<void>;
   updateChatReasoningEffort: (
     reasoningEffort: string | null,
@@ -257,6 +259,8 @@ type SessionChatMetadataContextValue = Pick<
   | "unarchiveSession"
   | "updateSessionTitle"
   | "updatePermissionMode"
+  | "updateAutoCommitPush"
+  | "updateAutoCreatePr"
   | "updateChatModel"
   | "updateChatReasoningEffort"
   | "updateSessionSnapshot"
@@ -1028,6 +1032,53 @@ export function SessionChatProvider({
     [sessionRecord],
   );
 
+  // Per-session override for auto-commit-and-push / auto-create-PR. Read
+  // live every turn in app/workflows/chat.ts (buildChatRunOptions), so
+  // toggling this takes effect starting with the very next message --
+  // no need to restart the session. Pass null to clear the override and
+  // fall back to the user's default preference.
+  const updateAutoCommitPush = useCallback(
+    async (autoCommitPushOverride: boolean | null) => {
+      const res = await fetch(`/api/sessions/${sessionRecord.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCommitPushOverride }),
+      });
+
+      const data = (await res.json()) as { session?: Session; error?: string };
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to update auto-commit setting");
+      }
+
+      setSessionRecord(
+        data.session ?? { ...sessionRecord, autoCommitPushOverride },
+      );
+    },
+    [sessionRecord],
+  );
+
+  const updateAutoCreatePr = useCallback(
+    async (autoCreatePrOverride: boolean | null) => {
+      const res = await fetch(`/api/sessions/${sessionRecord.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCreatePrOverride }),
+      });
+
+      const data = (await res.json()) as { session?: Session; error?: string };
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to update auto-PR setting");
+      }
+
+      setSessionRecord(
+        data.session ?? { ...sessionRecord, autoCreatePrOverride },
+      );
+    },
+    [sessionRecord],
+  );
+
   const updateChatModel = useCallback(
     async (modelId: string) => {
       const res = await fetch(
@@ -1152,6 +1203,8 @@ export function SessionChatProvider({
       unarchiveSession,
       updateSessionTitle,
       updatePermissionMode,
+      updateAutoCommitPush,
+      updateAutoCreatePr,
       updateChatModel,
       updateChatReasoningEffort,
       updateSessionSnapshot,
@@ -1180,6 +1233,8 @@ export function SessionChatProvider({
       unarchiveSession,
       updateSessionTitle,
       updatePermissionMode,
+      updateAutoCommitPush,
+      updateAutoCreatePr,
       updateChatModel,
       updateChatReasoningEffort,
       updateSessionSnapshot,

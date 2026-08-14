@@ -21,6 +21,12 @@ interface UpdateSessionRequest {
   // clears the override so the session falls back to the user's
   // default preference.
   permissionModeOverride?: "ask" | "autoAccept" | "fullAccess" | null;
+  // Per-session overrides for auto-commit-and-push and auto-create-PR
+  // (see apps/web/app/workflows/chat.ts buildChatRunOptions, which reads
+  // these live from the session record on every turn). null clears the
+  // override so the session falls back to the user's default preference.
+  autoCommitPushOverride?: boolean | null;
+  autoCreatePrOverride?: boolean | null;
 }
 
 export async function GET(

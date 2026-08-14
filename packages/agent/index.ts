@@ -46,9 +46,10 @@ export type {
 } from "./tools/task";
 export type {
   AgentContext,
+  GithubApiRequestInput,
+  GithubApiResult,
   GithubCliToolResult,
   GithubCommitToolResult,
-  GithubPrCommentsResult,
   GithubToolContext,
   TodoItem,
   TodoStatus,

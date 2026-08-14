@@ -9,7 +9,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import type {
-  GithubPrCommentsResult,
+  GithubApiResult,
   OpenAgentCallOptions,
   VercelCliToolResult,
 } from "@open-agents/agent";
@@ -48,7 +48,6 @@ import {
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import { toFriendlyChatErrorText } from "@/lib/chat/friendly-error";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
-import { hasVercelAccountLinked } from "@/lib/vercel/token";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   sanitizeSelectedModelIdForSession,
@@ -835,72 +834,80 @@ async function performAgentCommitAndPush(params: {
 }
 
 /**
- * Runs the actual GitHub PR-comments read for the agent's
- * `github_pr_comments` tool as a step, mirroring
- * performAgentCommitAndPush above: the Octokit client and DB lookups
- * pull in Node built-ins the Workflow SDK's restricted "use workflow"
- * bundler won't include, so this has to be its own step called from the
- * workflow's `github.listPrComments` closure rather than inlined there.
+ * Cheap Vercel-account-linked check for the agent's `vercel_cli` tool,
+ * run as its own step -- same reasoning as performAgentCommitAndPush
+ * above: hasVercelAccountLinked's module touches the drizzle db client
+ * ("postgres") and, transitively via lib/auth/config, "nanoid", both
+ * Node built-ins the Workflow SDK's bundler refuses to include in the
+ * restricted "use workflow" environment even behind a dynamic import()
+ * -- the target function itself has to carry the "use step" directive
+ * for the bundler to extract it instead of inlining it. Kept separate
+ * from performAgentVercelCli (which needs the *real* token, refreshed
+ * via next/headers -- request-scoped, so only meaningful right before
+ * actually running a CLI command) since this only needs a cheap
+ * existence check to decide whether to surface the tool at all.
  */
-async function performAgentListPrComments(params: {
-  userId: string;
-  sessionId: string;
-  repoOwner: string;
-  repoName: string;
-}): Promise<GithubPrCommentsResult> {
+async function checkVercelConnectedStep(userId: string): Promise<boolean> {
   "use step";
 
-  const { getSessionById } = await import("@/lib/db/sessions");
-  const { getUserGitHubToken } = await import("@/lib/github/token");
-  const { findPullRequest, getPullRequestComments } = await import(
-    "@/lib/github/pulls"
-  );
+  const { hasVercelAccountLinked } = await import("@/lib/vercel/token");
+  return hasVercelAccountLinked(userId);
+}
 
-  const token = await getUserGitHubToken(params.userId);
-  if (!token) {
+/**
+ * Runs one generic GitHub REST API call for the agent's `github_cli`
+ * tool's 'api' action, as a step -- same reasoning as
+ * performAgentCommitAndPush: the Octokit client pulls in Node built-ins
+ * the Workflow SDK's restricted "use workflow" bundler won't include, so
+ * this has to be its own step. Deliberately generic (method + path +
+ * params, not a fixed set of endpoints) so the agent can do essentially
+ * anything the GitHub API supports -- list/create/update/close/merge
+ * PRs and issues, comments, reviews, labels, branches, releases -- not
+ * just whatever handful of actions we thought to hardcode.
+ */
+async function performAgentGithubApiRequest(params: {
+  userId: string;
+  repoOwner: string;
+  repoName: string;
+  method: string;
+  path: string;
+  params?: Record<string, unknown>;
+}): Promise<GithubApiResult> {
+  "use step";
+
+  const { getUserOctokit } = await import("@/lib/github/client");
+
+  const octokit = await getUserOctokit(params.userId);
+  if (!octokit) {
     return {
       success: false,
-      comments: [],
       error: "No GitHub token available for this repository.",
     };
   }
 
-  const sessionRecord = await getSessionById(params.sessionId);
-  let prNumber = sessionRecord?.prNumber ?? undefined;
+  const rawPath = params.path.trim();
+  const fullPath = rawPath.startsWith("/")
+    ? rawPath
+    : `/repos/${params.repoOwner}/${params.repoName}/${rawPath.replace(/^\/+/, "")}`;
 
-  if (!prNumber && sessionRecord?.branch) {
-    const found = await findPullRequest({
-      owner: params.repoOwner,
-      repo: params.repoName,
-      branchName: sessionRecord.branch,
-      token,
-    });
-    if (found.found && found.prNumber) {
-      prNumber = found.prNumber;
-    }
-  }
-
-  if (!prNumber) {
+  try {
+    const response = await octokit.request(
+      `${params.method} ${fullPath}`,
+      params.params ?? {},
+    );
+    return { success: true, status: response.status, data: response.data };
+  } catch (error) {
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? (error as { status?: number }).status
+        : undefined;
     return {
       success: false,
-      comments: [],
-      error: "No pull request found for this session's branch yet.",
+      status,
+      error:
+        error instanceof Error ? error.message : "GitHub API request failed",
     };
   }
-
-  const result = await getPullRequestComments({
-    owner: params.repoOwner,
-    repo: params.repoName,
-    prNumber,
-    token,
-  });
-
-  return {
-    success: result.success,
-    prNumber,
-    comments: result.comments,
-    error: result.error,
-  };
 }
 
 function shellEscapeForVercelEnv(value: string): string {
@@ -1019,9 +1026,20 @@ export async function runAgentWorkflow(options: Options) {
   // `hasRepo` below is derived from plain columns rather than a live
   // GitHub API call. Best-effort: if this fails, just hide the tool
   // rather than failing the whole turn.
-  const vercelConnectedPromise = hasVercelAccountLinked(options.userId).catch(
-    () => false,
-  );
+  //
+  // Routed through its own tiny step (checkVercelConnectedStep, defined
+  // below) rather than calling hasVercelAccountLinked directly from this
+  // "use workflow" function: that module's static imports (drizzle db
+  // client -> "postgres", better-auth config -> "nanoid") are Node-only
+  // and the workflow bundler pulls in a statically-imported function's
+  // *entire* module graph even when unused by that one function, which
+  // fails the build. Every other DB/Node-module touchpoint in this file
+  // (performAgentCommitAndPush, performAgentGithubApiRequest,
+  // performAgentVercelCli) already avoids this via dynamic import()
+  // inside a "use step" function -- same fix here.
+  const vercelConnectedPromise = checkVercelConnectedStep(
+    options.userId,
+  ).catch(() => false);
 
   // Fast path (the common case, no attachments): convert messages straight
   // away, fully in parallel with sandbox resolution below. Only when there
@@ -1572,7 +1590,7 @@ const runAgentStep = async (
                 ...(commitMessage ? { commitMessage } : {}),
               });
             },
-            listPrComments: async () => {
+            request: async (input) => {
               if (
                 !githubContext.hasRepo ||
                 !githubContext.repoOwner ||
@@ -1580,16 +1598,17 @@ const runAgentStep = async (
               ) {
                 return {
                   success: false,
-                  comments: [],
                   error:
                     "No GitHub repository is connected to this session yet.",
                 };
               }
-              return performAgentListPrComments({
+              return performAgentGithubApiRequest({
                 userId,
-                sessionId,
                 repoOwner: githubContext.repoOwner,
                 repoName: githubContext.repoName,
+                method: input.method,
+                path: input.path,
+                params: input.params,
               });
             },
           }

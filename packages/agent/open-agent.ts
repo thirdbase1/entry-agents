@@ -16,8 +16,7 @@ import {
   askUserQuestionTool,
   bashTool,
   editFileTool,
-  githubCommitTool,
-  githubPrCommentsTool,
+  githubCliTool,
   globTool,
   grepTool,
   readFileTool,
@@ -113,8 +112,7 @@ const tools = {
   skill: skillTool,
   web_fetch: webFetchTool,
   web_search: webSearchTool,
-  github_commit_and_push: githubCommitTool(),
-  github_pr_comments: githubPrCommentsTool(),
+  github_cli: githubCliTool(),
   vercel_cli: vercelCliTool(),
 } satisfies ToolSet;
 

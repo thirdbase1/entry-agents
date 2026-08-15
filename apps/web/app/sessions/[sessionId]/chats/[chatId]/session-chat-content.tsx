@@ -1487,6 +1487,15 @@ export function SessionChatContent({
   // fetch abort doesn't cleanly settle the hook status).
   const [userStopped, setUserStopped] = useState(false);
   const isChatInFlight = isChatInFlightStatus(status) && !userStopped;
+  // Whether the composer currently has something to send/queue. Shared by
+  // the submit button's disabled state and by the decision of whether the
+  // composer button shows "stop" or "send" while a turn is in flight (see
+  // the button ternary further down) -- tapping the arrow used to always
+  // stop the running turn while a message was in flight, silently eating
+  // whatever the user had just typed instead of queuing it, since queuing
+  // only ever ran through the Enter-key path (form.requestSubmit()).
+  const hasComposerContent =
+    input.trim().length > 0 || images.length > 0 || textAttachments.length > 0;
   const lastMessage = useMemo(
     () => renderMessages[renderMessages.length - 1],
     [renderMessages],
@@ -4597,7 +4606,8 @@ export function SessionChatContent({
                                   {inlineQuestion.buttonLabel}
                                 </span>
                               </Button>
-                            ) : isChatInFlight || hasPendingResponse ? (
+                            ) : (isChatInFlight || hasPendingResponse) &&
+                              !hasComposerContent ? (
                               <Button
                                 type="button"
                                 size="icon"
@@ -4627,11 +4637,16 @@ export function SessionChatContent({
                                       }}
                                       disabled={
                                         isArchived ||
-                                        isChatInFlight ||
-                                        (!input.trim() &&
-                                          images.length === 0 &&
-                                          textAttachments.length === 0) ||
-                                        isUpdatingModel
+                                        isUpdatingModel ||
+                                        // While a turn is in flight this
+                                        // branch only renders when there's
+                                        // composer content to queue (see
+                                        // the ternary above) -- once idle,
+                                        // fall back to the normal
+                                        // "nothing to send" gate.
+                                        (!isChatInFlight &&
+                                          !hasPendingResponse &&
+                                          !hasComposerContent)
                                       }
                                       className="h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30"
                                     >
@@ -4639,6 +4654,11 @@ export function SessionChatContent({
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  {isChatInFlight || hasPendingResponse
+                                    ? "Queue message"
+                                    : "Send message"}
+                                </TooltipContent>
                               </Tooltip>
                             )}
                           </div>

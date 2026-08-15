@@ -1836,7 +1836,7 @@ export function GitPanel(props: GitPanelProps) {
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Panel top bar: PR link or branch name — matches session header height */}
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
         {/* Left: PR link or repo info */}
         <div className="flex min-h-7 min-w-0 items-center gap-2">
           {hasExistingPr && existingPrUrl ? (
@@ -1862,9 +1862,10 @@ export function GitPanel(props: GitPanelProps) {
               type="button"
               onClick={() => setGitPanelTab("pr")}
               className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              title="Create PR"
             >
               <GitPullRequest className="h-3.5 w-3.5" />
-              Create PR
+              <span className="hidden sm:inline">Create PR</span>
             </button>
           ) : null}
         </div>
@@ -1877,6 +1878,7 @@ export function GitPanel(props: GitPanelProps) {
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              title="Preview"
             >
               <Globe
                 className={cn(
@@ -1888,7 +1890,7 @@ export function GitPanel(props: GitPanelProps) {
                     "text-amber-500 animate-pulse",
                 )}
               />
-              Preview
+              <span className="hidden sm:inline">Preview</span>
               <ExternalLink className="h-3 w-3 text-muted-foreground" />
             </a>
           )}
@@ -1902,7 +1904,7 @@ export function GitPanel(props: GitPanelProps) {
               title="Connect this session to a GitHub repository you already have write access to"
             >
               <FolderGit2 className="mr-1.5 h-3.5 w-3.5" />
-              Connect Repo
+              <span className="hidden sm:inline">Connect Repo</span>
             </Button>
           )}
 
@@ -1920,7 +1922,7 @@ export function GitPanel(props: GitPanelProps) {
               title={`Currently connected to ${session.repoOwner}/${session.repoName} -- pick a different repository`}
             >
               <FolderGit2 className="mr-1.5 h-3.5 w-3.5" />
-              Switch Repo
+              <span className="hidden sm:inline">Switch Repo</span>
               <ChevronDown className="ml-1 h-3 w-3 text-muted-foreground" />
             </Button>
           )}

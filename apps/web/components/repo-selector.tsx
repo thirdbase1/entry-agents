@@ -212,13 +212,13 @@ export function RepoSelector({
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-col gap-2 sm:flex-row">
       <Popover open={ownerOpen} onOpenChange={setOwnerOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             aria-expanded={ownerOpen}
-            className="w-48 justify-between"
+            className="w-full justify-between sm:w-48"
           >
             <div className="flex items-center gap-2 truncate">
               <UserIcon className="size-4 shrink-0" />
@@ -273,7 +273,7 @@ export function RepoSelector({
           <Button
             variant="outline"
             aria-expanded={repoOpen}
-            className="w-64 justify-between"
+            className="w-full justify-between sm:w-64"
             disabled={!selectedOwner}
           >
             <div className="flex items-center gap-2 truncate">

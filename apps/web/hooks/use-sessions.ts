@@ -400,53 +400,86 @@ export function useSessions(options?: {
         { revalidate: false },
       );
 
+      // Archiving stops the sandbox in the background (see
+      // finalizeArchivedSessionSandbox in lib/sandbox/archive-session.ts),
+      // so immediately-after-archiving unarchive attempts can legitimately
+      // hit a transient 409 while that background stop is still running.
+      // Previously this bubbled straight up to a swallowed console.error
+      // in the caller with no retry and no visible feedback -- from the
+      // user's perspective the session just silently "re-archived itself"
+      // even though the unarchive request had actually just failed.
+      // Retry a few times with a short backoff before giving up for real.
+      const MAX_ATTEMPTS = 6;
+      const RETRY_DELAY_MS = 1500;
+
       try {
-        const res = await fetch(`/api/sessions/${sessionId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "running" }),
-        });
+        let lastErrorMessage = "Failed to unarchive session";
 
-        const responseData = (await res.json()) as {
-          session?: Session;
-          error?: string;
-        };
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+          const res = await fetch(`/api/sessions/${sessionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "running" }),
+          });
 
-        if (!res.ok || !responseData.session) {
-          throw new Error(responseData.error ?? "Failed to unarchive session");
-        }
+          const responseData = (await res.json()) as {
+            session?: Session;
+            error?: string;
+          };
 
-        const updatedSession = responseData.session;
+          if (res.ok && responseData.session) {
+            const updatedSession = responseData.session;
 
-        if (includeArchived) {
-          await mutate(
-            (current) => {
-              if (!current) {
-                return current;
-              }
+            if (includeArchived) {
+              await mutate(
+                (current) => {
+                  if (!current) {
+                    return current;
+                  }
 
-              return {
-                ...current,
-                sessions: current.sessions.map((session) =>
-                  session.id === sessionId
-                    ? mergeSessionWithSummary(session, updatedSession)
-                    : session,
-                ),
-              };
-            },
-            { revalidate: false },
+                  return {
+                    ...current,
+                    sessions: current.sessions.map((session) =>
+                      session.id === sessionId
+                        ? mergeSessionWithSummary(session, updatedSession)
+                        : session,
+                    ),
+                  };
+                },
+                { revalidate: false },
+              );
+            } else {
+              await mutate();
+            }
+
+            return responseData.session;
+          }
+
+          lastErrorMessage = responseData.error ?? lastErrorMessage;
+
+          const isSandboxStillPausing = res.status === 409;
+          const hasAttemptsLeft = attempt < MAX_ATTEMPTS;
+
+          if (!isSandboxStillPausing || !hasAttemptsLeft) {
+            throw new Error(lastErrorMessage);
+          }
+
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS),
           );
-        } else {
-          await mutate();
         }
 
-        return responseData.session;
+        throw new Error(lastErrorMessage);
       } catch (error) {
         if (previousData) {
           await mutate(previousData, { revalidate: false });
         } else {
           void mutate();
         }
+
+        const message =
+          error instanceof Error ? error.message : "Failed to unarchive session";
+        toast.error(message);
 
         throw error;
       }

@@ -52,7 +52,30 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   // low/medium/high. Same native @ai-sdk/google path as the other 3.x
   // Flash models above.
   "gemini-3.7-flash",
+  // Confirmed 2026-08-15 via live probe against tokenrouter (OpenAI-compat
+  // route): reasoning is ALWAYS on for this checkpoint --
+  // chat_template_kwargs.enable_thinking:false is hard-rejected with
+  // "Qwen3.8 open text checkpoints require thinking; enable_thinking=false
+  // is unsupported". reasoning_effort IS honored but the upstream's own
+  // accepted vocabulary is low/medium/xhigh, NOT low/medium/high --
+  // sending "high" gets a 400 ("reasoning_effort must be low, medium, or
+  // xhigh"). See EFFORT_VALUE_OVERRIDES below for the high->xhigh mapping
+  // so the shared UI can keep using low/medium/high. Token counts across
+  // repeated runs on the same hard prompt: low ~546-818 reasoning tokens,
+  // medium ~517, xhigh ~240-247 -- counterintuitively XHIGH used the
+  // FEWEST reasoning tokens, not the most. Naming is the upstream's own
+  // choice, not a bug on our side; passing it through faithfully rather
+  // than remapping based on assumed semantics.
+  "qwen3.8-max-free",
 ]);
+
+// Some upstreams don't share the UI's low/medium/high vocabulary. Map the
+// UI value to whatever that specific model's API actually accepts here
+// before it goes out over the wire, so the shared selector component never
+// needs to know about per-model quirks.
+const EFFORT_VALUE_OVERRIDES: Record<string, Partial<Record<ReasoningEffort, string>>> = {
+  "qwen3.8-max-free": { high: "xhigh" },
+};
 
 export function isReasoningCapableModel(modelId: string): boolean {
   return REASONING_CAPABLE_MODEL_IDS.has(modelId);
@@ -108,9 +131,11 @@ export function toReasoningProviderOptions(
     };
   }
 
+  const mappedEffort = EFFORT_VALUE_OVERRIDES[modelId]?.[effort] ?? effort;
+
   return {
     openai: {
-      reasoningEffort: effort,
+      reasoningEffort: mappedEffort,
       // OpenAI Responses items are not persisted when store is false.
       // Ensure this always carries the non-persistent setting so
       // follow-up turns never try to reference missing rs_* items.

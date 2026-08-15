@@ -455,3 +455,24 @@ export const modelOverrides = pgTable("model_overrides", {
 
 export type ModelOverride = typeof modelOverrides.$inferSelect;
 export type NewModelOverride = typeof modelOverrides.$inferInsert;
+
+// Singleton admin kill switch for free-tier access (id is always the
+// literal string "singleton" -- there is exactly one row, upserted in
+// place). When `freeTierEnabled` is false, every non-admin user is
+// blocked from starting new chat turns AND any turn already streaming is
+// aborted mid-flight (see startStopMonitor's gate check in
+// app/workflows/chat.ts) -- `disabledReason` is shown to the blocked user
+// verbatim in both cases, so admins should write it as a user-facing
+// sentence, not an internal note.
+export const platformSettings = pgTable("platform_settings", {
+  id: text("id").primaryKey(),
+  freeTierEnabled: boolean("free_tier_enabled").notNull().default(true),
+  disabledReason: text("disabled_reason"),
+  updatedBy: text("updated_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PlatformSettings = typeof platformSettings.$inferSelect;
+export type NewPlatformSettings = typeof platformSettings.$inferInsert;

@@ -295,6 +295,13 @@
       "when": 1786784764006,
       "tag": "0041_add_model_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786816817896,
+      "tag": "0042_add_platform_settings",
+      "breakpoints": true
     }
   ]
 }

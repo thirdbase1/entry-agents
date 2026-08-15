@@ -289,6 +289,27 @@ async function resolveChatModelRuntime(params: {
     throw new Error("Chat not found");
   }
 
+  // Free-tier admin kill switch: checked once here, and re-polled by
+  // startStopMonitor for the duration of the turn (see that function) so
+  // an admin flipping the switch mid-response aborts the stream within
+  // one poll tick instead of only blocking the *next* turn. Dynamic
+  // imports here for the same reason as resolveChatModelSelection above --
+  // both transitively touch the drizzle db client, which the Workflow
+  // SDK bundler would otherwise pull into the restricted "use workflow"
+  // graph via this "use step" function's static imports.
+  const { isUserAdmin } = await import("@/lib/db/users");
+  const { getFreeTierGateStatus } = await import("@/lib/db/platform-settings");
+  const isAdminUser = await isUserAdmin(params.userId);
+  if (!isAdminUser) {
+    const gate = await getFreeTierGateStatus();
+    if (!gate.enabled) {
+      throw new Error(
+        gate.reason ||
+          "We're at capacity right now -- please check back in a little while.",
+      );
+    }
+  }
+
   const preferences = rawPreferences
     ? sanitizeUserPreferencesForSession(
         rawPreferences,
@@ -1557,7 +1578,7 @@ const runAgentStep = async (
   const { webAgent } = await import("@/app/config");
 
   const abortController = new AbortController();
-  const stopMonitor = startStopMonitor(workflowRunId, abortController);
+  const stopMonitor = startStopMonitor(workflowRunId, abortController, userId);
 
   try {
     let responseMessage: WebAgentUIMessage | undefined;
@@ -1946,11 +1967,20 @@ const runAgentStep = async (
   }
 };
 
-function startStopMonitor(runId: string, abortController: AbortController) {
+function startStopMonitor(
+  runId: string,
+  abortController: AbortController,
+  userId: string,
+) {
   let shouldStop = false;
 
   const done = (async () => {
     const run = getRun(runId);
+    // Resolved once per turn, not re-checked per tick -- admin status
+    // doesn't change mid-stream, only the free-tier gate flag does (see
+    // the dynamic import below, polled every tick for that reason).
+    const { isUserAdmin } = await import("@/lib/db/users");
+    const isAdminUser = await isUserAdmin(userId).catch(() => true);
 
     while (!shouldStop && !abortController.signal.aborted) {
       let runStatus:
@@ -1970,6 +2000,24 @@ function startStopMonitor(runId: string, abortController: AbortController) {
       if (runStatus === "cancelled") {
         abortController.abort();
         return;
+      }
+
+      if (!isAdminUser) {
+        // Dynamic import: getFreeTierGateStatus touches the drizzle db
+        // client, which must not be statically imported into this
+        // "use workflow" module -- see the matching comment in
+        // resolveChatModelRuntime.
+        const { getFreeTierGateStatus } = await import(
+          "@/lib/db/platform-settings"
+        );
+        const gate = await getFreeTierGateStatus().catch(() => ({
+          enabled: true,
+          reason: null,
+        }));
+        if (!gate.enabled) {
+          abortController.abort();
+          return;
+        }
       }
 
       await delay(150);

@@ -47,6 +47,11 @@ import {
   getAllModelOverrides,
   setModelOverride,
 } from "@/lib/db/model-overrides";
+import {
+  getPlatformSettingsRow,
+  setFreeTierGateStatus,
+  type PlatformSettingsRow,
+} from "@/lib/db/platform-settings";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getProviderFromModelId } from "@/components/provider-icons";
 import type { AvailableModelCost } from "@/lib/models";
@@ -406,6 +411,33 @@ export async function setAdminModelDisabled(
   }
 
   await setModelOverride(modelId, disabled, adminUserId);
+}
+
+/**
+ * Current free-tier gate state for the admin settings page. Admin-only.
+ */
+export async function getAdminFreeTierGateStatus(): Promise<PlatformSettingsRow> {
+  await requireAdmin();
+  return getPlatformSettingsRow();
+}
+
+/**
+ * Global kill switch for free-tier model access. When `enabled` is false,
+ * every non-admin user is blocked from starting new chat turns (see
+ * resolveChatModelRuntime's gate check in app/workflows/chat.ts) and any
+ * turn already streaming for a non-admin user is aborted mid-flight
+ * within one ~150ms poll tick of the stop monitor. `reason` is shown to
+ * blocked users verbatim in both cases -- write it as a plain, user-facing
+ * sentence, not an internal note. Takes effect immediately for every
+ * user, no redeploy. Admin-only.
+ */
+export async function setAdminFreeTierGateStatus(
+  enabled: boolean,
+  reason: string | null,
+): Promise<void> {
+  const adminUserId = await requireAdmin();
+  const trimmedReason = reason?.trim() || null;
+  await setFreeTierGateStatus(enabled, trimmedReason, adminUserId);
 }
 
 /**

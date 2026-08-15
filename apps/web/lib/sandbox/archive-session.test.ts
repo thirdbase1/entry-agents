@@ -116,6 +116,15 @@ const spies = {
       found: false,
     }),
   ),
+  // archiveSession() now kicks the durable archive-sandbox-stop workflow
+  // instead of taking a scheduleBackgroundWork callback (see
+  // archive-sandbox-kick.ts). Tests below stub this out and instead call
+  // the exported finalizeArchivedSessionSandboxInline() directly to
+  // exercise the same finalization logic without needing the real
+  // Workflow SDK runtime.
+  kickArchiveSandboxStopWorkflow: mock(
+    (_sessionId: string, _logPrefix: string) => {},
+  ),
 };
 
 mock.module("@/lib/db/sessions", () => ({
@@ -134,6 +143,10 @@ mock.module("@/lib/github/token", () => ({
 mock.module("@/lib/github/pulls", () => ({
   getPullRequestStatus: spies.getPullRequestStatus,
   findPullRequest: spies.findPullRequest,
+}));
+
+mock.module("@/lib/sandbox/archive-sandbox-kick", () => ({
+  kickArchiveSandboxStopWorkflow: spies.kickArchiveSandboxStopWorkflow,
 }));
 
 const archiveSessionModulePromise = import("./archive-session");
@@ -190,23 +203,59 @@ beforeEach(() => {
 });
 
 describe("archiveSession", () => {
-  test("clears runtime sandbox state when archive finalization fails without a snapshot", async () => {
+  test("kicks the durable archive-sandbox-stop workflow on archive", async () => {
     const { archiveSession } = await archiveSessionModulePromise;
-
-    let backgroundTask: Promise<void> | null = null;
 
     const result = await archiveSession("session-1", {
       logPrefix: "[Test]",
-      scheduleBackgroundWork: (callback) => {
-        backgroundTask = callback();
-      },
     });
 
     expect(result.archiveTriggered).toBe(true);
-    if (!backgroundTask) {
-      throw new Error("Expected archive finalization task to be scheduled");
-    }
-    await backgroundTask;
+    expect(spies.kickArchiveSandboxStopWorkflow).toHaveBeenCalledWith(
+      "session-1",
+      "[Test]",
+    );
+  });
+
+  test("refreshes merged PR status before archiving", async () => {
+    const { archiveSession } = await archiveSessionModulePromise;
+
+    sandboxQueue = [createMockSandbox(), createMockSandbox()];
+    spies.getPullRequestStatus.mockImplementation(async () => ({
+      success: true,
+      status: "merged",
+    }));
+
+    const result = await archiveSession("session-1", {
+      logPrefix: "[Test]",
+    });
+
+    expect(result.archiveTriggered).toBe(true);
+
+    const updateCalls = spies.updateSession.mock.calls as Array<
+      [string, Record<string, unknown>]
+    >;
+
+    expect(updateCalls[0]?.[1]).toMatchObject({
+      status: "archived",
+      prStatus: "merged",
+    });
+    expect(spies.findPullRequest).not.toHaveBeenCalled();
+    expect(sessionRecord?.prStatus).toBe("merged");
+  });
+});
+
+describe("finalizeArchivedSessionSandboxInline", () => {
+  test("clears runtime sandbox state when finalization fails without a snapshot", async () => {
+    const { archiveSession, finalizeArchivedSessionSandboxInline } =
+      await archiveSessionModulePromise;
+
+    const result = await archiveSession("session-1", { logPrefix: "[Test]" });
+    expect(result.archiveTriggered).toBe(true);
+
+    // sandboxQueue is empty, so connectSandbox() throws inside finalize --
+    // exercising the failure/recovery path.
+    await finalizeArchivedSessionSandboxInline("session-1", "[Test]");
 
     const updateCalls = spies.updateSession.mock.calls as Array<
       [string, Record<string, unknown>]
@@ -232,25 +281,16 @@ describe("archiveSession", () => {
     });
   });
 
-  test("preserves runtime sandbox state when archive finalization fails but snapshot already exists", async () => {
-    const { archiveSession } = await archiveSessionModulePromise;
+  test("preserves runtime sandbox state when finalization fails but snapshot already exists", async () => {
+    const { archiveSession, finalizeArchivedSessionSandboxInline } =
+      await archiveSessionModulePromise;
 
     sessionRecord = makeSessionRecord({ snapshotUrl: "snapshot-existing" });
 
-    let backgroundTask: Promise<void> | null = null;
-
-    const result = await archiveSession("session-1", {
-      logPrefix: "[Test]",
-      scheduleBackgroundWork: (callback) => {
-        backgroundTask = callback();
-      },
-    });
-
+    const result = await archiveSession("session-1", { logPrefix: "[Test]" });
     expect(result.archiveTriggered).toBe(true);
-    if (!backgroundTask) {
-      throw new Error("Expected archive finalization task to be scheduled");
-    }
-    await backgroundTask;
+
+    await finalizeArchivedSessionSandboxInline("session-1", "[Test]");
 
     const updateCalls = spies.updateSession.mock.calls as Array<
       [string, Record<string, unknown>]
@@ -269,41 +309,5 @@ describe("archiveSession", () => {
         sandboxName: "session_session-1",
       }),
     );
-  });
-
-  test("refreshes merged PR status before archiving", async () => {
-    const { archiveSession } = await archiveSessionModulePromise;
-
-    sandboxQueue = [createMockSandbox(), createMockSandbox()];
-    spies.getPullRequestStatus.mockImplementation(async () => ({
-      success: true,
-      status: "merged",
-    }));
-
-    let backgroundTask: Promise<void> | null = null;
-
-    const result = await archiveSession("session-1", {
-      logPrefix: "[Test]",
-      scheduleBackgroundWork: (callback) => {
-        backgroundTask = callback();
-      },
-    });
-
-    expect(result.archiveTriggered).toBe(true);
-    if (!backgroundTask) {
-      throw new Error("Expected archive finalization task to be scheduled");
-    }
-    await backgroundTask;
-
-    const updateCalls = spies.updateSession.mock.calls as Array<
-      [string, Record<string, unknown>]
-    >;
-
-    expect(updateCalls[0]?.[1]).toMatchObject({
-      status: "archived",
-      prStatus: "merged",
-    });
-    expect(spies.findPullRequest).not.toHaveBeenCalled();
-    expect(sessionRecord?.prStatus).toBe("merged");
   });
 });

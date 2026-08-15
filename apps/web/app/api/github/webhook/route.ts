@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { after } from "next/server";
 import { z } from "zod";
 import {
   deleteInstallationByInstallationId,
@@ -130,7 +129,6 @@ async function handlePullRequestWebhook(
         currentSession: sessionRecord,
         update: updatePayload,
         logPrefix: "[GitHub webhook]",
-        scheduleBackgroundWork: after,
       });
 
       if (archived.session) {

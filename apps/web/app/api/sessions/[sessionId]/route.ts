@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import {
   deleteSession,
   getSessionById,
@@ -120,7 +119,6 @@ export async function PATCH(
           currentSession: existingSession,
           update: updatePayload,
           logPrefix: "[Sessions]",
-          scheduleBackgroundWork: after,
         })
       ).session
     : await updateSession(sessionId, updatePayload);

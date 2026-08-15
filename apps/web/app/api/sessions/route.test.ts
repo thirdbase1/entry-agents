@@ -173,7 +173,7 @@ describe("/api/sessions POST vercel project linking", () => {
 
     expect(response.status).toBe(403);
     expect(body.error).toBe(
-      "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Open Agents template.",
+      "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Entry Agent template.",
     );
     expect(createCalls).toHaveLength(0);
   });

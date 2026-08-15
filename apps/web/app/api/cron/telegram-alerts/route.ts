@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminModelAlerts } from "@/lib/db/admin-activity";
+import { getStuckArchivedSessions } from "@/lib/db/sessions";
+import { kickArchiveSandboxStopWorkflow } from "@/lib/sandbox/archive-sandbox-kick";
 import { checkAndNotifyTelegramAlerts } from "@/lib/telegram-alerts";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +14,15 @@ export const dynamic = "force-dynamic";
  * dashboard open; this route just guarantees at least one check per day
  * even if nobody does.
  *
- * Vercel automatically sends `Authorization: Bearer ${CRON_SECRET}` on
- * cron-triggered requests when CRON_SECRET is set -- reject anything else
- * so this can't be used as an open, unauthenticated way to spam the
- * Telegram chat.
+ * Also re-kicks the durable archive-sandbox-stop workflow for any session
+ * stuck half-archived (see getStuckArchivedSessions) -- a backstop for the
+ * "Manila" incident where that background job apparently never ran at
+ * all. The workflow itself is durable, but if `start()` was never even
+ * called successfully (or the run silently vanished before the platform
+ * ever picked it up), nothing else would notice, so this sweep exists to
+ * catch and retry that specific gap. Reusing this existing daily cron
+ * slot instead of adding a new one since Hobby plan cron jobs are capped
+ * at once/day each.
  */
 export async function GET(req: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -26,12 +33,37 @@ export async function GET(req: Request) {
     }
   }
 
+  let stuckSessionsRekicked = 0;
+  try {
+    const stuckSessions = await getStuckArchivedSessions();
+    for (const stuck of stuckSessions) {
+      kickArchiveSandboxStopWorkflow(stuck.id, "[Cron reconciliation]");
+      stuckSessionsRekicked += 1;
+    }
+    if (stuckSessions.length > 0) {
+      console.warn(
+        `[cron/telegram-alerts] Re-kicked archive-sandbox-stop for ${stuckSessions.length} stuck session(s): ${stuckSessions
+          .map((s) => s.id)
+          .join(", ")}`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      "[cron/telegram-alerts] stuck-session reconciliation failed:",
+      err,
+    );
+  }
+
   try {
     const alerts = await getAdminModelAlerts();
     await checkAndNotifyTelegramAlerts(alerts);
-    return NextResponse.json({ ok: true, alertCount: alerts.length });
+    return NextResponse.json({
+      ok: true,
+      alertCount: alerts.length,
+      stuckSessionsRekicked,
+    });
   } catch (err) {
     console.error("[cron/telegram-alerts] failed:", err);
-    return NextResponse.json({ ok: false }, { status: 500 });
+    return NextResponse.json({ ok: false, stuckSessionsRekicked }, { status: 500 });
   }
 }

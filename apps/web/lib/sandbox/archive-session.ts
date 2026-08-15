@@ -4,6 +4,7 @@ import { connectSandbox } from "@open-agents/sandbox";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { findPullRequest, getPullRequestStatus } from "@/lib/github/pulls";
 import { getUserGitHubToken } from "@/lib/github/token";
+import { kickArchiveSandboxStopWorkflow } from "./archive-sandbox-kick";
 import { canOperateOnSandbox, clearSandboxState } from "./utils";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
@@ -13,7 +14,6 @@ interface ArchiveSessionOptions {
   currentSession?: SessionRecord;
   update?: SessionUpdateInput;
   logPrefix?: string;
-  scheduleBackgroundWork?: (callback: () => Promise<void>) => void;
 }
 
 interface ArchiveSessionResult {
@@ -136,7 +136,16 @@ async function refreshArchiveGitState(
   }
 }
 
-async function finalizeArchivedSessionSandbox(
+/**
+ * Best-effort, non-durable fallback used ONLY when kicking the durable
+ * archive-sandbox-stop workflow itself fails to start (see
+ * archive-sandbox-kick.ts). The durable workflow is the primary path now --
+ * this inline version exists purely so an archive request never hard-fails
+ * just because the workflow platform had a blip. Exported so the kick
+ * helper can reach it without a static circular import between the two
+ * modules.
+ */
+export async function finalizeArchivedSessionSandboxInline(
   sessionId: string,
   logPrefix: string,
 ): Promise<void> {
@@ -238,14 +247,9 @@ export async function archiveSession(
   const archiveTriggered = shouldStopSandboxAfterArchive && !!updatedSession;
 
   if (archiveTriggered) {
-    const runFinalize = () =>
-      finalizeArchivedSessionSandbox(sessionId, logPrefix);
-
-    if (options.scheduleBackgroundWork) {
-      options.scheduleBackgroundWork(runFinalize);
-    } else {
-      void runFinalize();
-    }
+    // Durable -- survives the invoking function being torn down, unlike
+    // the old fire-and-forget after() callback this replaced.
+    kickArchiveSandboxStopWorkflow(sessionId, logPrefix);
   }
 
   return {

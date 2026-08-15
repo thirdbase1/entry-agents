@@ -277,6 +277,35 @@ export async function getSessionsWithUnreadByUserId(
   return rows;
 }
 
+/**
+ * Finds sessions stuck in the "half-archived" state a dropped background
+ * job can leave behind: status flipped to "archived" but the sandbox-stop
+ * finalization (see lib/sandbox/archive-sandbox-kick.ts) never completed,
+ * so lifecycleState never reached "archived" and sandboxState never got
+ * cleared. Left alone these 409 forever on every unarchive attempt (see
+ * the incident this backstops -- session "Manila" got stuck this way on
+ * 2026-08-14 when its finalize workflow apparently never ran).
+ *
+ * Only returns sessions that have been in this state for at least
+ * `minStuckMs` so we don't race a finalize that's still legitimately in
+ * flight.
+ */
+export async function getStuckArchivedSessions(minStuckMs = 5 * 60 * 1000) {
+  const staleBefore = new Date(Date.now() - minStuckMs);
+  return db
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.status, "archived"),
+        isNull(sessions.snapshotUrl),
+        sql`${sessions.sandboxState} IS NOT NULL`,
+        ne(sessions.lifecycleState, "archived"),
+        sql`${sessions.updatedAt} < ${staleBefore}`,
+      ),
+    );
+}
+
 export async function getArchivedSessionCountByUserId(
   userId: string,
 ): Promise<number> {

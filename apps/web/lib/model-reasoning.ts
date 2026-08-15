@@ -48,6 +48,17 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "medium", label: "Medium" },
     { value: "xhigh", label: "XHigh" },
   ],
+  // Confirmed 2026-08-15 from the HF endpoint's own docs: reasoning_effort
+  // accepts none/low/medium/xhigh, default xhigh. Unlike qwen3.8-max-free,
+  // this checkpoint genuinely supports turning thinking off entirely via
+  // "none" -- included here since it's a real, documented capability
+  // difference, not a guess.
+  "qwen3.8-27b": [
+    { value: "none", label: "Off" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "xhigh", label: "XHigh" },
+  ],
 };
 
 export function getReasoningEffortLevels(
@@ -117,6 +128,10 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   // honored; see MODEL_REASONING_LEVELS above for this model's real
   // low/medium/xhigh vocabulary.
   "qwen3.8-max-free",
+  // Confirmed 2026-08-15 via live probe directly against the HF endpoint:
+  // reasoning trace comes back in message.reasoning, honors reasoning_effort
+  // exactly per the model's own docs (none/low/medium/xhigh, default xhigh).
+  "qwen3.8-27b",
 ]);
 
 export function isReasoningCapableModel(modelId: string): boolean {

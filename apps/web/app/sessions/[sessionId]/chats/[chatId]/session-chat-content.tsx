@@ -12,6 +12,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  Lock,
   Check,
   Code2,
   Copy,
@@ -785,10 +786,33 @@ function _SandboxHeaderBadge({
 function SandboxInputOverlay({
   isArchived,
   snapshotPending,
+  freeTierBlocked,
+  freeTierBlockedReason,
 }: {
   isArchived: boolean;
   snapshotPending: boolean;
+  /** True when the free-tier kill switch is off for this (non-admin)
+   * user -- takes priority over the archived state since it's the more
+   * specific, account-level reason input is blocked. Real enforcement is
+   * server-side (resolveChatModelRuntime/startStopMonitor); this is UX
+   * only, so it never lets a blocked send silently look like it worked. */
+  freeTierBlocked: boolean;
+  freeTierBlockedReason: string | null;
 }) {
+  if (freeTierBlocked) {
+    return (
+      <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-background/60 backdrop-blur-[2px]">
+        <div className="flex items-center gap-3 rounded-full bg-background/90 px-4 py-2 text-muted-foreground shadow-sm">
+          <Lock className="h-4 w-4" />
+          <span className="text-sm">
+            {freeTierBlockedReason ||
+              "Free tier is temporarily unavailable. Please check back soon."}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (isArchived) {
     return (
       <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-background/60 backdrop-blur-[2px]">
@@ -1263,6 +1287,7 @@ export function SessionChatContent({
     checkBranchAndPr,
     modelOptions,
     modelOptionsLoading,
+    freeTierGate,
   } = useSessionChatMetadataContext();
   const {
     chat,
@@ -4294,6 +4319,7 @@ export function SessionChatContent({
                           // When inline question is active, don't send a chat message
                           if (showInlineQuestion) return;
                           if (isArchived) return;
+                          if (freeTierGate) return;
 
                           const built = buildComposerMessagePayload();
                           if (!built) return;
@@ -4340,6 +4366,8 @@ export function SessionChatContent({
                         <SandboxInputOverlay
                           isArchived={isArchived}
                           snapshotPending={isArchiveSnapshotPending}
+                          freeTierBlocked={Boolean(freeTierGate)}
+                          freeTierBlockedReason={freeTierGate?.reason ?? null}
                         />
 
                         {/* Attachments preview */}

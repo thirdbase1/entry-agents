@@ -23,7 +23,10 @@ import type {
   WebAgentWorkspaceStatusData,
 } from "@/app/types";
 import { checkPullRequest } from "@/lib/github/queries/pr";
-import { useModelOptions } from "@/hooks/use-model-options";
+import {
+  useModelOptions,
+  type FreeTierGateStatus,
+} from "@/hooks/use-model-options";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { useSessionDiff } from "@/hooks/use-session-diff";
 import { useSessionFiles } from "@/hooks/use-session-files";
@@ -211,6 +214,10 @@ type SessionChatContextValue = {
   modelOptions: ModelOption[];
   /** Whether model options are still loading */
   modelOptionsLoading: boolean;
+  /** Free-tier kill switch status for this (non-admin) user, or null if
+   * the gate is on / the user is an admin. UX-only signal -- real
+   * enforcement is server-side. */
+  freeTierGate: FreeTierGateStatus | null;
 };
 
 type SessionChatRuntimeContextValue = Pick<
@@ -279,6 +286,7 @@ type SessionChatMetadataContextValue = Pick<
   | "checkBranchAndPr"
   | "modelOptions"
   | "modelOptionsLoading"
+  | "freeTierGate"
 >;
 
 const SessionChatRuntimeContext = createContext<
@@ -325,10 +333,13 @@ export function SessionChatProvider({
       (hasPausedSandboxState(initialSession.sandboxState) ||
         !!initialSession.snapshotUrl),
   );
-  const { modelOptions: allModelOptions, loading: modelOptionsLoadingFromApi } =
-    useModelOptions({
-      initialModelOptions,
-    });
+  const {
+    modelOptions: allModelOptions,
+    loading: modelOptionsLoadingFromApi,
+    freeTierGate,
+  } = useModelOptions({
+    initialModelOptions,
+  });
   const { preferences: userPrefs } = useUserPreferences();
   const enabledModelIds = userPrefs?.enabledModelIds;
   const baseModelOptions = useMemo(() => {
@@ -1223,6 +1234,7 @@ export function SessionChatProvider({
       checkBranchAndPr,
       modelOptions,
       modelOptionsLoading,
+      freeTierGate,
     }),
     [
       sessionRecord,
@@ -1253,6 +1265,7 @@ export function SessionChatProvider({
       checkBranchAndPr,
       modelOptions,
       modelOptionsLoading,
+      freeTierGate,
     ],
   );
 

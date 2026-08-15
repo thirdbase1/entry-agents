@@ -420,6 +420,22 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
 
+  // Models are unreliable at self-identification -- when asked "what model
+  // are you" they'll often confabulate a plausible-sounding but wrong name,
+  // version, or release date instead of admitting uncertainty (observed in
+  // production: a claude-sonnet-4.5 call told a user it was "Claude 3.7
+  // Sonnet (claude-sonnet-4-20250514)", mixing up two different real
+  // Anthropic identifiers, neither of which was 4.5). Ground it explicitly
+  // with the exact ID the request is actually using, since we know it.
+  if (options.modelId) {
+    parts.push(
+      `
+# Model Identity
+
+You are currently running as the model "${options.modelId}", served through Entry Agent's model gateway. If asked what model, version, or provider you are, state exactly this identifier -- do not guess a different name, version number, or release date from training data. If you're unsure how this ID maps to a public marketing name, say the ID plainly rather than inventing one.`,
+    );
+  }
+
   if (options.cwd) {
     parts.push(
       "\n# Environment\n\nWorking directory: . (workspace root)\nUse workspace-relative paths for all file operations.",

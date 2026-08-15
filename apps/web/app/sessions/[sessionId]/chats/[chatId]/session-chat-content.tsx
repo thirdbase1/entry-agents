@@ -1047,6 +1047,15 @@ export function SessionChatContent({
   const [copiedAssistantMessageId, setCopiedAssistantMessageId] = useState<
     string | null
   >(null);
+  const [copiedUserMessageId, setCopiedUserMessageId] = useState<
+    string | null
+  >(null);
+  // Tracks which message currently has its action row (copy/resend/delete)
+  // toggled open via click/tap. Hover still works on desktop; this is the
+  // touch-friendly fallback the hover-only UI never had.
+  const [activeMessageActionsId, setActiveMessageActionsId] = useState<
+    string | null
+  >(null);
   const [forkingAssistantMessageId, setForkingAssistantMessageId] = useState<
     string | null
   >(null);
@@ -1144,6 +1153,36 @@ export function SessionChatContent({
         }, 2000);
       } catch (copyError) {
         console.error("Failed to copy assistant message:", copyError);
+      }
+    },
+    [],
+  );
+
+  const handleCopyUserMessage = useCallback(
+    async (messageId: string, text: string) => {
+      const trimmedText = text.trim();
+      if (trimmedText.length === 0) {
+        return;
+      }
+
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(trimmedText);
+        setCopiedUserMessageId(messageId);
+        if (copyResetTimeoutRef.current !== null) {
+          window.clearTimeout(copyResetTimeoutRef.current);
+        }
+        copyResetTimeoutRef.current = window.setTimeout(() => {
+          setCopiedUserMessageId((currentMessageId) =>
+            currentMessageId === messageId ? null : currentMessageId,
+          );
+          copyResetTimeoutRef.current = null;
+        }, 2000);
+      } catch (copyError) {
+        console.error("Failed to copy user message:", copyError);
       }
     },
     [],
@@ -3369,29 +3408,6 @@ export function SessionChatContent({
             <FileTabView />
           ) : (
             <>
-              {/* Transient error banner (e.g. iOS "Load failed" after sleep) */}
-              {error && (
-                <div className="flex items-center justify-between gap-3 border-b border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-                  {/* Last line of defense: never render error.message
-                      directly. Transport-level failures (network errors,
-                      non-2xx responses from the Workflow SDK's fetch) can
-                      still carry raw gateway/provider text that never went
-                      through the backend's sanitizer in app/workflows/chat.ts. */}
-                  <p className="min-w-0 truncate">
-                    {toFriendlyChatErrorText(error)}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
-                    onClick={() => retryChatStream()}
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    Retry
-                  </Button>
-                </div>
-              )}
-
               {/* Messages */}
               <div className="relative flex-1 overflow-hidden">
                 <div ref={containerRef} className="h-full overflow-y-auto">
@@ -3529,21 +3545,57 @@ export function SessionChatContent({
                                       )}
                                     >
                                       {m.role === "user" ? (
-                                        <div className="group relative w-fit min-w-0 max-w-[80%]">
-                                          <div className="rounded-3xl bg-secondary px-4 py-2">
+                                        <div className="group flex w-fit min-w-0 max-w-[80%] flex-col items-end">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setActiveMessageActionsId(
+                                                (current) =>
+                                                  current === m.id
+                                                    ? null
+                                                    : m.id,
+                                              )
+                                            }
+                                            className="rounded-3xl bg-secondary px-4 py-2 text-left"
+                                          >
                                             <p className="whitespace-pre-wrap break-words">
                                               {p.text}
                                             </p>
-                                          </div>
+                                          </button>
                                           {group.index === 0 && (
-                                            <div className="absolute -left-20 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md bg-background/80 p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100">
+                                            <div
+                                              className={cn(
+                                                "mt-1 flex items-center gap-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 focus-within:opacity-100",
+                                                activeMessageActionsId ===
+                                                  m.id && "opacity-100",
+                                              )}
+                                            >
                                               <button
                                                 type="button"
-                                                onClick={() =>
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  void handleCopyUserMessage(
+                                                    m.id,
+                                                    p.text,
+                                                  );
+                                                }}
+                                                aria-label="Copy your message"
+                                                className="rounded p-1 transition hover:text-foreground"
+                                              >
+                                                {copiedUserMessageId === m.id ? (
+                                                  <Check className="h-4 w-4" />
+                                                ) : (
+                                                  <Copy className="h-4 w-4" />
+                                                )}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
                                                   void handleResendUserMessage(
                                                     m.id,
-                                                  )
-                                                }
+                                                  );
+                                                }}
                                                 disabled={
                                                   hasMessageActionInFlight
                                                 }
@@ -3558,11 +3610,12 @@ export function SessionChatContent({
                                               </button>
                                               <button
                                                 type="button"
-                                                onClick={() =>
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
                                                   void handleDeleteUserMessage(
                                                     m.id,
-                                                  )
-                                                }
+                                                  );
+                                                }}
                                                 disabled={
                                                   hasMessageActionInFlight
                                                 }
@@ -3579,7 +3632,15 @@ export function SessionChatContent({
                                           )}
                                         </div>
                                       ) : (
-                                        <div className="group min-w-0 w-full overflow-hidden">
+                                        <div
+                                          className="group min-w-0 w-full overflow-hidden"
+                                          onClick={() =>
+                                            setActiveMessageActionsId(
+                                              (current) =>
+                                                current === m.id ? null : m.id,
+                                            )
+                                          }
+                                        >
                                           <Streamdown
                                             animated={
                                               isMessageStreaming
@@ -3610,14 +3671,19 @@ export function SessionChatContent({
                                                 <div className="flex items-center gap-1">
                                                   <button
                                                     type="button"
-                                                    onClick={() =>
+                                                    onClick={(event) => {
+                                                      event.stopPropagation();
                                                       void handleCopyAssistantMessage(
                                                         m.id,
                                                         p.text,
-                                                      )
-                                                    }
+                                                      );
+                                                    }}
                                                     aria-label="Copy assistant response"
-                                                    className="rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                                                    className={cn(
+                                                      "rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100",
+                                                      activeMessageActionsId ===
+                                                        m.id && "opacity-100",
+                                                    )}
                                                   >
                                                     {copiedAssistantMessageId ===
                                                     m.id ? (
@@ -3628,11 +3694,12 @@ export function SessionChatContent({
                                                   </button>
                                                   <button
                                                     type="button"
-                                                    onClick={() =>
+                                                    onClick={(event) => {
+                                                      event.stopPropagation();
                                                       void handleForkAssistantMessage(
                                                         m.id,
-                                                      )
-                                                    }
+                                                      );
+                                                    }}
                                                     disabled={
                                                       forkingAssistantMessageId !==
                                                       null
@@ -3640,8 +3707,11 @@ export function SessionChatContent({
                                                     aria-label="Fork conversation from this response"
                                                     className={cn(
                                                       "rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40",
-                                                      forkingAssistantMessageId ===
-                                                        m.id && "opacity-100",
+                                                      (forkingAssistantMessageId ===
+                                                        m.id ||
+                                                        activeMessageActionsId ===
+                                                          m.id) &&
+                                                        "opacity-100",
                                                     )}
                                                   >
                                                     {forkingAssistantMessageId ===
@@ -3855,6 +3925,30 @@ export function SessionChatContent({
                                 {workspaceStatus?.message ?? "Thinking…"}
                               </span>
                             </div>
+                          </div>
+                        )}
+                        {error && (
+                          // Inline, chat-bubble-style error card that lands
+                          // right where the failed response would've been —
+                          // not a full-width banner shouting from the top of
+                          // the page. Same "Last line of defense" note as
+                          // before: never render error.message directly,
+                          // transport-level failures can still carry raw
+                          // gateway/provider text that skipped the backend
+                          // sanitizer in app/workflows/chat.ts.
+                          <div className="flex w-fit max-w-[80%] flex-col gap-2 rounded-3xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                            <p className="break-words">
+                              {toFriendlyChatErrorText(error)}
+                            </p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-fit shrink-0 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
+                              onClick={() => retryChatStream()}
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Retry
+                            </Button>
                           </div>
                         )}
                       </div>

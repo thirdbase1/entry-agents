@@ -2190,6 +2190,55 @@ export function SessionChatContent({
     setQueuedMessages((prev) => prev.filter((item) => item.id !== id));
   }
 
+  // Edits are only ever applied to a message that hasn't been sent yet
+  // (it's still sitting in the queue), so this rebuilds the payload's text
+  // in place rather than re-running buildComposerMessagePayload -- that
+  // reads live composer state (images/textAttachments), which may have
+  // moved on since this item was queued. Non-text parts (images, file
+  // parts, snippet attachments) are preserved untouched.
+  function updateQueuedMessageText(id: string, nextText: string) {
+    setQueuedMessages((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) {
+          return item;
+        }
+
+        const payload = item.payload;
+        if (!payload) {
+          return item;
+        }
+
+        let nextPayload: ComposerMessagePayload;
+        if ("parts" in payload) {
+          // Explicit annotation + push (rather than .filter/.unshift chained
+          // straight off payload.parts) so TS keeps the full
+          // WebAgentUIMessagePart union on this array -- letting inference
+          // narrow it via the `part.type !== "text"` filter would otherwise
+          // drop the "text" variant from the type, making the re-add below
+          // a type error.
+          const parts: WebAgentUIMessagePart[] = [];
+          for (const part of payload.parts ?? []) {
+            if (part.type !== "text") {
+              parts.push(part);
+            }
+          }
+          if (nextText.trim()) {
+            parts.unshift({ type: "text", text: nextText });
+          }
+          nextPayload = { parts };
+        } else {
+          nextPayload = { ...payload, text: nextText };
+        }
+
+        return { ...item, displayText: nextText, payload: nextPayload };
+      }),
+    );
+  }
+
+  function reorderQueuedMessages(nextOrder: QueuedComposerMessage[]) {
+    setQueuedMessages(nextOrder);
+  }
+
   // Drain the queue one message at a time once the current turn settles.
   // hasPendingResponse flips true synchronously inside submitBuiltMessage
   // (via sendMessageWithPendingState) before this effect can re-run, so
@@ -4221,6 +4270,8 @@ export function SessionChatContent({
                     <QueuedPromptsPanel
                       prompts={queuedMessages}
                       onRemove={removeQueuedMessage}
+                      onEdit={updateQueuedMessageText}
+                      onReorder={reorderQueuedMessages}
                     />
                     <PinnedTodoPanel todos={latestTodos} />
                     {/* Input form */}

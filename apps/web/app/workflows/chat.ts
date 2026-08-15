@@ -18,7 +18,6 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { estimateStepCost } from "./gateway-metadata";
-import { fetchAvailableLanguageModels } from "@/lib/models-with-context";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -59,7 +58,6 @@ import type {
   WorkflowRunStatus,
   WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
-import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
 import {
   type PendingImageAttachment,
   persistImageAttachmentsToSandbox,
@@ -259,6 +257,18 @@ async function resolveChatModelRuntime(params: {
   authSession: AuthSessionContext;
 }): Promise<ChatModelRuntime> {
   "use step";
+
+  // Dynamic import (not a static top-of-file import) is required here:
+  // model-selection.ts transitively touches the drizzle db client
+  // ("postgres", a Node built-in) via lib/model-availability.ts's admin
+  // kill-switch check, and the Workflow SDK's bundler pulls in a
+  // statically-imported function's *entire* module graph into the
+  // restricted "use workflow" bundle even when it's only ever called
+  // from this "use step" function -- same reasoning as
+  // performAgentCommitAndPush/checkVercelConnectedStep/etc. above.
+  const { resolveChatModelSelection } = await import(
+    "../api/chat/_lib/model-selection"
+  );
 
   const [sessionRecord, chat, rawPreferences] = await Promise.all([
     getSessionById(params.sessionId),
@@ -849,6 +859,30 @@ async function performAgentCommitAndPush(params: {
  * actually running a CLI command) since this only needs a cheap
  * existence check to decide whether to surface the tool at all.
  */
+/**
+ * Fetches the live model/pricing catalog for the per-turn cost pill, as
+ * its own step -- same reasoning as checkVercelConnectedStep just below:
+ * lib/models-with-context.ts's fetchAvailableLanguageModels() filters
+ * out disabled models via lib/model-availability.ts's admin kill-switch
+ * check, which now touches the drizzle db client ("postgres", a Node
+ * built-in) through lib/db/model-overrides.ts. That's a Node module the
+ * Workflow SDK's bundler refuses to include in the restricted
+ * "use workflow" environment when reached via a static top-of-file
+ * import -- even though the actual live-pricing HTTP call itself
+ * (fetchGatewayModels, via the workflow-safe hoisted `fetch`) is fine on
+ * its own. Loaded via dynamic import() inside this "use step" function
+ * instead, same fix as every other DB/Node-module touchpoint in this
+ * file.
+ */
+async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
+  "use step";
+
+  const { fetchAvailableLanguageModels } = await import(
+    "@/lib/models-with-context"
+  );
+  return fetchAvailableLanguageModels();
+}
+
 async function checkVercelConnectedStep(userId: string): Promise<boolean> {
   "use step";
 
@@ -1102,7 +1136,7 @@ export async function runAgentWorkflow(options: Options) {
   // Vercel-Gateway-shaped cost metadata. Best-effort: if the gateway is
   // briefly unreachable, cost tracking degrades to undefined for this
   // turn rather than failing the whole chat request.
-  const modelCostCatalog = await fetchAvailableLanguageModels().catch(
+  const modelCostCatalog = await fetchModelCostCatalogStep().catch(
     (error) => {
       console.error(
         "Failed to fetch entry-gateway model/pricing catalog for cost tracking:",

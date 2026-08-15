@@ -2,10 +2,7 @@
 
 import { CheckIcon, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  type ReasoningEffort,
-  REASONING_EFFORT_LEVELS,
-} from "@/lib/model-reasoning";
+import type { ReasoningEffortLevel } from "@/lib/model-reasoning";
 import {
   Popover,
   PopoverContent,
@@ -13,16 +10,18 @@ import {
 } from "@/components/ui/popover";
 
 interface ReasoningEffortSelectorProps {
-  value: ReasoningEffort | null;
-  onChange: (value: ReasoningEffort | null) => void;
+  value: string | null;
+  /**
+   * The actual levels this specific model accepts (value + label pairs),
+   * from lib/model-reasoning.ts's getReasoningEffortLevels(modelId). Not
+   * a fixed low/medium/high -- some models have a different real
+   * vocabulary (e.g. qwen3.8-max-free's low/medium/xhigh), and this
+   * component renders exactly what's passed in rather than assuming.
+   */
+  levels: ReasoningEffortLevel[];
+  onChange: (value: string | null) => void;
   disabled?: boolean;
 }
-
-const LABELS: Record<ReasoningEffort, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
 
 /**
  * Compact effort picker shown next to ModelSelectorCompact, only when the
@@ -31,10 +30,12 @@ const LABELS: Record<ReasoningEffort, string> = {
  */
 export function ReasoningEffortSelector({
   value,
+  levels,
   onChange,
   disabled = false,
 }: ReasoningEffortSelectorProps) {
-  const displayLabel = value ? LABELS[value] : "Auto";
+  const selected = value ? levels.find((level) => level.value === value) : undefined;
+  const displayLabel = selected ? selected.label : "Auto";
 
   return (
     <Popover>
@@ -62,11 +63,11 @@ export function ReasoningEffortSelector({
           />
           Auto
         </button>
-        {REASONING_EFFORT_LEVELS.map((level) => (
+        {levels.map((level) => (
           <button
-            key={level}
+            key={level.value}
             type="button"
-            onClick={() => onChange(level)}
+            onClick={() => onChange(level.value)}
             className={cn(
               "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted",
             )}
@@ -74,10 +75,10 @@ export function ReasoningEffortSelector({
             <CheckIcon
               className={cn(
                 "size-3.5 shrink-0",
-                value === level ? "opacity-100" : "opacity-0",
+                value === level.value ? "opacity-100" : "opacity-0",
               )}
             />
-            {LABELS[level]}
+            {level.label}
           </button>
         ))}
       </PopoverContent>

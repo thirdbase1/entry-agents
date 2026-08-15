@@ -2,10 +2,68 @@ import { z } from "zod";
 import type { ProviderOptionsByProvider } from "@open-agents/agent";
 import { isGeminiModelId } from "@/lib/models";
 
-export const REASONING_EFFORT_LEVELS = ["low", "medium", "high"] as const;
-export type ReasoningEffort = (typeof REASONING_EFFORT_LEVELS)[number];
+/**
+ * A single reasoning-effort choice as actually accepted by a given
+ * upstream, paired with the label shown in the UI. `value` is the exact
+ * string sent over the wire (providerOptions.openai.reasoningEffort /
+ * google.thinkingConfig.thinkingLevel) -- never translated or remapped,
+ * so what you pick in the UI is what the upstream actually receives.
+ */
+export interface ReasoningEffortLevel {
+  value: string;
+  label: string;
+}
 
-export const reasoningEffortSchema = z.enum(REASONING_EFFORT_LEVELS);
+export type ReasoningEffort = string;
+
+/**
+ * The vocabulary most reasoning-capable upstreams share (OpenAI-style
+ * low/medium/high, and Gemini's low/medium/high thinkingLevel). Used for
+ * every model in REASONING_CAPABLE_MODEL_IDS unless MODEL_REASONING_LEVELS
+ * has a more specific entry below.
+ */
+const DEFAULT_LEVELS: ReasoningEffortLevel[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+/**
+ * Per-model overrides for upstreams whose real accepted vocabulary differs
+ * from the low/medium/high default. Only list models here where the
+ * values genuinely differ -- everything else falls back to DEFAULT_LEVELS.
+ */
+const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
+  // Confirmed 2026-08-15 via live probe against tokenrouter
+  // (OpenAI-compat route): the upstream rejects "high" outright --
+  // "reasoning_effort must be low, medium, or xhigh" -- so xhigh is this
+  // model's real top tier, not a translation of "high". Token counts
+  // across repeated runs on the same hard prompt: low ~546-818 reasoning
+  // tokens, medium ~517, xhigh ~240-247 -- counterintuitively xhigh used
+  // the FEWEST reasoning tokens, not the most. That's the upstream's own
+  // behavior, shown here faithfully rather than remapped to what the
+  // label implies.
+  "qwen3.8-max-free": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "xhigh", label: "XHigh" },
+  ],
+};
+
+export function getReasoningEffortLevels(
+  modelId: string,
+): ReasoningEffortLevel[] {
+  return MODEL_REASONING_LEVELS[modelId] ?? DEFAULT_LEVELS;
+}
+
+// Loose format check only -- real validity is per-model (see
+// sanitizeReasoningEffort below), since different upstreams accept
+// different vocabularies (e.g. qwen3.8-max-free's low/medium/xhigh).
+export const reasoningEffortSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^[a-z]+$/);
 
 // Models confirmed to accept `reasoningEffort` in the OpenAI-compatible
 // provider-options schema when routed through entry-gateway. Add a model id
@@ -52,30 +110,14 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   // low/medium/high. Same native @ai-sdk/google path as the other 3.x
   // Flash models above.
   "gemini-3.7-flash",
-  // Confirmed 2026-08-15 via live probe against tokenrouter (OpenAI-compat
-  // route): reasoning is ALWAYS on for this checkpoint --
-  // chat_template_kwargs.enable_thinking:false is hard-rejected with
-  // "Qwen3.8 open text checkpoints require thinking; enable_thinking=false
-  // is unsupported". reasoning_effort IS honored but the upstream's own
-  // accepted vocabulary is low/medium/xhigh, NOT low/medium/high --
-  // sending "high" gets a 400 ("reasoning_effort must be low, medium, or
-  // xhigh"). See EFFORT_VALUE_OVERRIDES below for the high->xhigh mapping
-  // so the shared UI can keep using low/medium/high. Token counts across
-  // repeated runs on the same hard prompt: low ~546-818 reasoning tokens,
-  // medium ~517, xhigh ~240-247 -- counterintuitively XHIGH used the
-  // FEWEST reasoning tokens, not the most. Naming is the upstream's own
-  // choice, not a bug on our side; passing it through faithfully rather
-  // than remapping based on assumed semantics.
+  // Confirmed 2026-08-15 via live probe against tokenrouter: reasoning is
+  // ALWAYS on for this checkpoint -- chat_template_kwargs.enable_thinking:
+  // false is hard-rejected ("Qwen3.8 open text checkpoints require
+  // thinking; enable_thinking=false is unsupported"). reasoning_effort IS
+  // honored; see MODEL_REASONING_LEVELS above for this model's real
+  // low/medium/xhigh vocabulary.
   "qwen3.8-max-free",
 ]);
-
-// Some upstreams don't share the UI's low/medium/high vocabulary. Map the
-// UI value to whatever that specific model's API actually accepts here
-// before it goes out over the wire, so the shared selector component never
-// needs to know about per-model quirks.
-const EFFORT_VALUE_OVERRIDES: Record<string, Partial<Record<ReasoningEffort, string>>> = {
-  "qwen3.8-max-free": { high: "xhigh" },
-};
 
 export function isReasoningCapableModel(modelId: string): boolean {
   return REASONING_CAPABLE_MODEL_IDS.has(modelId);
@@ -83,9 +125,11 @@ export function isReasoningCapableModel(modelId: string): boolean {
 
 /**
  * Validates a stored/requested reasoning effort value against the model
- * that will actually serve the request. Returns null if the model doesn't
- * support reasoning effort or the value isn't a recognized level -- callers
- * should treat null as "use the model's default reasoning behavior".
+ * that will actually serve the request, using that model's real accepted
+ * vocabulary (see getReasoningEffortLevels). Returns null if the model
+ * doesn't support reasoning effort or the value isn't one of that model's
+ * recognized levels -- callers should treat null as "use the model's
+ * default reasoning behavior".
  */
 export function sanitizeReasoningEffort(
   modelId: string,
@@ -94,8 +138,8 @@ export function sanitizeReasoningEffort(
   if (!value || !isReasoningCapableModel(modelId)) {
     return null;
   }
-  const parsed = reasoningEffortSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  const levels = getReasoningEffortLevels(modelId);
+  return levels.some((level) => level.value === value) ? value : null;
 }
 
 /**
@@ -114,6 +158,10 @@ export function sanitizeReasoningEffort(
  * assuming the shared "openai" shape. thinkingLevel accepts the same
  * low/medium/high vocabulary as the UI's reasoning selector, so `effort`
  * maps straight across with no translation.
+ *
+ * `effort` here is always one of that model's own getReasoningEffortLevels
+ * values (validated by sanitizeReasoningEffort before this is called), so
+ * it's passed straight through with no per-model remapping needed.
  */
 export function toReasoningProviderOptions(
   effort: ReasoningEffort | null,
@@ -131,11 +179,9 @@ export function toReasoningProviderOptions(
     };
   }
 
-  const mappedEffort = EFFORT_VALUE_OVERRIDES[modelId]?.[effort] ?? effort;
-
   return {
     openai: {
-      reasoningEffort: mappedEffort,
+      reasoningEffort: effort,
       // OpenAI Responses items are not persisted when store is false.
       // Ensure this always carries the non-persistent setting so
       // follow-up turns never try to reference missing rs_* items.

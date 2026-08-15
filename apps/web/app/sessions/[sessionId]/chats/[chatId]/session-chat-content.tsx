@@ -71,6 +71,7 @@ import { ModelSelectorCompact } from "@/components/model-selector-compact";
 import { ReasoningEffortSelector } from "@/components/reasoning-effort-selector";
 import { PermissionModeSelector } from "@/components/permission-mode-selector";
 import {
+  getReasoningEffortLevels,
   isReasoningCapableModel,
   sanitizeReasoningEffort,
 } from "@/lib/model-reasoning";
@@ -4527,6 +4528,9 @@ export function SessionChatContent({
                                     value={sanitizeReasoningEffort(
                                       chatInfo.modelId,
                                       chatInfo.reasoningEffort,
+                                    )}
+                                    levels={getReasoningEffortLevels(
+                                      chatInfo.modelId,
                                     )}
                                     disabled={
                                       isChatInFlight ||

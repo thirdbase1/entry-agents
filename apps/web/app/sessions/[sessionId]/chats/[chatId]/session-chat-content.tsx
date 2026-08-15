@@ -4625,7 +4625,7 @@ export function SessionChatContent({
                             ) : (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <span>
+                                  <span className="relative inline-flex">
                                     <Button
                                       type="submit"
                                       size="icon"
@@ -4652,11 +4652,26 @@ export function SessionChatContent({
                                     >
                                       <ArrowUp className="h-4 w-4" />
                                     </Button>
+                                    {/* Visible queue badge: a hover-only tooltip is easy to
+                                        miss (and useless on touch devices), so when this tap
+                                        will queue the message instead of sending it
+                                        immediately, show a small always-visible counter badge
+                                        with the position it'll land in the queue -- mirrors
+                                        the "Queue message" tooltip copy below but doesn't
+                                        require a hover/long-press to discover. */}
+                                    {(isChatInFlight || hasPendingResponse) && (
+                                      <span
+                                        className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-background"
+                                        aria-hidden="true"
+                                      >
+                                        {queuedMessages.length + 1}
+                                      </span>
+                                    )}
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
                                   {isChatInFlight || hasPendingResponse
-                                    ? "Queue message"
+                                    ? `Queue message (position ${queuedMessages.length + 1})`
                                     : "Send message"}
                                 </TooltipContent>
                               </Tooltip>

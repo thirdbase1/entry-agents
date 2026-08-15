@@ -103,8 +103,21 @@ async function handlePullRequestWebhook(
   let archivedSessions = 0;
 
   for (const sessionRecord of linkedSessions) {
+    // Only auto-archive on a *new* transition into closed/merged. Without
+    // this, a redelivered "closed" webhook (GitHub retries failed
+    // deliveries, and delivery UI allows manual "Redeliver") for a PR
+    // that's already recorded as closed/merged would silently flip an
+    // intentionally-unarchived session straight back to archived, since
+    // the old check only looked at the session's current status, not
+    // whether this event actually changed anything. Comparing against the
+    // previously stored prStatus makes the archive idempotent: once we've
+    // recorded a given closure, repeat deliveries of that same event are
+    // no-ops, while a genuine reopen-then-close cycle still archives again.
+    const isNewClosure = sessionRecord.prStatus !== prStatus;
     const shouldArchive =
-      action === "closed" && sessionRecord.status !== "archived";
+      action === "closed" &&
+      isNewClosure &&
+      sessionRecord.status !== "archived";
 
     const updatePayload: Parameters<typeof updateSession>[1] = {};
 

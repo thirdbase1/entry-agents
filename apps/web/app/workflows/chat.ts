@@ -294,21 +294,23 @@ async function resolveChatModelRuntime(params: {
     ) ??
     chat.modelId ??
     null;
-  const mainModelSelection = resolveChatModelSelection({
-    selectedModelId,
-    reasoningEffort: chat.reasoningEffort,
-    missingModelLabel: "Selected model",
-  });
-  const subagentModelSelection = preferences?.defaultSubagentModelId
-    ? resolveChatModelSelection({
-        selectedModelId: sanitizeSelectedModelIdForSession(
-          preferences.defaultSubagentModelId,
-          params.authSession,
-          params.requestUrl,
-        ),
-        missingModelLabel: "Subagent model",
-      })
-    : undefined;
+  const [mainModelSelection, subagentModelSelection] = await Promise.all([
+    resolveChatModelSelection({
+      selectedModelId,
+      reasoningEffort: chat.reasoningEffort,
+      missingModelLabel: "Selected model",
+    }),
+    preferences?.defaultSubagentModelId
+      ? resolveChatModelSelection({
+          selectedModelId: sanitizeSelectedModelIdForSession(
+            preferences.defaultSubagentModelId,
+            params.authSession,
+            params.requestUrl,
+          ),
+          missingModelLabel: "Subagent model",
+        })
+      : Promise.resolve(undefined),
+  ]);
   const autoCommitEnabled =
     (sessionRecord.autoCommitPushOverride ??
       preferences?.autoCommitPush ??
@@ -936,9 +938,8 @@ async function performAgentVercelCli(params: {
 
   const { connectSandbox } = await import("@open-agents/sandbox");
   const { getUserVercelToken } = await import("@/lib/vercel/token");
-  const { getVercelProjectLinkByRepo } = await import(
-    "@/lib/db/vercel-project-links"
-  );
+  const { getVercelProjectLinkByRepo } =
+    await import("@/lib/db/vercel-project-links");
 
   let token: string | null;
   try {
@@ -979,7 +980,8 @@ async function performAgentVercelCli(params: {
 
   const result = await sandbox.exec(command, params.workingDirectory, 120000);
 
-  const redact = (text: string) => (text ? text.split(token).join("[REDACTED]") : text);
+  const redact = (text: string) =>
+    text ? text.split(token).join("[REDACTED]") : text;
 
   return {
     success: result.success,
@@ -1037,9 +1039,9 @@ export async function runAgentWorkflow(options: Options) {
   // (performAgentCommitAndPush, performAgentGithubApiRequest,
   // performAgentVercelCli) already avoids this via dynamic import()
   // inside a "use step" function -- same fix here.
-  const vercelConnectedPromise = checkVercelConnectedStep(
-    options.userId,
-  ).catch(() => false);
+  const vercelConnectedPromise = checkVercelConnectedStep(options.userId).catch(
+    () => false,
+  );
 
   // Fast path (the common case, no attachments): convert messages straight
   // away, fully in parallel with sandbox resolution below. Only when there

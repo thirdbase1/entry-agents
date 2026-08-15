@@ -362,9 +362,7 @@ export const userPreferences = pgTable("user_preferences", {
     .notNull()
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
-  defaultModelId: text("default_model_id").default(
-    "deepseek-v4-flash",
-  ),
+  defaultModelId: text("default_model_id").default("deepseek-v4-flash"),
   defaultSubagentModelId: text("default_subagent_model_id"),
   defaultSandboxType: text("default_sandbox_type", {
     enum: ["vercel"],
@@ -388,7 +386,9 @@ export const userPreferences = pgTable("user_preferences", {
   //   secret exfiltration or destructive commands.
   defaultPermissionMode: text("default_permission_mode", {
     enum: ["ask", "autoAccept", "fullAccess"],
-  }).notNull().default("ask"),
+  })
+    .notNull()
+    .default("ask"),
   alertsEnabled: boolean("alerts_enabled").notNull().default(true),
   alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
   publicUsageEnabled: boolean("public_usage_enabled").notNull().default(false),
@@ -438,3 +438,20 @@ export const usageEvents = pgTable("usage_events", {
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+
+// Admin-controlled per-model kill switch. A row's presence doesn't matter,
+// only `disabled` -- upserted on every toggle so `updatedAt`/`updatedBy`
+// always reflect the most recent change for the admin models page's audit
+// trail. Model IDs are the flat gateway catalog IDs (e.g. "grok-4.5"),
+// same namespace as everywhere else in this app.
+export const modelOverrides = pgTable("model_overrides", {
+  modelId: text("model_id").primaryKey(),
+  disabled: boolean("disabled").notNull().default(false),
+  updatedBy: text("updated_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ModelOverride = typeof modelOverrides.$inferSelect;
+export type NewModelOverride = typeof modelOverrides.$inferInsert;

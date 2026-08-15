@@ -233,12 +233,9 @@ async function fetchGatewayModels(): Promise<GatewayModel[]> {
   // workflow context too (it's a no-op wrapper around globalThis.fetch when
   // there's no active workflow run), so this one import works for both the
   // plain /api/models route handler and the workflow call site.
-  const response = await workflowFetch(
-    `${baseURL.replace(/\/$/, "")}/models`,
-    {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    },
-  );
+  const response = await workflowFetch(`${baseURL.replace(/\/$/, "")}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
 
   if (!response.ok) {
     throw new Error(
@@ -274,4 +271,23 @@ export async function fetchAvailableLanguageModelsWithContext(): Promise<
   return models.map((model) =>
     addModelsDevMetadata(model, modelsDevMetadataMap),
   );
+}
+
+/**
+ * Every language model the gateway knows about, unfiltered by disabled
+ * status -- for the admin models page (settings/admin/models), which
+ * needs to show (and let an admin re-enable) models that are currently
+ * hidden from the regular picker.
+ */
+export async function fetchAllLanguageModelsForAdmin(): Promise<
+  AvailableModel[]
+> {
+  const [models, modelsDevMetadataMap] = await Promise.all([
+    fetchGatewayModels(),
+    fetchModelsDevMetadataMap(),
+  ]);
+
+  return models
+    .filter((model) => model.modelType === "language")
+    .map((model) => addModelsDevMetadata(model, modelsDevMetadataMap));
 }

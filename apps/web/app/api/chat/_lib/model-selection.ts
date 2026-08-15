@@ -12,14 +12,14 @@ interface ResolveChatModelSelectionParams {
   missingModelLabel: string;
 }
 
-export function resolveChatModelSelection({
+export async function resolveChatModelSelection({
   selectedModelId,
   reasoningEffort,
   missingModelLabel,
-}: ResolveChatModelSelectionParams): AgentModelSelection {
+}: ResolveChatModelSelectionParams): Promise<AgentModelSelection> {
   const requestedModelId = selectedModelId ?? APP_DEFAULT_MODEL_ID;
 
-  const availableModelId = resolveAvailableModelId(requestedModelId);
+  const availableModelId = await resolveAvailableModelId(requestedModelId);
   if (availableModelId !== requestedModelId) {
     console.warn(
       `${missingModelLabel} "${requestedModelId}" resolves to disabled model. Falling back to default model.`,

@@ -83,6 +83,7 @@ import {
   PinnedTodoPanel,
   getLatestTodos,
 } from "@/components/pinned-todo-panel";
+import { QueuedPromptsPanel } from "@/components/queued-prompts-panel";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { ToolCall } from "@/components/tool-call";
 import { OpenFileProvider } from "@/components/tool-call/open-file-context";
@@ -1047,9 +1048,9 @@ export function SessionChatContent({
   const [copiedAssistantMessageId, setCopiedAssistantMessageId] = useState<
     string | null
   >(null);
-  const [copiedUserMessageId, setCopiedUserMessageId] = useState<
-    string | null
-  >(null);
+  const [copiedUserMessageId, setCopiedUserMessageId] = useState<string | null>(
+    null,
+  );
   // Tracks which message currently has its action row (copy/resend/delete)
   // toggled open via click/tap. Hover still works on desktop; this is the
   // touch-friendly fallback the hover-only UI never had.
@@ -2039,6 +2040,173 @@ export function SessionChatContent({
     },
     [chatInfo.id, sendMessage, setChatStreaming],
   );
+
+  // --- Prompt queue -----------------------------------------------------
+  // Lets the user keep typing and hitting send/Enter while a turn is still
+  // running instead of the message just being dropped. Each queued prompt
+  // is built eagerly (payload + a display copy) so the composer can be
+  // cleared immediately, and drains one-at-a-time once the current turn
+  // settles back to "ready" (see the dequeue effect below).
+  type ComposerMessagePayload = Parameters<
+    typeof sendMessageWithPendingState
+  >[0];
+  interface QueuedComposerMessage {
+    id: string;
+    displayText: string;
+    payload: ComposerMessagePayload;
+  }
+  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>(
+    [],
+  );
+
+  // Queued prompts are scoped to this chat -- don't let them leak into a
+  // different chat if the user navigates away with prompts still queued.
+  useEffect(() => {
+    setQueuedMessages([]);
+  }, [chatInfo.id]);
+
+  function buildComposerMessagePayload(): {
+    payload: ComposerMessagePayload;
+    displayText: string;
+  } | null {
+    const hasContent =
+      input.trim() || images.length > 0 || textAttachments.length > 0;
+    if (!hasContent) {
+      return null;
+    }
+
+    const messageText = input;
+    const files = getFileParts();
+    const hasSnippets = textAttachments.length > 0;
+    let payload: ComposerMessagePayload;
+
+    if (hasSnippets) {
+      const parts: WebAgentUIMessage["parts"] = [];
+      if (messageText.trim()) {
+        parts.push({ type: "text" as const, text: messageText });
+      }
+      if (files) {
+        for (const f of files) {
+          parts.push(f);
+        }
+      }
+      for (const attachment of textAttachments) {
+        parts.push({
+          type: "data-snippet" as const,
+          id: attachment.id,
+          data: {
+            content: attachment.content,
+            filename: attachment.filename,
+          },
+        });
+      }
+      payload = { parts };
+    } else {
+      payload = { text: messageText, files };
+    }
+
+    return { payload, displayText: messageText };
+  }
+
+  async function submitBuiltMessage(built: {
+    payload: ComposerMessagePayload;
+    displayText: string;
+  }) {
+    const { payload: messagePayload, displayText: messageText } = built;
+
+    const isFirstChatInSession = initialIsOnlyChatInSession;
+    const shouldSetOptimisticTitle =
+      isFirstChatInSession && !hadInitialMessages && messages.length === 0;
+    const trimmedText = messageText.trim();
+    const shouldGenerateSessionTitle =
+      shouldSetOptimisticTitle &&
+      trimmedText.length > 0 &&
+      !hasRequestedSessionTitleGenerationRef.current;
+    if (shouldSetOptimisticTitle && trimmedText.length > 0) {
+      const nextTitle =
+        trimmedText.length > 80
+          ? `${trimmedText.slice(0, 80)}...`
+          : trimmedText;
+      pendingOptimisticTitleChatIdRef.current = chatInfo.id;
+      void setChatTitle(chatInfo.id, nextTitle);
+
+      if (shouldGenerateSessionTitle) {
+        hasRequestedSessionTitleGenerationRef.current = true;
+        const generatedTitlePromise = fetch("/api/generate-title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: trimmedText }),
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              return null;
+            }
+            const data = (await res.json().catch(() => null)) as {
+              title?: unknown;
+            } | null;
+            if (typeof data?.title !== "string") {
+              return null;
+            }
+            const title = data.title.trim();
+            return title.length > 0 ? title : null;
+          })
+          .catch(() => null);
+
+        void generatedTitlePromise
+          .then((generatedTitle) => {
+            if (!generatedTitle) {
+              return;
+            }
+            return updateSessionTitle(generatedTitle);
+          })
+          .catch(() => {
+            // Ignore failures and keep the existing session title.
+          });
+      }
+    }
+
+    try {
+      await sendMessageWithPendingState(messagePayload);
+    } catch (err) {
+      if (pendingOptimisticTitleChatIdRef.current) {
+        void clearChatTitle(pendingOptimisticTitleChatIdRef.current);
+        pendingOptimisticTitleChatIdRef.current = null;
+      }
+      console.error("Failed to send message:", err);
+    }
+  }
+
+  function enqueueComposerMessage(built: {
+    payload: ComposerMessagePayload;
+    displayText: string;
+  }) {
+    setQueuedMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), ...built },
+    ]);
+  }
+
+  function removeQueuedMessage(id: string) {
+    setQueuedMessages((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  // Drain the queue one message at a time once the current turn settles.
+  // hasPendingResponse flips true synchronously inside submitBuiltMessage
+  // (via sendMessageWithPendingState) before this effect can re-run, so
+  // this only ever dequeues a single item per "became ready" transition.
+  useEffect(() => {
+    if (isChatInFlight || hasPendingResponse) {
+      return;
+    }
+    if (queuedMessages.length === 0) {
+      return;
+    }
+
+    const [next, ...rest] = queuedMessages;
+    setQueuedMessages(rest);
+    void submitBuiltMessage(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- submitBuiltMessage/buildComposerMessagePayload close over the latest render's state; only the gating signals and queue contents should retrigger this drain.
+  }, [isChatInFlight, hasPendingResponse, queuedMessages]);
 
   const handleFixChecks = useCallback(
     async (failedRuns: CheckRun[]) => {
@@ -3582,7 +3750,8 @@ export function SessionChatContent({
                                                 aria-label="Copy your message"
                                                 className="rounded p-1 transition hover:text-foreground"
                                               >
-                                                {copiedUserMessageId === m.id ? (
+                                                {copiedUserMessageId ===
+                                                m.id ? (
                                                   <Check className="h-4 w-4" />
                                                 ) : (
                                                   <Copy className="h-4 w-4" />
@@ -4049,6 +4218,10 @@ export function SessionChatContent({
                       />
                     )}
                     {/* Pinned Todo Panel — sits above the input box */}
+                    <QueuedPromptsPanel
+                      prompts={queuedMessages}
+                      onRemove={removeQueuedMessage}
+                    />
                     <PinnedTodoPanel todos={latestTodos} />
                     {/* Input form */}
                     <div
@@ -4059,146 +4232,25 @@ export function SessionChatContent({
                           e.preventDefault();
                           // When inline question is active, don't send a chat message
                           if (showInlineQuestion) return;
-                          if (
-                            isArchived ||
-                            isChatInFlight ||
-                            hasPendingResponse
-                          ) {
-                            return;
-                          }
-                          const hasContent =
-                            input.trim() ||
-                            images.length > 0 ||
-                            textAttachments.length > 0;
-                          if (!hasContent) return;
+                          if (isArchived) return;
 
-                          const messageText = input;
-                          const files = getFileParts();
-
-                          // Build the message payload. When text attachments are
-                          // present we use the parts-based form so we can include
-                          // data-snippet parts alongside text and file parts.
-                          const hasSnippets = textAttachments.length > 0;
-                          let messagePayload: Parameters<
-                            typeof sendMessageWithPendingState
-                          >[0];
-
-                          if (hasSnippets) {
-                            const parts: WebAgentUIMessage["parts"] = [];
-                            if (messageText.trim()) {
-                              parts.push({
-                                type: "text" as const,
-                                text: messageText,
-                              });
-                            }
-                            if (files) {
-                              for (const f of files) {
-                                parts.push(f);
-                              }
-                            }
-                            for (const attachment of textAttachments) {
-                              parts.push({
-                                type: "data-snippet" as const,
-                                id: attachment.id,
-                                data: {
-                                  content: attachment.content,
-                                  filename: attachment.filename,
-                                },
-                              });
-                            }
-                            messagePayload = { parts };
-                          } else {
-                            messagePayload = {
-                              text: messageText,
-                              files,
-                            };
-                          }
+                          const built = buildComposerMessagePayload();
+                          if (!built) return;
 
                           setInput("");
                           clearImages();
                           clearTextAttachments();
 
-                          const isFirstChatInSession =
-                            initialIsOnlyChatInSession;
-                          const shouldSetOptimisticTitle =
-                            isFirstChatInSession &&
-                            !hadInitialMessages &&
-                            messages.length === 0;
-                          const trimmedText = messageText.trim();
-                          const shouldGenerateSessionTitle =
-                            shouldSetOptimisticTitle &&
-                            trimmedText.length > 0 &&
-                            !hasRequestedSessionTitleGenerationRef.current;
-                          if (
-                            shouldSetOptimisticTitle &&
-                            trimmedText.length > 0
-                          ) {
-                            const nextTitle =
-                              trimmedText.length > 80
-                                ? `${trimmedText.slice(0, 80)}...`
-                                : trimmedText;
-                            pendingOptimisticTitleChatIdRef.current =
-                              chatInfo.id;
-                            void setChatTitle(chatInfo.id, nextTitle);
-
-                            if (shouldGenerateSessionTitle) {
-                              hasRequestedSessionTitleGenerationRef.current = true;
-                              // Generate a title in parallel and persist it as soon as it
-                              // resolves, without waiting for the assistant response.
-                              const generatedTitlePromise = fetch(
-                                "/api/generate-title",
-                                {
-                                  method: "POST",
-                                  headers: {
-                                    "Content-Type": "application/json",
-                                  },
-                                  body: JSON.stringify({
-                                    message: trimmedText,
-                                  }),
-                                },
-                              )
-                                .then(async (res) => {
-                                  if (!res.ok) {
-                                    return null;
-                                  }
-
-                                  const data = (await res
-                                    .json()
-                                    .catch(() => null)) as {
-                                    title?: unknown;
-                                  } | null;
-                                  if (typeof data?.title !== "string") {
-                                    return null;
-                                  }
-
-                                  const title = data.title.trim();
-                                  return title.length > 0 ? title : null;
-                                })
-                                .catch(() => null);
-
-                              void generatedTitlePromise
-                                .then((generatedTitle) => {
-                                  if (!generatedTitle) {
-                                    return;
-                                  }
-                                  return updateSessionTitle(generatedTitle);
-                                })
-                                .catch(() => {
-                                  // Ignore failures and keep the existing session title.
-                                });
-                            }
+                          // While a turn is already running, queue the prompt
+                          // instead of dropping it -- it's sent automatically
+                          // once the current turn settles (see the drain
+                          // effect near sendMessageWithPendingState above).
+                          if (isChatInFlight || hasPendingResponse) {
+                            enqueueComposerMessage(built);
+                            return;
                           }
-                          try {
-                            await sendMessageWithPendingState(messagePayload);
-                          } catch (err) {
-                            if (pendingOptimisticTitleChatIdRef.current) {
-                              void clearChatTitle(
-                                pendingOptimisticTitleChatIdRef.current,
-                              );
-                              pendingOptimisticTitleChatIdRef.current = null;
-                            }
-                            console.error("Failed to send message:", err);
-                          }
+
+                          await submitBuiltMessage(built);
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -4288,13 +4340,15 @@ export function SessionChatContent({
                               if (handleSlashKeyDown(e)) {
                                 return;
                               }
-                              // On iOS, Return should insert a newline (send via submit button)
+                              // On iOS, Return should insert a newline (send via submit button).
+                              // Note: no longer gated on isChatInFlight/hasPendingResponse --
+                              // the form's onSubmit handler queues the message instead of
+                              // dropping it when a turn is already running, so Enter should
+                              // always try to submit/queue.
                               if (
                                 e.key === "Enter" &&
                                 !e.shiftKey &&
-                                !isIosDevice &&
-                                !isChatInFlight &&
-                                !hasPendingResponse
+                                !isIosDevice
                               ) {
                                 e.preventDefault();
                                 if (!isArchived) {

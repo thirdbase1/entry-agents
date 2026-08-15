@@ -1,10 +1,16 @@
-import { describe, expect, test } from "bun:test";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
-import { resolveChatModelSelection } from "./model-selection";
+import { describe, expect, mock, test } from "bun:test";
+
+mock.module("server-only", () => ({}));
+mock.module("@/lib/db/model-overrides", () => ({
+  getDisabledModelIdSet: mock(async () => new Set<string>()),
+}));
+
+const { APP_DEFAULT_MODEL_ID } = await import("@/lib/models");
+const { resolveChatModelSelection } = await import("./model-selection");
 
 describe("resolveChatModelSelection", () => {
-  test("returns direct model ids unchanged when the model isn't reasoning-capable", () => {
-    const selection = resolveChatModelSelection({
+  test("returns direct model ids unchanged when the model isn't reasoning-capable", async () => {
+    const selection = await resolveChatModelSelection({
       selectedModelId: "openai/gpt-5",
       reasoningEffort: null,
       missingModelLabel: "Selected model",
@@ -15,8 +21,8 @@ describe("resolveChatModelSelection", () => {
     });
   });
 
-  test("attaches reasoning provider options for a reasoning-capable model", () => {
-    const selection = resolveChatModelSelection({
+  test("attaches reasoning provider options for a reasoning-capable model", async () => {
+    const selection = await resolveChatModelSelection({
       selectedModelId: "deepseek-v4-pro",
       reasoningEffort: "high",
       missingModelLabel: "Selected model",
@@ -33,8 +39,8 @@ describe("resolveChatModelSelection", () => {
     });
   });
 
-  test("ignores reasoning effort for models that don't support it", () => {
-    const selection = resolveChatModelSelection({
+  test("ignores reasoning effort for models that don't support it", async () => {
+    const selection = await resolveChatModelSelection({
       selectedModelId: "openai/gpt-5",
       reasoningEffort: "high",
       missingModelLabel: "Selected model",
@@ -45,7 +51,7 @@ describe("resolveChatModelSelection", () => {
     });
   });
 
-  test("falls back to the default model and warns when the model is disabled", () => {
+  test("falls back to the default model and warns when the model is disabled", async () => {
     const originalWarn = console.warn;
     const warnings: unknown[][] = [];
     console.warn = (...args: unknown[]) => {
@@ -53,7 +59,7 @@ describe("resolveChatModelSelection", () => {
     };
 
     try {
-      const selection = resolveChatModelSelection({
+      const selection = await resolveChatModelSelection({
         selectedModelId: "kimi-k3",
         reasoningEffort: null,
         missingModelLabel: "Selected model",
@@ -72,9 +78,26 @@ describe("resolveChatModelSelection", () => {
     }
   });
 
-  test("uses the default model when no model id is provided", () => {
-    const selection = resolveChatModelSelection({
+  test("uses the default model when no model id is provided", async () => {
+    const selection = await resolveChatModelSelection({
       selectedModelId: null,
+      reasoningEffort: null,
+      missingModelLabel: "Selected model",
+    });
+
+    expect(selection).toEqual({
+      id: APP_DEFAULT_MODEL_ID,
+    });
+  });
+
+  test("respects an admin-disabled model from the DB override table", async () => {
+    const { getDisabledModelIdSet } = await import("@/lib/db/model-overrides");
+    (
+      getDisabledModelIdSet as unknown as ReturnType<typeof mock>
+    ).mockImplementationOnce(async () => new Set(["deepseek-v4-pro"]));
+
+    const selection = await resolveChatModelSelection({
+      selectedModelId: "deepseek-v4-pro",
       reasoningEffort: null,
       missingModelLabel: "Selected model",
     });

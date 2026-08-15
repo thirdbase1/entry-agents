@@ -38,8 +38,18 @@ import {
 import { db } from "@/lib/db/client";
 import { accounts, authSessions, githubInstallations } from "@/lib/db/schema";
 import { isUserAdmin } from "@/lib/db/users";
-import { fetchAvailableLanguageModels } from "@/lib/models-with-context";
+import {
+  fetchAllLanguageModelsForAdmin,
+  fetchAvailableLanguageModels,
+} from "@/lib/models-with-context";
+import { isModelHardBlocked } from "@/lib/model-availability";
+import {
+  getAllModelOverrides,
+  setModelOverride,
+} from "@/lib/db/model-overrides";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getProviderFromModelId } from "@/components/provider-icons";
+import type { AvailableModelCost } from "@/lib/models";
 
 async function requireAdmin(): Promise<string> {
   const session = await getServerSession();
@@ -322,6 +332,80 @@ export async function getAdminModelHealthReport(
 ): Promise<AdminModelHealthRow[]> {
   await requireAdmin();
   return getAdminModelHealth(days);
+}
+
+export interface AdminModelCatalogRow {
+  id: string;
+  name: string;
+  provider: string;
+  cost?: AvailableModelCost;
+  contextWindow?: number;
+  /** Hard-blocked in code (billing issue, banned name, ...) -- not admin-togglable. */
+  hardBlocked: boolean;
+  /** Turned off via the DB override table -- instantly togglable. */
+  adminDisabled: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+/**
+ * Full model catalog for the admin models page: every model the gateway
+ * knows about, tagged with whether it's hard-blocked in code vs.
+ * currently admin-disabled via the DB override table. Admin-only.
+ */
+export async function getAdminModelCatalog(): Promise<AdminModelCatalogRow[]> {
+  await requireAdmin();
+
+  const [models, overrides] = await Promise.all([
+    fetchAllLanguageModelsForAdmin(),
+    getAllModelOverrides(),
+  ]);
+
+  const overrideMap = new Map(overrides.map((row) => [row.modelId, row]));
+
+  return models
+    .map((model) => {
+      const override = overrideMap.get(model.id);
+      return {
+        id: model.id,
+        name: model.name,
+        provider: getProviderFromModelId(model.id),
+        cost: model.cost,
+        contextWindow: model.context_window,
+        hardBlocked: isModelHardBlocked(model.id),
+        adminDisabled: override?.disabled ?? false,
+        updatedAt: override?.updatedAt
+          ? override.updatedAt.toISOString()
+          : null,
+        updatedBy: override?.updatedBy ?? null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id),
+    );
+}
+
+/**
+ * Instantly enable/disable a model for every user, no code change or
+ * redeploy -- writes to the DB override table read by every chat turn
+ * and every /api/models call. Refuses to toggle hard-blocked models
+ * (those need a code change, they're blocked for a business reason, not
+ * an on/off preference). Admin-only.
+ */
+export async function setAdminModelDisabled(
+  modelId: string,
+  disabled: boolean,
+): Promise<void> {
+  const adminUserId = await requireAdmin();
+
+  if (isModelHardBlocked(modelId)) {
+    throw new Error(
+      "This model is disabled in code (billing issue or policy) and can't be toggled from here.",
+    );
+  }
+
+  await setModelOverride(modelId, disabled, adminUserId);
 }
 
 /**

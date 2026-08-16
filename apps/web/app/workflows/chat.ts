@@ -45,7 +45,10 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
-import { toFriendlyChatErrorText } from "@/lib/chat/friendly-error";
+import {
+  toFriendlyChatErrorText,
+  toSafeChatError,
+} from "@/lib/chat/friendly-error";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
@@ -303,7 +306,13 @@ async function resolveChatModelRuntime(params: {
   if (!isAdminUser) {
     const gate = await getFreeTierGateStatus();
     if (!gate.enabled) {
-      throw new Error(
+      // Use the safe-error marker so this intentional, already-friendly
+      // message reaches the user verbatim instead of being swallowed by
+      // toFriendlyChatErrorText's generic vendor-error catch-all (see
+      // that function's docstring -- this was previously showing as
+      // "Something went wrong while generating a response" for free-tier
+      // users, which is confusing and non-actionable).
+      throw toSafeChatError(
         gate.reason ||
           "We're at capacity right now -- please check back in a little while.",
       );

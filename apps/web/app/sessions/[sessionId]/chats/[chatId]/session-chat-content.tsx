@@ -800,13 +800,18 @@ function SandboxInputOverlay({
   freeTierBlockedReason: string | null;
 }) {
   if (freeTierBlocked) {
+    // Full hard lock, not just a decorative hint: strong blur + solid
+    // scrim over the whole composer, and the textarea/submit button
+    // underneath are separately given `disabled` (see session-chat-content
+    // render below) so nothing can be typed or sent while this is up --
+    // not merely visually implied.
     return (
-      <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-background/60 backdrop-blur-[2px]">
-        <div className="flex items-center gap-3 rounded-full bg-background/90 px-4 py-2 text-muted-foreground shadow-sm">
-          <Lock className="h-4 w-4" />
-          <span className="text-sm">
+      <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-full bg-background px-4 py-2 text-sm font-medium text-foreground shadow-md ring-1 ring-border">
+          <Lock className="h-4 w-4 shrink-0" />
+          <span>
             {freeTierBlockedReason ||
-              "Free tier is temporarily unavailable. Please check back soon."}
+              "Free tier ended — upgrade your account to use Entry"}
           </span>
         </div>
       </div>
@@ -4311,7 +4316,7 @@ export function SessionChatContent({
                     <PinnedTodoPanel todos={latestTodos} />
                     {/* Input form */}
                     <div
-                      className={`overflow-hidden rounded-2xl bg-muted transition-colors ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}
+                      className={`relative overflow-hidden rounded-2xl bg-muted transition-colors ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}
                     >
                       <form
                         onSubmit={async (e) => {
@@ -4399,9 +4404,11 @@ export function SessionChatContent({
                             ref={inputRef}
                             value={input}
                             placeholder={
-                              showInlineQuestion
-                                ? inlineQuestion.placeholder
-                                : "Request changes or ask a question..."
+                              freeTierGate
+                                ? "Free tier ended — upgrade your account to use Entry"
+                                : showInlineQuestion
+                                  ? inlineQuestion.placeholder
+                                  : "Request changes or ask a question..."
                             }
                             rows={1}
                             onFocus={handleTextareaFocus}
@@ -4480,8 +4487,8 @@ export function SessionChatContent({
                                 addTextAttachment(pastedText);
                               }
                             }}
-                            disabled={isArchived}
-                            className="w-full resize-none overflow-y-auto bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none"
+                            disabled={isArchived || Boolean(freeTierGate)}
+                            className={`w-full resize-none overflow-y-auto bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none ${freeTierGate ? "pointer-events-none select-none blur-[2px]" : ""}`}
                             style={{ minHeight: "24px" }}
                           />
                         </div>
@@ -4669,6 +4676,7 @@ export function SessionChatContent({
                                       }}
                                       disabled={
                                         isArchived ||
+                                        Boolean(freeTierGate) ||
                                         isUpdatingModel ||
                                         // While a turn is in flight this
                                         // branch only renders when there's

@@ -27,7 +27,26 @@
  *    a network failure or a non-2xx HTTP response body) that never went
  *    through the backend mapping above.
  */
+/**
+ * Marker prefix for errors we deliberately construct ourselves with
+ * already-safe, already-friendly text (e.g. the free-tier admin kill
+ * switch's "we're at capacity" message, which may include an
+ * admin-configured custom reason). toFriendlyChatErrorText strips the
+ * marker and returns the remainder verbatim instead of running it through
+ * the generic vendor-error classifier below, so these intentional,
+ * non-vendor messages don't get swallowed by the catch-all fallback.
+ */
+export const SAFE_CHAT_ERROR_PREFIX = "__SAFE_CHAT_ERROR__:";
+
+export function toSafeChatError(message: string): Error {
+  return new Error(`${SAFE_CHAT_ERROR_PREFIX}${message}`);
+}
+
 export function toFriendlyChatErrorText(error: unknown): string {
+  if (error instanceof Error && error.message.startsWith(SAFE_CHAT_ERROR_PREFIX)) {
+    return error.message.slice(SAFE_CHAT_ERROR_PREFIX.length);
+  }
+
   const signal = extractErrorSignal(error);
 
   if (matchesAny(signal, ["abort", "cancelled", "canceled", "stopped"])) {

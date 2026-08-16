@@ -16,6 +16,7 @@ import {
   Settings,
 } from "lucide-react";
 import Link from "next/link";
+import { SidebarBillingWidget } from "@/components/sidebar-billing-widget";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1202,6 +1203,8 @@ export function InboxSidebar({
           </>
         )}
       </div>
+
+      <SidebarBillingWidget />
 
       {sidebarUser ? (
         <div className="border-t border-border p-3">

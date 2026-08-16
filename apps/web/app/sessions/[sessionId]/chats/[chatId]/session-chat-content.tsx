@@ -788,6 +788,7 @@ function SandboxInputOverlay({
   snapshotPending,
   freeTierBlocked,
   freeTierBlockedReason,
+  router,
 }: {
   isArchived: boolean;
   snapshotPending: boolean;
@@ -798,22 +799,31 @@ function SandboxInputOverlay({
    * only, so it never lets a blocked send silently look like it worked. */
   freeTierBlocked: boolean;
   freeTierBlockedReason: string | null;
+  /** Used to send the user to the plan picker when they click the lock pill. */
+  router: ReturnType<typeof useRouter>;
 }) {
   if (freeTierBlocked) {
     // Full hard lock, not just a decorative hint: strong blur + solid
     // scrim over the whole composer, and the textarea/submit button
     // underneath are separately given `disabled` (see session-chat-content
     // render below) so nothing can be typed or sent while this is up --
-    // not merely visually implied.
+    // not merely visually implied. The pill itself is clickable and
+    // takes the user straight to the plan picker (/billing/plans) --
+    // this is the only realistic path off the free tier, so don't make
+    // them hunt for it.
     return (
       <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-md">
-        <div className="flex items-center gap-2 rounded-full bg-background px-4 py-2 text-sm font-medium text-foreground shadow-md ring-1 ring-border">
+        <button
+          type="button"
+          onClick={() => router.push("/billing/plans")}
+          className="flex items-center gap-2 rounded-full bg-background px-4 py-2 text-sm font-medium text-foreground shadow-md ring-1 ring-border transition-colors hover:bg-muted"
+        >
           <Lock className="h-4 w-4 shrink-0" />
           <span>
             {freeTierBlockedReason ||
               "Free tier ended — upgrade your account to use Entry"}
           </span>
-        </div>
+        </button>
       </div>
     );
   }
@@ -4371,6 +4381,7 @@ export function SessionChatContent({
                         <SandboxInputOverlay
                           isArchived={isArchived}
                           snapshotPending={isArchiveSnapshotPending}
+                          router={router}
                           freeTierBlocked={Boolean(freeTierGate)}
                           freeTierBlockedReason={freeTierGate?.reason ?? null}
                         />

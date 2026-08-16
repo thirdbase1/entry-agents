@@ -24,6 +24,21 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
+  // --- Billing (Paystack-backed credit plans) ---
+  // "free" | "plus" | "pro" | "max" -- see lib/billing/plans.ts for the
+  // catalog (price, credit grant, model access) each id maps to.
+  plan: text("plan", { enum: ["free", "plus", "pro", "max"] })
+    .notNull()
+    .default("free"),
+  // Spendable balance, in USD cents, against the live model cost catalog.
+  // Free-plan users get a small one-time trial grant here; paid plans get
+  // their creditGrantCents re-topped-up on each successful renewal.
+  creditBalanceCents: integer("credit_balance_cents").notNull().default(100),
+  // When the current paid billing cycle renews/re-grants credit. Null for
+  // free-plan users (no recurring cycle).
+  billingCycleAnchor: timestamp("billing_cycle_anchor"),
+  paystackCustomerCode: text("paystack_customer_code"),
+  paystackSubscriptionCode: text("paystack_subscription_code"),
 });
 
 // oauth provider accounts
@@ -476,3 +491,45 @@ export const platformSettings = pgTable("platform_settings", {
 
 export type PlatformSettings = typeof platformSettings.$inferSelect;
 export type NewPlatformSettings = typeof platformSettings.$inferInsert;
+
+// --- Billing: credit ledger (every grant/topup/debit against a user's
+// creditBalanceCents, for auditability and admin support) ---
+export const creditTransactions = pgTable(
+  "credit_transactions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type", {
+      enum: [
+        "signup_trial",
+        "subscription_grant",
+        "topup",
+        "usage_debit",
+        "refund",
+        "admin_adjustment",
+      ],
+    }).notNull(),
+    // Positive for credits (grants/topups/refunds), negative for debits.
+    amountCents: integer("amount_cents").notNull(),
+    balanceAfterCents: integer("balance_after_cents").notNull(),
+    description: text("description"),
+    modelId: text("model_id"),
+    paystackReference: text("paystack_reference"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("credit_transactions_user_id_idx").on(table.userId)],
+);
+
+// --- Billing: idempotency + audit log for inbound Paystack webhooks ---
+export const paystackWebhookEvents = pgTable("paystack_webhook_events", {
+  id: text("id").primaryKey(),
+  paystackEventId: text("paystack_event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload"),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("paystack_webhook_events_event_id_idx").on(table.paystackEventId),
+]);
+

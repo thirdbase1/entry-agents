@@ -392,19 +392,62 @@ export async function recordWorkflowUsage(
       }
     }
 
+    // Load the live model/pricing catalog once for this turn's billing
+    // debit below -- dynamic import for the same Node/db-module bundling
+    // reason as every other lib import in this "use step" function.
+    const { fetchAvailableLanguageModels } = await import(
+      "@/lib/models-with-context"
+    );
+    const { debitUsage } = await import("@/lib/billing/credit-ledger");
+    const { estimateModelUsageCost } = await import("@/lib/models");
+    const billingCatalog = await fetchAvailableLanguageModels().catch(
+      (error) => {
+        console.error(
+          "[workflow] Failed to fetch pricing catalog for billing debit:",
+          error,
+        );
+        return [];
+      },
+    );
+
+    async function debitForModelUsage(
+      billedModelId: string,
+      usage: {
+        inputTokens: number;
+        cachedInputTokens: number;
+        outputTokens: number;
+      },
+    ) {
+      const catalogEntry = billingCatalog.find((m) => m.id === billedModelId);
+      const costUsd = estimateModelUsageCost(usage, catalogEntry?.cost);
+      if (costUsd === undefined || costUsd <= 0) {
+        return;
+      }
+      try {
+        await debitUsage(userId, Math.round(costUsd * 100), {
+          modelId: billedModelId,
+          description: `Usage: ${billedModelId}`,
+        });
+      } catch (error) {
+        console.error("[workflow] Failed to debit credit ledger:", error);
+      }
+    }
+
     // Record main agent usage
     if (totalUsage) {
+      const mainUsage = {
+        inputTokens: totalUsage.inputTokens ?? 0,
+        cachedInputTokens: cachedInputTokensFor(totalUsage),
+        outputTokens: totalUsage.outputTokens ?? 0,
+      };
       await recordUsage(userId, {
         source: "web",
         agentType: "main",
         model: modelId,
         messages: [responseMessage],
-        usage: {
-          inputTokens: totalUsage.inputTokens ?? 0,
-          cachedInputTokens: cachedInputTokensFor(totalUsage),
-          outputTokens: totalUsage.outputTokens ?? 0,
-        },
+        usage: mainUsage,
       });
+      await debitForModelUsage(modelId, mainUsage);
     }
 
     // Record subagent usage (aggregated by model)
@@ -449,18 +492,20 @@ export async function recordWorkflowUsage(
       }
 
       for (const [eventModelId, modelUsage] of subagentUsageByModel) {
+        const subagentUsage = {
+          inputTokens: modelUsage.usage.inputTokens ?? 0,
+          cachedInputTokens: cachedInputTokensFor(modelUsage.usage),
+          outputTokens: modelUsage.usage.outputTokens ?? 0,
+        };
         await recordUsage(userId, {
           source: "web",
           agentType: "subagent",
           model: eventModelId,
           messages: [],
-          usage: {
-            inputTokens: modelUsage.usage.inputTokens ?? 0,
-            cachedInputTokens: cachedInputTokensFor(modelUsage.usage),
-            outputTokens: modelUsage.usage.outputTokens ?? 0,
-          },
+          usage: subagentUsage,
           toolCallCount: modelUsage.toolCallCount,
         });
+        await debitForModelUsage(eventModelId, subagentUsage);
       }
     }
   } catch (error) {

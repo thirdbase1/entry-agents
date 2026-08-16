@@ -326,7 +326,7 @@ async function resolveChatModelRuntime(params: {
         params.requestUrl,
       )
     : null;
-  const selectedModelId =
+  let selectedModelId =
     sanitizeSelectedModelIdForSession(
       chat.modelId,
       params.authSession,
@@ -334,6 +334,40 @@ async function resolveChatModelRuntime(params: {
     ) ??
     chat.modelId ??
     null;
+
+  // Per-user plan gating (billing): Free plan is hard-restricted to
+  // FREE_PLAN_MODEL_ID and hard-blocks once its trial credit is spent
+  // (reusing the exact same free-tier-gate error marker/composer-lock UI
+  // as the admin kill-switch above). Paid plans (plus/pro/max) get every
+  // model, and never block on empty balance -- they're silently
+  // soft-cutoff downgraded to SOFT_CUTOFF_FALLBACK_MODEL_ID instead, per
+  // the owner's standing soft-cutoff instruction. Admins are exempt
+  // (checked above), same as the free-tier kill switch.
+  if (!isAdminUser) {
+    const { getUserBillingState } = await import(
+      "@/lib/billing/credit-ledger"
+    );
+    const {
+      getPlanDefinition,
+      FREE_PLAN_MODEL_ID,
+      SOFT_CUTOFF_FALLBACK_MODEL_ID,
+    } = await import("@/lib/billing/plans");
+
+    const billingState = await getUserBillingState(params.userId);
+    const plan = getPlanDefinition(billingState?.plan);
+    const balanceCents = billingState?.creditBalanceCents ?? 0;
+
+    if (plan.modelAccess === "luna-only") {
+      if (balanceCents <= 0) {
+        throw toSafeChatError(
+          "Free tier ended, upgrade your account to use Entry",
+        );
+      }
+      selectedModelId = FREE_PLAN_MODEL_ID;
+    } else if (balanceCents <= 0) {
+      selectedModelId = SOFT_CUTOFF_FALLBACK_MODEL_ID;
+    }
+  }
   const [mainModelSelection, subagentModelSelection] = await Promise.all([
     resolveChatModelSelection({
       selectedModelId,

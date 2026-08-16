@@ -302,6 +302,13 @@
       "when": 1786816817896,
       "tag": "0042_add_platform_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786889497028,
+      "tag": "0043_pink_mantis",
+      "breakpoints": true
     }
   ]
 }

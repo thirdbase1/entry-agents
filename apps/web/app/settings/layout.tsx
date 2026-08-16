@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   Cable,
+  CreditCard,
   LogOut,
   Menu,
   Settings as SettingsIcon,
@@ -70,6 +71,12 @@ const baseSidebarItems = [
     label: "Profile",
     href: "/settings/profile",
     icon: User,
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    href: "/billing/plans",
+    icon: CreditCard,
   },
   {
     id: "preferences",

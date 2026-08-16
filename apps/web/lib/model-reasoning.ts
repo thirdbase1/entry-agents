@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ProviderOptionsByProvider } from "@open-agents/agent";
-import { isGeminiModelId } from "@/lib/models";
+import { isClaudeModelId, isGeminiModelId } from "@/lib/models";
 
 /**
  * A single reasoning-effort choice as actually accepted by a given
@@ -86,6 +86,23 @@ export const reasoningEffortSchema = z
 // reasoning model -- it's currently in lib/model-availability.ts's
 // DISABLED_MODEL_IDS (Opencode Zen workspace has no payment method on file
 // yet). Add it here once that's resolved.
+/**
+ * Claude's low/medium/high effort selector doesn't map to Anthropic's
+ * `effort` field here -- confirmed via live probe 2026-08-16 that
+ * thinking:{type:"adaptive"} is a silent no-op through FreeModel's Claude
+ * passthrough (0 thinking_tokens either way). Instead each level maps to
+ * a legacy `thinking.budget_tokens` value that's confirmed to actually
+ * scale real thinking-token output through that same route (319 tokens
+ * at budget 2000, 409 at budget 16000, same prompt). See
+ * getAnthropicSettings in packages/agent/models.ts for the default
+ * (unselected) budget.
+ */
+const ANTHROPIC_THINKING_BUDGETS: Record<string, number> = {
+  low: 2000,
+  medium: 8000,
+  high: 16000,
+};
+
 const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   "deepseek-v4-pro",
   // NOTE 2026-08-12: glm-5.2 is currently DOWN end-to-end (iamhc route
@@ -132,6 +149,31 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   // reasoning trace comes back in message.reasoning, honors reasoning_effort
   // exactly per the model's own docs (none/low/medium/xhigh, default xhigh).
   "qwen3.8-27b",
+  // Confirmed 2026-08-16 via live probe against FreeModel's OpenAI-shaped
+  // route (api.freemodel.dev): reasoning_content comes back on
+  // message.reasoning_content (same DeepSeek-style field @ai-sdk/openai-
+  // compatible already parses into reasoning-start/delta/end parts, see
+  // sharedProvider()'s comment on that), and its length/detail visibly
+  // differs between reasoning_effort low and high on the same hard prompt.
+  // gpt-5.6-luna re-added 2026-08-16 per owner request despite occasional
+  // "upstream service temporarily unavailable" flakiness on FreeModel's
+  // side -- that's an availability issue, not a reasoning-param issue.
+  "gpt-5.6-luna",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  // Confirmed 2026-08-16 via live probe against FreeModel's Claude
+  // passthrough (cc.freemodel.dev): legacy thinking genuinely works and
+  // scales with budget_tokens for every one of these ids, haiku included
+  // (471 thinking_tokens at budget 8000) -- see ANTHROPIC_THINKING_BUDGETS
+  // above and toReasoningProviderOptions below for how the UI's low/
+  // medium/high maps to a real budget_tokens value for this provider.
+  "claude-opus-5",
+  "claude-opus-4-6",
+  "claude-opus-4-7",
+  "claude-opus-4-8",
+  "claude-sonnet-4-6",
+  "claude-sonnet-5",
+  "claude-haiku-4-5-20251001",
 ]);
 
 export function isReasoningCapableModel(modelId: string): boolean {
@@ -190,6 +232,22 @@ export function toReasoningProviderOptions(
     return {
       google: {
         thinkingConfig: { includeThoughts: true, thinkingLevel: effort },
+      },
+    };
+  }
+
+  if (isClaudeModelId(modelId)) {
+    // See ANTHROPIC_THINKING_BUDGETS above for why this is a budget_tokens
+    // lookup and not a passthrough `effort` field. Falls back to the
+    // "medium" budget for any effort value outside the known set (should
+    // never happen -- sanitizeReasoningEffort already validates against
+    // getReasoningEffortLevels before this is called).
+    return {
+      anthropic: {
+        thinking: {
+          type: "enabled",
+          budgetTokens: ANTHROPIC_THINKING_BUDGETS[effort] ?? ANTHROPIC_THINKING_BUDGETS.medium,
+        },
       },
     };
   }

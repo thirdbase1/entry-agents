@@ -47,13 +47,18 @@ function getSharedProviderConfig(): { baseURL: string; apiKey: string } {
 }
 
 /**
- * True for Claude models routed through the gateway's "woino" provider
- * (claude-sonnet-4.5, claude-haiku-4.5, and any future claude-* additions).
- * These need the real @ai-sdk/anthropic client (native Anthropic Messages
- * protocol) instead of the shared OpenAI-compatible client -- see the
- * comment in sharedProvider() for why.
+ * True for Claude models routed through the gateway's Anthropic Messages
+ * passthrough (claude-*, currently all served by the FreeModel provider
+ * at cc.freemodel.dev as of 2026-08-16, after the old "woino" reseller
+ * route -- claude-sonnet-4.5/claude-haiku-4.5 -- was removed). These need
+ * the real @ai-sdk/anthropic client (native Anthropic Messages protocol)
+ * instead of the shared OpenAI-compatible client -- see the comment in
+ * sharedProvider() for why. Exported so apps/web's model-reasoning.ts can
+ * branch reasoning-effort provider options the same way (that file
+ * duplicates this function locally instead of importing it, for
+ * client-bundle reasons -- see its own copy's comment).
  */
-function isClaudeModelId(modelId: string): boolean {
+export function isClaudeModelId(modelId: string): boolean {
   return modelId.includes("claude");
 }
 
@@ -75,22 +80,33 @@ export function isGeminiModelId(modelId: string): boolean {
   return modelId.startsWith("gemini-") || modelId.startsWith("gemma-");
 }
 
-function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
-  return modelId.includes("4.6") || modelId.includes("4.7");
-}
+// Default legacy-thinking budget applied when no reasoning-effort override
+// is present (see toReasoningProviderOptions in apps/web/lib/model-reasoning.ts
+// for the low/2000, medium/8000, high/16000 effort-level budgets that
+// override this per-request).
+const DEFAULT_ANTHROPIC_THINKING_BUDGET = 8000;
 
-// Models with adaptive thinking support use effort control.
-// Older models use the legacy extended thinking API with a budget.
-function getAnthropicSettings(modelId: string): AnthropicLanguageModelOptions {
-  if (supportsAdaptiveAnthropicThinking(modelId)) {
-    return {
-      effort: "medium",
-      thinking: { type: "adaptive" },
-    } satisfies AnthropicLanguageModelOptions;
-  }
-
+// Every Claude model routed through FreeModel's cc.freemodel.dev
+// passthrough uses Anthropic's legacy budget-based extended thinking
+// (thinking: {type: "enabled", budget_tokens}), NOT the newer adaptive/
+// effort-based thinking type -- confirmed via live probe 2026-08-16:
+// sending thinking:{type:"adaptive"} + effort:"low"/"high" against
+// claude-opus-5 came back with output_tokens_details.thinking_tokens: 0
+// both times (silently a no-op through this route), while
+// thinking:{type:"enabled",budget_tokens:N} produced a real "thinking"
+// content block that scales with N (319 tokens at budget 2000, 409 at
+// budget 16000, both on the same prompt). Also confirmed haiku-4-5
+// supports legacy thinking fine (471 thinking tokens), so there's no
+// per-model carve-out needed -- this applies uniformly to every claude-*
+// id. If a future Claude route genuinely supports adaptive thinking,
+// gate it back in per-provider (not per modelId string), since this was
+// a route capability gap, not a real Claude-version capability gap.
+function getAnthropicSettings(
+  modelId: string,
+  budgetTokens: number = DEFAULT_ANTHROPIC_THINKING_BUDGET,
+): AnthropicLanguageModelOptions {
   return {
-    thinking: { type: "enabled", budgetTokens: 8000 },
+    thinking: { type: "enabled", budgetTokens },
   };
 }
 
@@ -307,18 +323,21 @@ export function sharedProvider(
 
   const { baseURL, apiKey } = config ?? getSharedProviderConfig();
 
-  // Claude models (routed through the gateway's "woino" provider, e.g.
-  // claude-sonnet-4.5/claude-haiku-4.5) go over the gateway's native
-  // Anthropic Messages passthrough (POST {GATEWAY_BASE_URL}/messages),
-  // NOT the shared OpenAI-compatible chat endpoint. Found 2026-08-13:
-  // @ai-sdk/openai-compatible's Chat Completions wire format has no field
-  // for Anthropic's `cache_control` breakpoints at all -- routing Claude
-  // through it meant addCacheControl()'s providerOptions.anthropic.cacheControl
-  // was silently dropped on every single request, so prompt caching for
-  // every woino/Claude model never worked, regardless of what cache-control.ts
-  // did. Using the real @ai-sdk/anthropic client against the gateway's native
-  // /messages route lets those cache_control blocks actually reach the wire
-  // and get forwarded byte-for-byte to woino -> real Anthropic. authToken
+  // Claude models (routed through the gateway's FreeModel provider as of
+  // 2026-08-16, e.g. claude-opus-5/claude-sonnet-4-6/claude-haiku-4-5-...;
+  // previously the "woino" provider's claude-sonnet-4.5/claude-haiku-4.5,
+  // now removed) go over the gateway's native Anthropic Messages
+  // passthrough (POST {GATEWAY_BASE_URL}/messages), NOT the shared
+  // OpenAI-compatible chat endpoint. Found 2026-08-13: @ai-sdk/openai-compatible's
+  // Chat Completions wire format has no field for Anthropic's
+  // `cache_control` breakpoints at all -- routing Claude through it meant
+  // addCacheControl()'s providerOptions.anthropic.cacheControl was
+  // silently dropped on every single request, so prompt caching for every
+  // Claude model never worked, regardless of what cache-control.ts did.
+  // Using the real @ai-sdk/anthropic client against the gateway's native
+  // /messages route lets those cache_control blocks actually reach the
+  // wire and get forwarded byte-for-byte to the upstream (FreeModel ->
+  // real Anthropic). authToken
   // (not apiKey) is used so the SDK sends `Authorization: Bearer <key>`,
   // matching the gateway's own bearer-token auth middleware, instead of the
   // `x-api-key` header Anthropic's own API expects (the gateway ignores

@@ -27,6 +27,22 @@ export function isGeminiModelId(modelId: string): boolean {
   return modelId.startsWith("gemini-") || modelId.startsWith("gemma-");
 }
 
+/**
+ * True for Claude models (claude-*) -- all routed through FreeModel's
+ * cc.freemodel.dev Anthropic Messages passthrough as of 2026-08-16, when
+ * the old "woino" direct-Anthropic-reseller provider (claude-sonnet-4.5,
+ * claude-haiku-4.5) was removed in favor of FreeModel's full, working
+ * Claude line (opus-5, opus-4-6/4-7/4-8, sonnet-4-6/5, haiku-4-5). See the
+ * identically-named isClaudeModelId in packages/agent/models.ts for the
+ * native-Anthropic-client rationale. Duplicated here for the same
+ * client-bundle-safety reason as isGeminiModelId above (this file has
+ * zero imports and is safe in Client Component bundles like the model
+ * picker and the reasoning-effort selector).
+ */
+export function isClaudeModelId(modelId: string): boolean {
+  return modelId.includes("claude");
+}
+
 export interface GatewayAvailableModel {
   id: string;
   name: string;

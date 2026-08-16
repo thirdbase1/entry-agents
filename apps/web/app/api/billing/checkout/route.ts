@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { initializeTransaction } from "@/lib/billing/paystack";
 import { PLAN_CATALOG, isPlanId } from "@/lib/billing/plans";
+import { usdCentsToNgnKobo } from "@/lib/billing/fx";
 
 interface CheckoutRequest {
   /** One of "plus" | "pro" | "max" for a subscription checkout. */
@@ -33,18 +34,36 @@ export async function POST(req: Request) {
       }
 
       const reference = `topup_${session.user.id}_${nanoid()}`;
+      // This Paystack account only has NGN enabled (confirmed against
+      // the live API -- USD returns "unsupported_currency"), so every
+      // charge goes out in NGN at the live USD->NGN rate. The USD
+      // amount is stashed in metadata so the webhook credits the exact
+      // USD value the user saw at checkout, immune to any FX drift
+      // between initialize and the customer completing payment.
+      const { ngnKobo, rate } = await usdCentsToNgnKobo(
+        body.topupAmountCents,
+      );
       const result = await initializeTransaction({
         email: session.user.email,
-        amountCents: body.topupAmountCents,
+        amountCents: ngnKobo,
+        currency: "NGN",
         reference,
         callbackUrl,
         metadata: {
           userId: session.user.id,
           kind: "topup",
+          usdAmountCents: body.topupAmountCents,
+          usdToNgnRateAtCheckout: rate,
         },
       });
 
-      return Response.json(result);
+      return Response.json({
+        ...result,
+        usdAmountCents: body.topupAmountCents,
+        ngnAmountKobo: ngnKobo,
+        usdToNgnRate: rate,
+        currency: "NGN",
+      });
     }
 
     if (!isPlanId(body.planId) || body.planId === "free") {
@@ -56,20 +75,37 @@ export async function POST(req: Request) {
 
     const plan = PLAN_CATALOG[body.planId];
     const reference = `sub_${plan.id}_${session.user.id}_${nanoid()}`;
+    const { ngnKobo, rate } = await usdCentsToNgnKobo(plan.priceUsdCents);
     const result = await initializeTransaction({
       email: session.user.email,
-      amountCents: plan.priceUsdCents,
+      amountCents: ngnKobo,
+      currency: "NGN",
       reference,
       callbackUrl,
       metadata: {
         userId: session.user.id,
         kind: "subscription",
         planId: plan.id,
+        usdAmountCents: plan.priceUsdCents,
+        usdToNgnRateAtCheckout: rate,
       },
-      ...(plan.paystackPlanCode ? { planCode: plan.paystackPlanCode } : {}),
+      // Paystack recurring Plans are themselves pinned to one currency
+      // (would need a separate NGN-denominated Plan per tier to use
+      // planCode here) -- until ensurePaystackPlans() is re-run for
+      // NGN, renewals are handled by re-charging the saved
+      // authorization from the webhook side rather than a native
+      // Paystack subscription. Omit planCode so this charges as a
+      // plain one-off transaction; grantSubscriptionRenewal() below
+      // still applies the plan + credit correctly off the webhook.
     });
 
-    return Response.json(result);
+    return Response.json({
+      ...result,
+      usdAmountCents: plan.priceUsdCents,
+      ngnAmountKobo: ngnKobo,
+      usdToNgnRate: rate,
+      currency: "NGN",
+    });
   } catch (error) {
     console.error("[billing] checkout initialization failed:", error);
     return Response.json(

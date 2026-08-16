@@ -2,14 +2,8 @@ import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import { paystackWebhookEvents } from "@/lib/db/schema";
 import { verifyWebhookSignature } from "@/lib/billing/paystack";
-import {
-  applyTopup,
-  grantSubscriptionRenewal,
-  setPaystackCustomerCode,
-  setPaystackSubscriptionCode,
-  findUserIdByPaystackCustomerCode,
-} from "@/lib/billing/credit-ledger";
-import { isPlanId, PLAN_CATALOG } from "@/lib/billing/plans";
+import { processChargeSuccess } from "@/lib/billing/process-charge";
+import { setPaystackSubscriptionCode, findUserIdByPaystackCustomerCode } from "@/lib/billing/credit-ledger";
 
 interface PaystackChargeSuccessData {
   reference: string;
@@ -26,11 +20,6 @@ interface PaystackSubscriptionCreateData {
   plan: { plan_code: string };
 }
 
-/**
- * Records the raw event for idempotency BEFORE processing side effects.
- * Returns false (skip processing) if this exact event was already
- * recorded -- Paystack retries webhooks on anything but a fast 2xx.
- */
 async function claimEventOnce(
   eventKey: string,
   eventType: string,
@@ -45,21 +34,20 @@ async function claimEventOnce(
     });
     return true;
   } catch {
-    // Unique constraint violation on paystackEventId -- already processed.
     return false;
   }
 }
 
 function resolvePlanCodeFromChargeData(
   data: PaystackChargeSuccessData,
-): string | undefined {
+): string | null {
   if (data.plan_object?.plan_code) {
     return data.plan_object.plan_code;
   }
   if (typeof data.plan === "string") {
     return data.plan;
   }
-  return data.plan?.plan_code;
+  return data.plan?.plan_code ?? null;
 }
 
 export async function POST(req: Request) {
@@ -80,59 +68,33 @@ export async function POST(req: Request) {
     switch (event.event) {
       case "charge.success": {
         const data = event.data as unknown as PaystackChargeSuccessData;
-        const eventKey = `charge.success:${data.reference}`;
-        const isNew = await claimEventOnce(eventKey, event.event, event.data);
-        if (!isNew) {
-          break;
-        }
+        // processChargeSuccess does its own idempotency claim keyed off
+        // reference -- don't double-claim here, just delegate.
+        const metadataUserId =
+          typeof data.metadata?.userId === "string"
+            ? data.metadata.userId
+            : null;
+        const metadataKind =
+          typeof data.metadata?.kind === "string" ? data.metadata.kind : null;
+        const metadataPlanId =
+          typeof data.metadata?.planId === "string"
+            ? data.metadata.planId
+            : null;
+        const metadataUsdAmountCents =
+          typeof data.metadata?.usdAmountCents === "number"
+            ? data.metadata.usdAmountCents
+            : null;
 
-        if (data.customer?.customer_code) {
-          const metadataUserId =
-            typeof data.metadata?.userId === "string"
-              ? data.metadata.userId
-              : null;
-          const userId =
-            metadataUserId ??
-            (await findUserIdByPaystackCustomerCode(data.customer.customer_code));
-
-          if (userId) {
-            await setPaystackCustomerCode(userId, data.customer.customer_code);
-
-            const kind = data.metadata?.kind;
-            if (kind === "topup") {
-              await applyTopup(userId, data.amount, data.reference);
-            } else {
-              // Subscription checkout (initial or renewal charge bound
-              // to a plan) -- grant that plan's credit and set it as
-              // the user's active plan.
-              const planCode = resolvePlanCodeFromChargeData(data);
-              const metadataPlanId =
-                typeof data.metadata?.planId === "string"
-                  ? data.metadata.planId
-                  : null;
-              const planId =
-                metadataPlanId && isPlanId(metadataPlanId)
-                  ? metadataPlanId
-                  : Object.values(PLAN_CATALOG).find(
-                      (p) => p.paystackPlanCode === planCode,
-                    )?.id;
-
-              if (planId) {
-                await grantSubscriptionRenewal(userId, planId, data.reference);
-              } else {
-                console.warn(
-                  "[billing/webhook] charge.success with unresolved planId",
-                  { reference: data.reference, planCode },
-                );
-              }
-            }
-          } else {
-            console.warn(
-              "[billing/webhook] charge.success: no matching user for customer",
-              data.customer.customer_code,
-            );
-          }
-        }
+        await processChargeSuccess({
+          reference: data.reference,
+          customerCode: data.customer?.customer_code ?? null,
+          metadataUserId,
+          metadataKind,
+          metadataPlanId,
+          metadataUsdAmountCents,
+          planCode: resolvePlanCodeFromChargeData(data),
+          fallbackAmountCents: data.amount,
+        });
         break;
       }
 
@@ -161,9 +123,9 @@ export async function POST(req: Request) {
     }
   } catch (error) {
     console.error("[billing/webhook] Failed to process event:", error);
-    // Still 200 -- we've already claimed the event id, and Paystack will
-    // otherwise retry indefinitely on a transient DB blip. Errors here
-    // are visible in logs for manual reconciliation.
+    // Still 200 -- we've already claimed the event id in most paths,
+    // and Paystack will otherwise retry indefinitely on a transient DB
+    // blip. Errors here are visible in logs for manual reconciliation.
   }
 
   return Response.json({ received: true });

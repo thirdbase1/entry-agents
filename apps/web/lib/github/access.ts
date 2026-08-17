@@ -1,13 +1,19 @@
 import { getInstallationByAccountLogin } from "@/lib/db/installations";
 import { withScopedInstallationOctokit } from "./app";
 import { getUserOctokit } from "./client";
+import {
+  GitHubSyncTransientError,
+  syncUserInstallationsWithRetry,
+} from "./sync";
+import { getUserGitHubToken } from "./token";
 
 export type RepoAccessDeniedReason =
   | "no_user_token"
   | "user_no_access"
   | "user_no_write"
   | "no_installation"
-  | "app_no_access";
+  | "app_no_access"
+  | "sync_unavailable";
 
 export type RequiredRepoUserPermission = "read" | "write";
 
@@ -97,9 +103,33 @@ export async function verifyRepoAccess(params: {
   }
 
   // 2. check installation exists for this owner
-  const installation = await getInstallationByAccountLogin(userId, owner);
+  let installation = await getInstallationByAccountLogin(userId, owner);
   if (!installation) {
-    return { ok: false, reason: "no_installation" };
+    // The DB row can be missing even though the user genuinely has the
+    // GitHub App installed -- e.g. the install-flow callback's sync call
+    // failed transiently (GitHub 5xx/429 during an outage) and was never
+    // retried. Before telling the user "go install the app" (misleading if
+    // they already did), attempt one live re-sync against GitHub's API.
+    const token = await getUserGitHubToken(userId);
+    if (token) {
+      try {
+        await syncUserInstallationsWithRetry(userId, token);
+        installation = await getInstallationByAccountLogin(userId, owner);
+      } catch (error) {
+        if (error instanceof GitHubSyncTransientError) {
+          // We genuinely can't tell right now whether the installation
+          // exists -- surface a distinct, retryable reason instead of the
+          // misleading "go install the app" message.
+          console.error("Live installation re-sync failed transiently:", error);
+          return { ok: false, reason: "sync_unavailable" };
+        }
+        console.error("Live installation re-sync failed:", error);
+      }
+    }
+
+    if (!installation) {
+      return { ok: false, reason: "no_installation" };
+    }
   }
 
   // 3. check installation covers this specific repo
@@ -151,5 +181,7 @@ export function getRepoAccessErrorMessage(
       return "GitHub App not installed for this organization. Install it from Settings > Connections.";
     case "app_no_access":
       return "GitHub App doesn't have access to this repository. Ask an org admin to update the app's repository permissions.";
+    case "sync_unavailable":
+      return "Couldn't verify your GitHub App installation right now (GitHub may be having issues). Please try again in a moment.";
   }
 }

@@ -1,13 +1,9 @@
 import { generateState } from "arctic";
 import { NextResponse, type NextRequest } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
-import { syncUserInstallations } from "@/lib/github/sync";
+import { syncUserInstallationsWithRetry } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
-import {
-  getGitHubAccountId,
-  getGitHubUsername,
-  hasGitHubAccount,
-} from "@/lib/github/users";
+import { getGitHubAccountId, hasGitHubAccount } from "@/lib/github/users";
 import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -102,9 +98,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (installations.length === 0) {
     try {
       const token = await getUserGitHubToken(session.user.id);
-      const username = await getGitHubUsername(session.user.id);
-      if (token && username) {
-        await syncUserInstallations(session.user.id, token, username);
+      if (token) {
+        await syncUserInstallationsWithRetry(session.user.id, token);
         installations = await getInstallationsByUserId(session.user.id);
       }
     } catch (error) {

@@ -3,6 +3,8 @@ import {
   deleteInstallationsNotInList,
   upsertInstallation,
 } from "@/lib/db/installations";
+import { getGitHubUsernameStrict } from "./users";
+import { GitHubSyncTransientError } from "./sync-transient-error";
 
 const userInstallationSchema = z.object({
   id: z.number(),
@@ -97,6 +99,68 @@ function isSyncableInstallation(
   );
 }
 
+function isTransientSyncError(error: unknown): boolean {
+  if (isGitHubInstallationsAuthError(error)) {
+    return false;
+  }
+  return true;
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve the GitHub username and sync installations in one call, retrying
+ * transient failures (GitHub 5xx/429/timeouts -- e.g. an ongoing GitHub
+ * outage) a few times before giving up. This replaces the old pattern of
+ * "call getGitHubUsername, if it's null just skip the sync silently" that
+ * existed in the OAuth-link and App-install callback routes: that pattern
+ * couldn't distinguish "token is actually bad" from "GitHub hiccuped for a
+ * second", so a single transient error meant an installation the user just
+ * completed on GitHub's side was never recorded in our DB, later showing up
+ * as a false "GitHub App not installed" error when starting a chat.
+ *
+ * Throws GitHubSyncTransientError if every retry still fails transiently
+ * (callers should surface a "try again" message, not "reconnect/reinstall").
+ * Returns null if the user genuinely has no valid token (real auth issue).
+ */
+export async function syncUserInstallationsWithRetry(
+  userId: string,
+  token: string,
+  options: { attempts?: number; delayMs?: number } = {},
+): Promise<number | null> {
+  const attempts = options.attempts ?? 3;
+  const delayMs = options.delayMs ?? 500;
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const username = await getGitHubUsernameStrict(userId);
+      if (!username) {
+        // Real auth failure (401/403) -- not transient, don't retry.
+        return null;
+      }
+      return await syncUserInstallations(userId, token, username);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientSyncError(error)) {
+        // Real auth failure surfaced via syncUserInstallations -- don't retry.
+        return null;
+      }
+      if (attempt < attempts) {
+        await delay(delayMs * attempt);
+      }
+    }
+  }
+
+  throw new GitHubSyncTransientError(
+    `GitHub installation sync failed after ${attempts} attempts (transient)`,
+    { cause: lastError },
+  );
+}
+
 async function fetchUserInstallations(userToken: string) {
   const installations: z.infer<typeof userInstallationSchema>[] = [];
   const perPage = 100;
@@ -172,3 +236,5 @@ export async function syncUserInstallations(
 
   return syncableInstallations.length;
 }
+
+export { GitHubSyncTransientError } from "./sync-transient-error";

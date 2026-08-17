@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { syncUserInstallations } from "@/lib/github/sync";
+import {
+  GitHubSyncTransientError,
+  syncUserInstallationsWithRetry,
+} from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { getGitHubUsername } from "@/lib/github/users";
 import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -65,18 +67,26 @@ export async function GET(req: Request): Promise<Response> {
     return redirectAndClearCookies(redirectUrl);
   }
 
-  // sync installations
+  // sync installations (retries transient GitHub-side failures instead of
+  // silently giving up -- a single 5xx/429 here previously meant an
+  // installation the user just completed on GitHub's side would never get
+  // recorded in our DB)
   let syncedInstallationsCount: number | null = null;
-  const username = await getGitHubUsername(session.user.id);
+  let syncFailedTransiently = false;
 
-  if (username) {
-    try {
-      syncedInstallationsCount = await syncUserInstallations(
-        session.user.id,
-        token,
-        username,
+  try {
+    syncedInstallationsCount = await syncUserInstallationsWithRetry(
+      session.user.id,
+      token,
+    );
+  } catch (error) {
+    if (error instanceof GitHubSyncTransientError) {
+      console.error(
+        "Transient GitHub sync failure in install callback:",
+        error,
       );
-    } catch (error) {
+      syncFailedTransiently = true;
+    } else {
       console.error("Failed syncing installations:", error);
     }
   }
@@ -86,6 +96,8 @@ export async function GET(req: Request): Promise<Response> {
     githubStatus = "request_sent";
   } else if ((syncedInstallationsCount ?? 0) > 0) {
     githubStatus = "app_installed";
+  } else if (syncFailedTransiently) {
+    githubStatus = "sync_unavailable";
   } else if (!installationId) {
     githubStatus = "no_action";
     redirectUrl.searchParams.set("missing_installation_id", "1");

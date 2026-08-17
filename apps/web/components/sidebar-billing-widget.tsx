@@ -46,14 +46,13 @@ const PLAN_STYLES: Record<string, { badge: string }> = {
 };
 
 /**
- * Compact credit-balance pill shown in the sidebar's "Sessions" header,
- * next to the new-session button. Replaces the old card-style widget
- * that sat above the profile footer (2026-08-16, owner feedback: didn't
- * like the card+bar treatment there). Just the number, in a small
- * rounded pill using the repo's own muted/border/foreground tokens --
- * no progress bar, no plan name (that moved next to the username in the
- * profile footer, see SidebarPlanBadge below). Still links to
- * /billing/plans as the upgrade/top-up entry point.
+ * Compact credit-balance pill shown in the sidebar's profile footer, next
+ * to the settings gear button (moved here 2026-08-17, owner feedback:
+ * didn't like it sitting in the "Sessions" header next to the
+ * new-session button). Just the number, in a small rounded pill using
+ * the repo's own muted/border/foreground tokens -- no progress bar, no
+ * plan name (that's next to the username, see SidebarPlanBadge below).
+ * Still links to /billing/plans as the upgrade/top-up entry point.
  */
 export function SidebarBalancePill() {
   const { data, isLoading } = useSWR<BillingMeResponse>(
@@ -64,14 +63,14 @@ export function SidebarBalancePill() {
 
   if (isLoading || !data) {
     return (
-      <div className="h-6 w-14 animate-pulse rounded-full bg-muted" />
+      <div className="h-6 w-14 shrink-0 animate-pulse rounded-full bg-muted" />
     );
   }
 
   return (
     <Link
       href="/billing/plans"
-      className="flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground transition-colors hover:bg-muted/70"
+      className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground transition-colors hover:bg-muted/70"
     >
       {formatUsd(data.creditBalanceCents)}
     </Link>

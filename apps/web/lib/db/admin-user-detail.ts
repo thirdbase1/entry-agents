@@ -20,12 +20,27 @@ export interface AdminUserProfile {
   totalOutputTokens: number;
   estimatedCostUsd: number;
   hasUnpricedUsage: boolean;
+  /** "free" | "plus" | "pro" | "max" -- see lib/billing/plans.ts. */
+  plan: string;
+  creditBalanceCents: number;
+  billingCycleAnchor: Date | null;
 }
 
 /**
  * Full profile for the admin user-detail drill-down page: base account
  * fields, connection flags, and an all-time usage/spend summary. Returns
  * null if the user doesn't exist.
+ *
+ * FIXED 2026-08-17: previously fetched usage_events pre-summed per model
+ * (Postgres sum() across every event, all-time) and priced that one
+ * total once. That's wrong for any model with a `cost.context_over_200k`
+ * premium tier (currently grok-4.5): resolveCostTier's ">200k" check is
+ * meant to catch one request whose own prompt was that large, not a
+ * user's cumulative all-time total. A heavy grok-4.5 user who never sent
+ * a single 200k+ prompt could still cross 200k in the SUM and get their
+ * *entire* history 2x'd -- this is what produced a bogus ~$600 estimate
+ * an admin saw here. Fix: fetch raw per-event rows and price each one
+ * on its own token counts, then sum the resulting dollars.
  */
 export async function getAdminUserProfile(
   userId: string,
@@ -41,6 +56,9 @@ export async function getAdminUserProfile(
       isAdmin: users.isAdmin,
       createdAt: users.createdAt,
       lastLoginAt: users.lastLoginAt,
+      plan: users.plan,
+      creditBalanceCents: users.creditBalanceCents,
+      billingCycleAnchor: users.billingCycleAnchor,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -60,13 +78,12 @@ export async function getAdminUserProfile(
     db
       .select({
         modelId: usageEvents.modelId,
-        totalInputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::double precision`,
-        totalCachedInputTokens: sql<number>`coalesce(sum(${usageEvents.cachedInputTokens}), 0)::double precision`,
-        totalOutputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::double precision`,
+        inputTokens: usageEvents.inputTokens,
+        cachedInputTokens: usageEvents.cachedInputTokens,
+        outputTokens: usageEvents.outputTokens,
       })
       .from(usageEvents)
-      .where(eq(usageEvents.userId, userId))
-      .groupBy(usageEvents.modelId),
+      .where(eq(usageEvents.userId, userId)),
   ]);
 
   let totalInputTokens = 0;
@@ -75,14 +92,16 @@ export async function getAdminUserProfile(
   let hasUnpricedUsage = false;
 
   for (const row of usageRows) {
-    totalInputTokens += row.totalInputTokens;
-    totalOutputTokens += row.totalOutputTokens;
+    totalInputTokens += row.inputTokens;
+    totalOutputTokens += row.outputTokens;
     const cost = costForModel(row.modelId, modelCostCatalog);
+    // Priced per-event (this row's own token counts), not on a pre-summed
+    // total -- see the doc comment above.
     const estimated = estimateModelUsageCost(
       {
-        inputTokens: row.totalInputTokens,
-        cachedInputTokens: row.totalCachedInputTokens,
-        outputTokens: row.totalOutputTokens,
+        inputTokens: row.inputTokens,
+        cachedInputTokens: row.cachedInputTokens,
+        outputTokens: row.outputTokens,
       },
       cost,
     );
@@ -109,6 +128,9 @@ export async function getAdminUserProfile(
     totalOutputTokens,
     estimatedCostUsd,
     hasUnpricedUsage,
+    plan: userRow.plan,
+    creditBalanceCents: userRow.creditBalanceCents,
+    billingCycleAnchor: userRow.billingCycleAnchor,
   };
 }
 
@@ -123,6 +145,12 @@ export interface AdminUserUsageDayRow {
  * Daily token volume + estimated spend for one user over the last
  * `days` days, zero-filled -- the usage-history chart on the drill-down
  * page.
+ *
+ * FIXED 2026-08-17: same per-event pricing fix as getAdminUserProfile
+ * above -- rows are no longer summed by Postgres before pricing (which
+ * could still cross the 200k premium threshold within a single busy day
+ * for a context_over_200k model even though no individual request did).
+ * Each event is priced on its own tokens, then bucketed by day.
  */
 export async function getAdminUserUsageTrend(
   userId: string,
@@ -137,17 +165,13 @@ export async function getAdminUserUsageTrend(
     .select({
       day: sql<string>`to_char(date_trunc('day', ${usageEvents.createdAt}), 'YYYY-MM-DD')`,
       modelId: usageEvents.modelId,
-      totalInputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::double precision`,
-      totalCachedInputTokens: sql<number>`coalesce(sum(${usageEvents.cachedInputTokens}), 0)::double precision`,
-      totalOutputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::double precision`,
+      inputTokens: usageEvents.inputTokens,
+      cachedInputTokens: usageEvents.cachedInputTokens,
+      outputTokens: usageEvents.outputTokens,
     })
     .from(usageEvents)
     .where(
       sql`${usageEvents.userId} = ${userId} and ${usageEvents.createdAt} >= ${since.toISOString()}`,
-    )
-    .groupBy(
-      sql`date_trunc('day', ${usageEvents.createdAt})`,
-      usageEvents.modelId,
     );
 
   const byDay = new Map<
@@ -160,9 +184,9 @@ export async function getAdminUserUsageTrend(
     const estimated =
       estimateModelUsageCost(
         {
-          inputTokens: row.totalInputTokens,
-          cachedInputTokens: row.totalCachedInputTokens,
-          outputTokens: row.totalOutputTokens,
+          inputTokens: row.inputTokens,
+          cachedInputTokens: row.cachedInputTokens,
+          outputTokens: row.outputTokens,
         },
         cost,
       ) ?? 0;
@@ -171,7 +195,7 @@ export async function getAdminUserUsageTrend(
       totalTokens: 0,
       estimatedCostUsd: 0,
     };
-    existing.totalTokens += row.totalInputTokens + row.totalOutputTokens;
+    existing.totalTokens += row.inputTokens + row.outputTokens;
     existing.estimatedCostUsd += estimated;
     byDay.set(row.day, existing);
   }
@@ -201,7 +225,12 @@ export interface AdminUserModelRow {
   estimatedCostUsd: number | undefined;
 }
 
-/** Per-model, all-time breakdown for one user's usage-history table. */
+/**
+ * Per-model, all-time breakdown for one user's usage-history table.
+ *
+ * FIXED 2026-08-17: same per-event pricing fix as getAdminUserProfile
+ * above (was pre-summing per model in SQL before pricing once).
+ */
 export async function getAdminUserModelBreakdown(
   userId: string,
   modelCostCatalog: AvailableModel[],
@@ -210,34 +239,51 @@ export async function getAdminUserModelBreakdown(
     .select({
       modelId: usageEvents.modelId,
       provider: usageEvents.provider,
-      eventCount: sql<number>`count(*)::int`,
-      totalInputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::double precision`,
-      totalCachedInputTokens: sql<number>`coalesce(sum(${usageEvents.cachedInputTokens}), 0)::double precision`,
-      totalOutputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::double precision`,
+      inputTokens: usageEvents.inputTokens,
+      cachedInputTokens: usageEvents.cachedInputTokens,
+      outputTokens: usageEvents.outputTokens,
     })
     .from(usageEvents)
-    .where(eq(usageEvents.userId, userId))
-    .groupBy(usageEvents.modelId, usageEvents.provider);
+    .where(eq(usageEvents.userId, userId));
 
-  return rows
-    .map((row) => ({
-      modelId: row.modelId ?? "unknown",
-      provider: row.provider,
-      eventCount: row.eventCount,
-      totalInputTokens: row.totalInputTokens,
-      totalOutputTokens: row.totalOutputTokens,
-      estimatedCostUsd: estimateModelUsageCost(
-        {
-          inputTokens: row.totalInputTokens,
-          cachedInputTokens: row.totalCachedInputTokens,
-          outputTokens: row.totalOutputTokens,
-        },
-        costForModel(row.modelId, modelCostCatalog),
-      ),
-    }))
-    .toSorted(
-      (a, b) => (b.estimatedCostUsd ?? -1) - (a.estimatedCostUsd ?? -1),
+  const byModel = new Map<string, AdminUserModelRow>();
+
+  for (const row of rows) {
+    const modelKey = row.modelId ?? "unknown";
+    const cost = costForModel(row.modelId, modelCostCatalog);
+    const estimated = estimateModelUsageCost(
+      {
+        inputTokens: row.inputTokens,
+        cachedInputTokens: row.cachedInputTokens,
+        outputTokens: row.outputTokens,
+      },
+      cost,
     );
+
+    const existing = byModel.get(modelKey);
+    if (existing) {
+      existing.eventCount += 1;
+      existing.totalInputTokens += row.inputTokens;
+      existing.totalOutputTokens += row.outputTokens;
+      existing.estimatedCostUsd =
+        existing.estimatedCostUsd === undefined && estimated === undefined
+          ? undefined
+          : (existing.estimatedCostUsd ?? 0) + (estimated ?? 0);
+    } else {
+      byModel.set(modelKey, {
+        modelId: modelKey,
+        provider: row.provider,
+        eventCount: 1,
+        totalInputTokens: row.inputTokens,
+        totalOutputTokens: row.outputTokens,
+        estimatedCostUsd: estimated,
+      });
+    }
+  }
+
+  return [...byModel.values()].toSorted(
+    (a, b) => (b.estimatedCostUsd ?? -1) - (a.estimatedCostUsd ?? -1),
+  );
 }
 
 export interface AdminUserSessionRow {

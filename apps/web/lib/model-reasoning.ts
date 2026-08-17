@@ -59,6 +59,93 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "medium", label: "Medium" },
     { value: "xhigh", label: "XHigh" },
   ],
+  // FIXED 2026-08-17: these three were previously falling through to
+  // DEFAULT_LEVELS (a generic low/medium/high), but GPT-5.6's own docs
+  // (developers.openai.com/api/docs/guides/reasoning +
+  // .../guides/latest-model) are explicit that the whole GPT-5.6 family
+  // -- Sol, Terra, and Luna alike -- accepts a 6-level `reasoning_effort`
+  // vocabulary: none, low, medium, high, xhigh, max. Shipping only 3 of
+  // those 6 real levels silently threw away "none" (fully-off, cheapest/
+  // fastest) and the two above "high" (xhigh, max) that this family
+  // specifically supports over the plain o-series low/medium/high set.
+  // Passed straight through as `reasoning_effort` on the OpenAI-compat
+  // route -- no remapping, see toReasoningProviderOptions below.
+  "gpt-5.6-luna": [
+    { value: "none", label: "Off" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "XHigh" },
+    { value: "max", label: "Max" },
+  ],
+  "gpt-5.6-sol": [
+    { value: "none", label: "Off" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "XHigh" },
+    { value: "max", label: "Max" },
+  ],
+  "gpt-5.6-terra": [
+    { value: "none", label: "Off" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "XHigh" },
+    { value: "max", label: "Max" },
+  ],
+  // FIXED 2026-08-17: the previous version applied the exact same
+  // low/medium/high selector to every Claude id, which mismatches
+  // Anthropic's own docs (platform.claude.com/docs/.../extended-thinking,
+  // .../models/whats-new-sonnet-5) -- the Opus line (and Sonnet 5) has a
+  // 4th "max" effort tier that Sonnet 4.6 and Haiku 4.5 genuinely don't
+  // get: Sonnet 4.6's adaptive-thinking effort field explicitly rejects
+  // "max" ("Sonnet does not support max"), and Haiku 4.5 doesn't have
+  // adaptive/effort thinking at all -- only the older manual budget_tokens
+  // knob. This only changes which OPTIONS are offered per model; the
+  // underlying wire call for every Claude id here still goes out as a
+  // legacy `thinking.budget_tokens` value (see ANTHROPIC_THINKING_BUDGETS
+  // and the big comment above it) because that's the one mechanism
+  // confirmed by live probe to actually move real thinking-token output
+  // through FreeModel's Claude passthrough -- adaptive/`effort` is a
+  // silent no-op on that specific proxy regardless of what Anthropic's
+  // direct API would otherwise require for e.g. Opus 4.7+. "max" here
+  // maps to a bigger budget_tokens value (see ANTHROPIC_THINKING_BUDGETS),
+  // which is the closest real analog available through this proxy.
+  "claude-opus-4-6": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+  "claude-opus-4-7": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+  "claude-opus-4-8": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+  "claude-opus-5": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+  // Sonnet 5 added a "max" effort tier that Sonnet 4.6 never had (see
+  // platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5) --
+  // Sonnet 4.6 intentionally stays on DEFAULT_LEVELS (low/medium/high,
+  // no max) below by not having an entry here.
+  "claude-sonnet-5": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
 };
 
 export function getReasoningEffortLevels(
@@ -101,6 +188,13 @@ const ANTHROPIC_THINKING_BUDGETS: Record<string, number> = {
   low: 2000,
   medium: 8000,
   high: 16000,
+  // Added 2026-08-17 alongside the per-model "max" option on the Opus
+  // line + Sonnet 5 above -- double the "high" budget, since Anthropic's
+  // own adaptive `effort: "max"` is Opus-exclusive-or-Sonnet-5-only and
+  // explicitly the most aggressive tier past "high". This is the closest
+  // real analog available through FreeModel's budget_tokens-only proxy
+  // behavior for these ids.
+  max: 32000,
 };
 
 const REASONING_CAPABLE_MODEL_IDS = new Set<string>([

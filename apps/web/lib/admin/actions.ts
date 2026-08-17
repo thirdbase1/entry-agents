@@ -36,7 +36,7 @@ import {
   type AdminPlatformUsageOverview,
 } from "@/lib/db/admin-usage";
 import { db } from "@/lib/db/client";
-import { accounts, authSessions, githubInstallations } from "@/lib/db/schema";
+import { accounts, authSessions, githubInstallations, users } from "@/lib/db/schema";
 import { isUserAdmin } from "@/lib/db/users";
 import {
   fetchAllLanguageModelsForAdmin,
@@ -47,6 +47,11 @@ import {
   getAllModelOverrides,
   setModelOverride,
 } from "@/lib/db/model-overrides";
+import {
+  creditAccount,
+  getUserBillingState,
+} from "@/lib/billing/credit-ledger";
+import { getPlanDefinition, isPlanId, type PlanId } from "@/lib/billing/plans";
 import {
   getPlatformSettingsRow,
   setFreeTierGateStatus,
@@ -499,4 +504,61 @@ export async function getAdminUserDetail(userId: string): Promise<{
   ]);
 
   return { profile, usageTrend, modelBreakdown, sessions };
+}
+
+
+/**
+ * Admin override for a user's plan tier -- for support cases like a
+ * Paystack webhook that failed to fire, comping an account, or manually
+ * fixing billing state. Always updates `users.plan` (which immediately
+ * changes model access -- see modelAccess on PLAN_CATALOG and the
+ * free-tier gate in app/workflows/chat.ts). Does NOT touch
+ * billingCycleAnchor or Paystack subscription state -- this is a
+ * plan/model-access override, not a fake renewal; use `grantCreditCents`
+ * separately if the user should also receive credit for this change
+ * (e.g. moving them onto a paid plan they already paid for out-of-band).
+ * Refuses to grant credit on a downgrade to a *lower*-priced plan, since
+ * that would make no sense and is almost certainly a UI mistake.
+ * Admin-only.
+ */
+export async function setAdminUserPlan(
+  userId: string,
+  planId: string,
+  grantCreditCents: number,
+): Promise<{ plan: PlanId; creditBalanceCents: number }> {
+  const adminUserId = await requireAdmin();
+
+  if (!isPlanId(planId)) {
+    throw new Error(`Unknown plan id: ${planId}`);
+  }
+
+  const before = await getUserBillingState(userId);
+  if (!before) {
+    throw new Error(`User ${userId} not found`);
+  }
+
+  const newPlanDef = getPlanDefinition(planId);
+  const oldPlanDef = getPlanDefinition(before.plan);
+
+  if (grantCreditCents > 0 && newPlanDef.priceUsdCents < oldPlanDef.priceUsdCents) {
+    throw new Error(
+      "Refusing to grant credit on a downgrade -- pass grantCreditCents=0 if you only want to change the plan tier.",
+    );
+  }
+
+  await db.update(users).set({ plan: planId }).where(eq(users.id, userId));
+
+  let creditBalanceCents = before.creditBalanceCents;
+  if (grantCreditCents > 0) {
+    creditBalanceCents = await creditAccount(
+      userId,
+      grantCreditCents,
+      "admin_adjustment",
+      {
+        description: `Admin ${adminUserId} moved user to ${newPlanDef.name} plan and granted $${(grantCreditCents / 100).toFixed(2)} credit`,
+      },
+    );
+  }
+
+  return { plan: planId as PlanId, creditBalanceCents };
 }

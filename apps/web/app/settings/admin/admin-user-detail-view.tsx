@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -13,6 +14,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -26,7 +34,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getAdminUserDetail } from "@/lib/admin/actions";
+import { getAdminUserDetail, setAdminUserPlan } from "@/lib/admin/actions";
+import { PLAN_CATALOG, PLAN_IDS, type PlanId } from "@/lib/billing/plans";
 import type {
   AdminUserModelRow,
   AdminUserProfile,
@@ -115,6 +124,140 @@ function UsageTrendChart({
  * signups tables so "how much has this person used, and on what" is one
  * click away instead of a database query.
  */
+function formatUsdCents(cents: number): string {
+  const dollars = cents / 100;
+  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Admin-only plan override control. Lets support change a user's plan
+ * tier directly (model access takes effect immediately -- see
+ * modelAccess on PLAN_CATALOG and the free-tier gate in
+ * app/workflows/chat.ts) for cases like a missed Paystack webhook or
+ * comping an account. On upgrade to a costlier plan, offers to also
+ * grant that plan's credit (since the admin action itself doesn't touch
+ * Paystack/billing cycle state -- see setAdminUserPlan's doc comment).
+ */
+function PlanManagementCard({
+  userId,
+  profile,
+  onChanged,
+}: {
+  userId: string;
+  profile: AdminUserProfile;
+  onChanged: (update: { plan: string; creditBalanceCents: number }) => void;
+}) {
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>(
+    (profile.plan as PlanId) ?? "free",
+  );
+  const [grantCredit, setGrantCredit] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedPlan((profile.plan as PlanId) ?? "free");
+  }, [profile.plan]);
+
+  const currentPlanDef = PLAN_CATALOG[(profile.plan as PlanId) ?? "free"];
+  const targetPlanDef = PLAN_CATALOG[selectedPlan];
+  const isUpgradeInPrice =
+    targetPlanDef.priceUsdCents > currentPlanDef.priceUsdCents;
+  const isChanged = selectedPlan !== profile.plan;
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const grantCents =
+        isChanged && grantCredit && isUpgradeInPrice
+          ? targetPlanDef.creditGrantCents
+          : 0;
+      const result = await setAdminUserPlan(userId, selectedPlan, grantCents);
+      onChanged(result);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to update plan.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Plan &amp; credit</CardTitle>
+        <CardDescription>
+          Override this user&apos;s subscription tier. Takes effect
+          immediately, no redeploy.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Current balance</span>
+          <span className="font-medium">
+            {formatUsdCents(profile.creditBalanceCents)}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[160px]">
+            <p className="mb-1.5 text-xs text-muted-foreground">Plan</p>
+            <Select
+              value={selectedPlan}
+              onValueChange={(value) => setSelectedPlan(value as PlanId)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a plan" />
+              </SelectTrigger>
+              <SelectContent>
+                {PLAN_IDS.map((id) => (
+                  <SelectItem key={id} value={id}>
+                    {PLAN_CATALOG[id].name}
+                    {PLAN_CATALOG[id].priceUsdCents > 0
+                      ? ` — $${(PLAN_CATALOG[id].priceUsdCents / 100).toFixed(0)}/mo`
+                      : " — Free"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button onClick={handleSave} disabled={!isChanged || saving}>
+            {saving ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : null}
+            Save plan
+          </Button>
+        </div>
+
+        {isChanged && isUpgradeInPrice && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={grantCredit}
+              onChange={(e) => setGrantCredit(e.target.checked)}
+              className="size-3.5"
+            />
+            Also grant {targetPlanDef.name}&apos;s credit (
+            {formatUsdCents(targetPlanDef.creditGrantCents)}) -- for
+            comping this account or fixing a missed payment webhook.
+          </label>
+        )}
+
+        {isChanged && !isUpgradeInPrice && (
+          <p className="text-xs text-muted-foreground">
+            Downgrading changes model access only -- existing credit
+            balance is left untouched.
+          </p>
+        )}
+
+        {saveError && (
+          <p className="text-sm text-destructive">{saveError}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function AdminUserDetailView({ userId }: { userId: string }) {
   const [data, setData] = useState<UserDetailState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -233,6 +376,25 @@ export function AdminUserDetailView({ userId }: { userId: string }) {
               </div>
             </CardContent>
           </Card>
+
+          <PlanManagementCard
+            userId={userId}
+            profile={data.profile}
+            onChanged={(update) => {
+              setData((prev) =>
+                prev?.profile
+                  ? {
+                      ...prev,
+                      profile: {
+                        ...prev.profile,
+                        plan: update.plan,
+                        creditBalanceCents: update.creditBalanceCents,
+                      },
+                    }
+                  : prev,
+              );
+            }}
+          />
 
           <Card>
             <CardHeader>

@@ -171,8 +171,29 @@ function formatUsd(amount: number): string {
   );
 }
 
+/**
+ * FIXED 2026-08-17: this used to take the already-range-summed
+ * `ModelUsage[]` (every day in the selected range added together per
+ * model) and price that one grand total once. That's wrong for any
+ * model with a `cost.context_over_200k` premium tier (currently
+ * grok-4.5): the ">200k" check is meant to catch one request whose own
+ * prompt was that large, not a user's cumulative total across an entire
+ * selected date range. Someone who used grok-4.5 steadily over a month
+ * could cross 200k in the RANGE TOTAL and have their *whole* month 2x'd
+ * even though no single day -- let alone single request -- was ever
+ * that large themselves. That's what produced a wildly inflated ~$600
+ * estimate on this page for a heavy user.
+ *
+ * Fix: price each `DailyUsageRow` (the day+model+provider granularity
+ * this data actually arrives in from the API) individually, then sum
+ * the resulting dollar amounts. This isn't fully request-level (a
+ * single very heavy day could in theory still cross 200k on its own),
+ * but it's the finest granularity available without changing the API
+ * to return raw per-event rows, and it eliminates the specific
+ * range-length-dependent inflation bug above.
+ */
 function estimateUsageCost(
-  modelUsage: ModelUsage[],
+  dailyRows: DailyUsageRow[],
   models: AvailableModel[],
 ): CostEstimateSummary | undefined {
   let amount = 0;
@@ -180,20 +201,21 @@ function estimateUsageCost(
   let totalTokens = 0;
   const modelsById = new Map(models.map((model) => [model.id, model]));
 
-  for (const usage of modelUsage) {
-    const modelTotalTokens = usage.inputTokens + usage.outputTokens;
-    totalTokens += modelTotalTokens;
+  for (const row of dailyRows) {
+    if (!row.modelId) continue;
+    const rowTotalTokens = row.inputTokens + row.outputTokens;
+    totalTokens += rowTotalTokens;
 
     const cost = estimateModelUsageCost(
-      usage,
-      modelsById.get(usage.modelId)?.cost,
+      row,
+      modelsById.get(row.modelId)?.cost,
     );
     if (cost === undefined) {
       continue;
     }
 
     amount += cost;
-    pricedTokens += modelTotalTokens;
+    pricedTokens += rowTotalTokens;
   }
 
   if (totalTokens <= 0) {
@@ -468,10 +490,12 @@ export default function ProfilePage() {
       modelUsage: aggregatedModelUsage,
       mainTotals: sumRows(main),
       subagentTotals: sumRows(subagent),
-      costEstimate: estimateUsageCost(
-        aggregatedModelUsage,
-        modelsData?.models ?? [],
-      ),
+      // Priced from the raw day-level rows (see estimateUsageCost's doc
+      // comment) -- NOT from aggregatedModelUsage, which is already
+      // summed across the whole selected range and would reintroduce
+      // the same range-length cost-inflation bug for context_over_200k
+      // models if priced directly.
+      costEstimate: estimateUsageCost(selectedUsage, modelsData?.models ?? []),
     };
   }, [data, fullData, modelsData]);
 

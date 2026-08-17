@@ -974,7 +974,6 @@ export function InboxSidebar({
             <span>Sessions</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <SidebarBalancePill />
             <Button
               type="button"
               variant="ghost"
@@ -1251,6 +1250,7 @@ export function InboxSidebar({
                 <span className="mt-1 block h-4 w-24 animate-pulse rounded bg-muted" />
               ) : null}
             </div>
+            <SidebarBalancePill />
             <Button
               type="button"
               variant="ghost"

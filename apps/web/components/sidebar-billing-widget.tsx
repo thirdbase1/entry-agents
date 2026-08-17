@@ -22,36 +22,31 @@ function formatUsd(cents: number) {
 }
 
 /**
- * Per-plan visual identity for the sidebar widget. Free is deliberately
- * muted (it's a trial, not something to make aspirational); Plus/Pro/Max
- * step up in saturation so upgrading visibly "feels" like an upgrade.
- * Max gets the full gradient treatment as the flagship tier.
+ * Per-plan visual identity, shared by the balance pill and the plan
+ * badge below. Free is deliberately muted (it's a trial, not something
+ * to make aspirational); Plus/Pro/Max step up in saturation so upgrading
+ * visibly "feels" like an upgrade. Max gets the full gradient treatment
+ * as the flagship tier. All colors are theme tokens from this repo's
+ * Tailwind config (bg-muted, border-border, text-foreground, etc. plus
+ * the accent hues), not one-off hardcoded values.
  */
 const PLAN_STYLES: Record<
   string,
-  { ring: string; bar: string; badge: string; icon: typeof Sparkles }
+  { badge: string; icon: typeof Sparkles }
 > = {
   free: {
-    ring: "border-border",
-    bar: "bg-muted-foreground/40",
     badge: "bg-muted text-muted-foreground",
     icon: Zap,
   },
   plus: {
-    ring: "border-blue-500/30",
-    bar: "bg-blue-500",
     badge: "bg-blue-500/15 text-blue-400",
     icon: Zap,
   },
   pro: {
-    ring: "border-violet-500/30",
-    bar: "bg-violet-500",
     badge: "bg-violet-500/15 text-violet-400",
     icon: Sparkles,
   },
   max: {
-    ring: "border-amber-500/40",
-    bar: "bg-gradient-to-r from-amber-400 via-orange-400 to-pink-500",
     badge:
       "bg-gradient-to-r from-amber-400/20 via-orange-400/20 to-pink-500/20 text-amber-400",
     icon: Sparkles,
@@ -59,13 +54,16 @@ const PLAN_STYLES: Record<
 };
 
 /**
- * Compact plan + credit balance card shown in the main chat sidebar,
- * just above the user profile footer. Replaces the earlier settings-page
- * placement (2026-08-16, owner feedback: wanted it somewhere more
- * visible/prominent, not tucked into settings). Doubles as an
- * upgrade/top-up entry point via the /billing/plans link.
+ * Compact credit-balance pill shown in the sidebar's "Sessions" header,
+ * next to the new-session button. Replaces the old card-style widget
+ * that sat above the profile footer (2026-08-16, owner feedback: didn't
+ * like the card+bar treatment there). Just the number, in a small
+ * rounded pill using the repo's own muted/border/foreground tokens --
+ * no progress bar, no plan name (that moved next to the username in the
+ * profile footer, see SidebarPlanBadge below). Still links to
+ * /billing/plans as the upgrade/top-up entry point.
  */
-export function SidebarBillingWidget() {
+export function SidebarBalancePill() {
   const { data, isLoading } = useSWR<BillingMeResponse>(
     "/api/billing/me",
     fetcher,
@@ -74,48 +72,52 @@ export function SidebarBillingWidget() {
 
   if (isLoading || !data) {
     return (
-      <div className="mx-3 mb-2 h-[58px] animate-pulse rounded-xl border border-border bg-muted/30" />
+      <div className="h-6 w-14 animate-pulse rounded-full bg-muted" />
     );
   }
-
-  const style = PLAN_STYLES[data.plan] ?? PLAN_STYLES.free;
-  const Icon = style.icon;
-  const pct =
-    data.creditGrantCents > 0
-      ? Math.max(
-          0,
-          Math.min(100, (data.creditBalanceCents / data.creditGrantCents) * 100),
-        )
-      : 0;
 
   return (
     <Link
       href="/billing/plans"
+      className="flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground transition-colors hover:bg-muted/70"
+    >
+      <Zap className="h-3 w-3 text-primary" />
+      {formatUsd(data.creditBalanceCents)}
+    </Link>
+  );
+}
+
+/**
+ * Small plan-name tag rendered right next to the username in the
+ * profile footer row (moved here 2026-08-16 from the old standalone
+ * sidebar card, per owner request to put the tier name "near the user").
+ * Renders nothing while loading or for an unknown plan key, rather than
+ * a placeholder skeleton -- this sits inline with text, not as its own
+ * block.
+ */
+export function SidebarPlanBadge() {
+  const { data, isLoading } = useSWR<BillingMeResponse>(
+    "/api/billing/me",
+    fetcher,
+    { refreshInterval: 60_000 },
+  );
+
+  if (isLoading || !data) {
+    return null;
+  }
+
+  const style = PLAN_STYLES[data.plan] ?? PLAN_STYLES.free;
+  const Icon = style.icon;
+
+  return (
+    <span
       className={cn(
-        "mx-3 mb-2 block rounded-xl border bg-gradient-to-b from-muted/50 to-muted/20 px-3 py-2.5 transition-colors hover:bg-muted/40",
-        style.ring,
+        "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        style.badge,
       )}
     >
-      <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            "flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-            style.badge,
-          )}
-        >
-          <Icon className="h-3 w-3" />
-          {data.planName}
-        </span>
-        <span className="text-sm font-semibold tabular-nums text-foreground">
-          {formatUsd(data.creditBalanceCents)}
-        </span>
-      </div>
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/15">
-        <div
-          className={cn("h-full rounded-full transition-all", style.bar)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </Link>
+      <Icon className="h-2.5 w-2.5" />
+      {data.planName}
+    </span>
   );
 }

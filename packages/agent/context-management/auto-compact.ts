@@ -16,6 +16,32 @@ import { getContextWindowForModel } from "./context-windows";
 export const AUTO_COMPACT_THRESHOLD = 0.8;
 
 /**
+ * Fixed token buffer for everything that fills the context window but
+ * never appears in `messages` -- and so was previously invisible to this
+ * threshold check entirely. Found 2026-08-16 investigating a report of
+ * auto-compaction never firing even at 92% real usage (per the API's own
+ * usage.promptTokens, as shown in the UI's context indicator): prepareStep
+ * only receives `messages`, never the `system` prompt or the tool
+ * definitions -- see PrepareStepFunction in the `ai` package, it has no
+ * system/instructions field at all. Both are real, sizable, and mostly
+ * fixed-size per turn:
+ *   - buildSystemPrompt()'s CORE_SYSTEM_PROMPT alone measures ~10,528
+ *     chars (~2,632 tokens at the same chars/4 heuristic used below),
+ *     plus a per-family overlay and the skills list on top.
+ *   - The 14 tool definitions' `description` fields alone total ~14,681
+ *     chars (~3,670 tokens) -- and that's before the JSON-schema
+ *     wrapper (param names/types/enums/nesting) that the provider
+ *     actually bills for, which typically runs noticeably higher than
+ *     the raw description text.
+ * Rounded up generously past that combined estimate (conservative in the
+ * same direction as everything else in this file: better to compact a
+ * little early than to find out this buffer was too small once a request
+ * already blew past the real context_length_exceeded limit). Revisit if
+ * the tool set or system prompt grows meaningfully.
+ */
+export const SYSTEM_AND_TOOLS_OVERHEAD_TOKENS = 15_000;
+
+/**
  * How many of the most recent messages are protected from compaction --
  * their tool calls/results stay verbatim so the model always has full,
  * unsummarized detail on what it *just* did. Everything older than this
@@ -69,7 +95,12 @@ export function maybeCompactMessages({
   }
 
   const contextWindow = getContextWindowForModel(getModelId(model));
-  const estimatedTokens = estimateMessagesTokens(messages);
+  // See SYSTEM_AND_TOOLS_OVERHEAD_TOKENS above -- without this, the check
+  // below only ever sees the visible message transcript and silently
+  // ignores the system prompt + tool schemas that are also part of every
+  // real request's token count.
+  const estimatedTokens =
+    estimateMessagesTokens(messages) + SYSTEM_AND_TOOLS_OVERHEAD_TOKENS;
 
   if (estimatedTokens < contextWindow * AUTO_COMPACT_THRESHOLD) {
     return messages;

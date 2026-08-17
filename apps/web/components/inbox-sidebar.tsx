@@ -16,7 +16,10 @@ import {
   Settings,
 } from "lucide-react";
 import Link from "next/link";
-import { SidebarBillingWidget } from "@/components/sidebar-billing-widget";
+import {
+  SidebarBalancePill,
+  SidebarPlanBadge,
+} from "@/components/sidebar-billing-widget";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -970,20 +973,23 @@ export function InboxSidebar({
           <div className="flex items-center px-2 py-1.5 text-sm text-primary">
             <span>Sessions</span>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (isMobile) {
-                setOpenMobile(false);
-              }
-              onOpenNewSession();
-            }}
-            className="h-7 w-7"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <SidebarBalancePill />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (isMobile) {
+                  setOpenMobile(false);
+                }
+                onOpenNewSession();
+              }}
+              className="h-7 w-7"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         <div className="flex gap-1">
@@ -1204,8 +1210,6 @@ export function InboxSidebar({
         )}
       </div>
 
-      <SidebarBillingWidget />
-
       {sidebarUser ? (
         <div className="border-t border-border p-3">
           <div className="flex items-center gap-2 rounded-lg p-2">
@@ -1221,9 +1225,12 @@ export function InboxSidebar({
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold leading-none text-foreground">
-                {sidebarUser.username}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-sm font-semibold leading-none text-foreground">
+                  {sidebarUser.username}
+                </p>
+                <SidebarPlanBadge />
+              </div>
               {sidebarUser.email ? (
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {sidebarUser.email}

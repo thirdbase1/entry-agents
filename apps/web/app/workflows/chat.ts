@@ -1,4 +1,5 @@
 import {
+  APICallError,
   convertToModelMessages,
   type FinishReason,
   generateId as generateIdAi,
@@ -13,7 +14,7 @@ import type {
   OpenAgentCallOptions,
   VercelCliToolResult,
 } from "@open-agents/agent";
-import { getWorkflowMetadata, getWritable } from "workflow";
+import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
@@ -2259,6 +2260,34 @@ const runAgentStep = async (
         errorWithStepTiming.name,
       ),
     });
+
+    // Real incident, 2026-08-17: a bad-param request (reasoning_effort
+    // "max" not accepted by the real upstream behind gpt-5.6-luna) threw
+    // an AI_APICallError that the AI SDK itself had already correctly
+    // flagged `isRetryable: false` -- but nothing here told the Workflow
+    // SDK's own step-retry layer that, so it retried the identical
+    // guaranteed-to-fail request 3 more times (4 attempts total) before
+    // finally giving up, needlessly delaying the failure and burning a
+    // model-call attempt each time for no chance of success. Any 4xx
+    // APICallError the AI SDK itself marks non-retryable is exactly the
+    // class of error `FatalError` exists for -- skips the Workflow SDK's
+    // retries entirely so a permanent, param-level failure fails once
+    // and immediately instead of 4 times.
+    if (isNonRetryableApiCallError(errorWithStepTiming)) {
+      // FatalError's constructor only takes a message string (see
+      // node_modules/workflow's own docs -- no options/cause param), so
+      // stepTiming has to be reattached manually to keep the outer
+      // loop's isStepTimingError(error) pickup working the same way it
+      // does for the plain-throw path above.
+      const fatalError = new FatalError(errorWithStepTiming.message);
+      Object.assign(fatalError, {
+        stepTiming: (errorWithStepTiming as { stepTiming?: unknown })
+          .stepTiming,
+        cause: errorWithStepTiming,
+      });
+      throw fatalError;
+    }
+
     throw errorWithStepTiming;
   } finally {
     // Flush queued real-time ledger debits before this step function
@@ -2343,6 +2372,38 @@ function delay(ms: number) {
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
+}
+
+/**
+ * See the FatalError-throwing block above (2026-08-17 incident: a
+ * guaranteed-to-fail bad-param request retried 4 identical times before
+ * failing for good -- gpt-5.6-luna rejecting reasoning_effort "max"). An
+ * AI SDK `APICallError` is authoritative here -- the SDK itself already
+ * inspects the HTTP status code/response shape and sets `isRetryable`
+ * accordingly (false for 4xx client errors like an unsupported param
+ * value, true for 429/5xx). If some future provider/route sends back a
+ * 4xx without APICallError's own retry heuristic catching it, this also
+ * treats any explicit "invalid_request_error" statusCode-400 response
+ * as non-retryable on its own merits, independent of `isRetryable` --
+ * belt and suspenders, since a malformed request will never succeed on
+ * retry regardless of what any single provider's error-classification
+ * happens to set.
+ */
+function isNonRetryableApiCallError(error: unknown): boolean {
+  if (!(error instanceof APICallError)) {
+    return false;
+  }
+  if (error.isRetryable === false) {
+    return true;
+  }
+  if (error.statusCode !== 400) {
+    return false;
+  }
+  const data = error.data;
+  if (isObjectRecord(data) && isObjectRecord(data.error)) {
+    return data.error.type === "invalid_request_error";
+  }
+  return false;
 }
 
 async function sendTextMessage(writable: Writable, id: string, text: string) {

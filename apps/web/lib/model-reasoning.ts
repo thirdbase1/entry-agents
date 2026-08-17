@@ -59,24 +59,25 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "medium", label: "Medium" },
     { value: "xhigh", label: "XHigh" },
   ],
-  // FIXED 2026-08-17: these three were previously falling through to
-  // DEFAULT_LEVELS (a generic low/medium/high), but GPT-5.6's own docs
-  // (developers.openai.com/api/docs/guides/reasoning +
-  // .../guides/latest-model) are explicit that the whole GPT-5.6 family
-  // -- Sol, Terra, and Luna alike -- accepts a 6-level `reasoning_effort`
-  // vocabulary: none, low, medium, high, xhigh, max. Shipping only 3 of
-  // those 6 real levels silently threw away "none" (fully-off, cheapest/
-  // fastest) and the two above "high" (xhigh, max) that this family
-  // specifically supports over the plain o-series low/medium/high set.
-  // Passed straight through as `reasoning_effort` on the OpenAI-compat
-  // route -- no remapping, see toReasoningProviderOptions below.
+  // CORRECTED 2026-08-17 (same day as the change below it): the "max"
+  // tier added for Sol/Terra/Luna per OpenAI's public docs turned out to
+  // be wrong for THIS specific route -- live production error confirmed
+  // it end-to-end: "level \"max\" not supported, valid levels: low,
+  // medium, high, xhigh" (400 from the real upstream behind entry-gateway,
+  // model gpt-5.6-luna), which killed the whole chat turn with no
+  // fallback (AI_NoOutputGeneratedError after retries exhausted -- users
+  // who picked "Max" in the reasoning selector got a dead chat). Whatever
+  // OpenAI's own docs say the model family supports in general, THIS
+  // upstream's real accepted vocabulary tops out at xhigh, same as
+  // qwen3.8-max-free above -- live-probe/live-error always wins over
+  // docs here. Removed "max"; "none" stays since it was never implicated
+  // and has no evidence against it.
   "gpt-5.6-luna": [
     { value: "none", label: "Off" },
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
     { value: "xhigh", label: "XHigh" },
-    { value: "max", label: "Max" },
   ],
   "gpt-5.6-sol": [
     { value: "none", label: "Off" },
@@ -84,7 +85,6 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
     { value: "xhigh", label: "XHigh" },
-    { value: "max", label: "Max" },
   ],
   "gpt-5.6-terra": [
     { value: "none", label: "Off" },
@@ -92,7 +92,6 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
     { value: "xhigh", label: "XHigh" },
-    { value: "max", label: "Max" },
   ],
   // FIXED 2026-08-17: the previous version applied the exact same
   // low/medium/high selector to every Claude id, which mismatches

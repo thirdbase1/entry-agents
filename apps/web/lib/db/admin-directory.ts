@@ -14,6 +14,7 @@ export interface AdminSignupRow {
   createdAt: Date;
   githubConnected: boolean;
   vercelConnected: boolean;
+  plan: string;
 }
 
 interface BaseUserRow {
@@ -69,6 +70,7 @@ export async function getAdminRecentSignups(
       isAdmin: users.isAdmin,
       createdAt: users.createdAt,
       lastLoginAt: users.lastLoginAt,
+      plan: users.plan,
     })
     .from(users)
     .orderBy(desc(users.createdAt))
@@ -86,6 +88,7 @@ export async function getAdminRecentSignups(
     createdAt: row.createdAt,
     githubConnected: flags.get(row.id)?.github ?? false,
     vercelConnected: flags.get(row.id)?.vercel ?? false,
+    plan: row.plan ?? "free",
   }));
 }
 
@@ -105,6 +108,13 @@ export interface AdminUserLookupRow {
   totalOutputTokens: number;
   estimatedCostUsd: number;
   hasUnpricedUsage: boolean;
+  /** Current subscription tier ("free" | "plus" | "pro" | "max") --
+   * surfaced here because the admin Users search results were the only
+   * place in the admin UI that told support "who this user is" without
+   * showing what plan they're actually on, forcing a click-through to
+   * the per-user detail page just to answer "what tier is this person". */
+  plan: string;
+  creditBalanceCents: number;
 }
 
 /**
@@ -132,6 +142,8 @@ export async function searchAdminUsers(
       isAdmin: users.isAdmin,
       createdAt: users.createdAt,
       lastLoginAt: users.lastLoginAt,
+      plan: users.plan,
+      creditBalanceCents: users.creditBalanceCents,
     })
     .from(users)
     .where(
@@ -225,6 +237,8 @@ export async function searchAdminUsers(
       totalOutputTokens: usage?.outputTokens ?? 0,
       estimatedCostUsd: usage?.cost ?? 0,
       hasUnpricedUsage: usage?.unpriced ?? false,
+      plan: row.plan ?? "free",
+      creditBalanceCents: row.creditBalanceCents ?? 0,
     };
   });
 }

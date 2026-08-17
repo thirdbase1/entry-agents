@@ -40,7 +40,7 @@ import { accounts, authSessions, githubInstallations, users } from "@/lib/db/sch
 import { isUserAdmin } from "@/lib/db/users";
 import {
   fetchAllLanguageModelsForAdmin,
-  fetchAvailableLanguageModels,
+  fetchModelCostCatalog,
 } from "@/lib/models-with-context";
 import { isModelHardBlocked } from "@/lib/model-availability";
 import {
@@ -305,7 +305,7 @@ export async function getAdminUsageOverview(
 ): Promise<AdminPlatformUsageOverview> {
   await requireAdmin();
 
-  const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
+  const modelCostCatalog = await fetchModelCostCatalog().catch(() => []);
 
   return getAdminPlatformUsageOverview({
     days,
@@ -462,7 +462,7 @@ export async function lookupAdminUsers(
   query: string,
 ): Promise<AdminUserLookupRow[]> {
   await requireAdmin();
-  const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
+  const modelCostCatalog = await fetchModelCostCatalog().catch(() => []);
   return searchAdminUsers(query, modelCostCatalog);
 }
 
@@ -494,7 +494,7 @@ export async function getAdminUserDetail(userId: string): Promise<{
 }> {
   await requireAdmin();
 
-  const modelCostCatalog = await fetchAvailableLanguageModels().catch(() => []);
+  const modelCostCatalog = await fetchModelCostCatalog().catch(() => []);
 
   const [profile, usageTrend, modelBreakdown, sessions] = await Promise.all([
     getAdminUserProfile(userId, modelCostCatalog),

@@ -188,6 +188,13 @@ function addModelsDevMetadata(
  * Only fills in the two fields when they're genuinely absent -- any
  * route with real configured rates (e.g. Claude's) passes through
  * unchanged.
+ *
+ * Ratios sourced from OpenAI's own published gpt-5.6-sol pricing ($5.00
+ * input / $0.50 cached input / $6.25 cache write / $30.00 output --
+ * 0.50/5.00 = 0.1x, 6.25/5.00 = 1.25x), independently corroborated on
+ * the OpenAI community forum for gpt-5.6-luna post price-cut ("1.25x for
+ * write cache and 0.1x for read cache"). See gateway server.js for the
+ * matching fallback used for real billing.
  */
 const CACHE_RATE_MULTIPLIERS_BY_PREFIX: Array<
   [string, { cacheRead: number; cacheWrite: number }]
@@ -306,6 +313,35 @@ export async function fetchAvailableLanguageModels(): Promise<
   return filterDisabledModels(
     models.filter((model) => model.modelType === "language"),
   );
+}
+
+/**
+ * Pricing-only catalog: every language model the gateway knows about,
+ * INCLUDING ones an admin has disabled (or that are hard-blocked in
+ * code). Deliberately skips filterDisabledModels.
+ *
+ * FIXED 2026-08-17: usage/spend reporting (admin platform overview, admin
+ * user profile, and the user-facing /settings/profile usage page) was
+ * pricing already-recorded usage_events rows against
+ * fetchAvailableLanguageModels()'s filtered catalog. That catalog drops
+ * any model an admin has since disabled -- so costForModel() returned
+ * undefined for that model's historical rows, and those dollars silently
+ * vanished from the displayed total (hasUnpricedUsage flips true instead
+ * of the real cost being summed). Reported case: a user's real all-time
+ * spend was ~$600 across qwen3.8-max, an Opus model, and others; once an
+ * admin disabled a couple of those models the same profile page dropped
+ * to ~$200, because usage against the now-disabled models stopped being
+ * priced -- even though it had already happened and was already billed
+ * (the credit ledger's debitUsage was never touched, only this read-time
+ * display estimate). Disabling a model should only stop *new* usage; it
+ * must never retroactively re-price or hide usage that already
+ * happened. Every cost-lookup call site should use this function, not
+ * fetchAvailableLanguageModels(), which stays reserved for
+ * picker/availability checks (what a user is allowed to select *now*).
+ */
+export async function fetchModelCostCatalog(): Promise<AvailableModel[]> {
+  const models = await fetchGatewayModels();
+  return models.filter((model) => model.modelType === "language");
 }
 
 export async function fetchAvailableLanguageModelsWithContext(): Promise<

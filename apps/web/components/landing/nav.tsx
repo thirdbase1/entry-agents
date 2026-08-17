@@ -1,7 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SignInButton } from "@/components/auth/sign-in-button";
+import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
+import { Button } from "@/components/ui/button";
+import { useSession } from "@/hooks/use-session";
 import { cn } from "@/lib/utils";
 import { GitHubLink } from "./github-link";
 import { Logo } from "./logo";
@@ -12,6 +16,15 @@ export function LandingNav({
   readonly showSignIn?: boolean;
 }) {
   const [scrolled, setScrolled] = useState(false);
+  // FIXED 2026-08-17: this nav used to render <SignInButton /> ("Sign in
+  // with Vercel") completely unconditionally on every marketing page
+  // that passes showSignIn (/, /pricing, /billing/plans) -- it never
+  // checked whether the visitor already had a session, so an already
+  // logged-in owner landing on the billing page (e.g. via the sidebar
+  // balance pill) still saw a "sign in" prompt instead of their own
+  // account menu. Now it checks the real session and swaps to an
+  // "Open Entry" link + the same avatar dropdown used inside the app.
+  const { isAuthenticated, loading } = useSession();
 
   useEffect(() => {
     const handle = () => setScrolled(window.scrollY > 20);
@@ -41,7 +54,16 @@ export function LandingNav({
             )}
           >
             <GitHubLink variant="ghost" size="sm" />
-            <SignInButton size="sm" />
+            {!loading && isAuthenticated ? (
+              <>
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/">Open Entry</Link>
+                </Button>
+                <UserAvatarDropdown />
+              </>
+            ) : (
+              <SignInButton size="sm" />
+            )}
           </div>
         </div>
       </div>

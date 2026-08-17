@@ -553,8 +553,12 @@ export function UsageSection() {
     isLoading: isFilteredDataLoading,
     error: filteredDataError,
   } = useSWR<UsageResponse>(filteredUsagePath, fetcher);
+  // /api/models/costs (not /api/models) -- this needs pricing for every
+  // model that's EVER been used, including ones an admin has since
+  // disabled, so already-recorded usage never renders as "unpriced".
+  // See fetchModelCostCatalog's doc comment for the full story.
   const { data: modelsData, isLoading: isModelsLoading } =
-    useSWR<ModelsResponse>("/api/models", fetcher);
+    useSWR<ModelsResponse>("/api/models/costs", fetcher);
 
   const data = filteredUsagePath ? filteredData : fullData;
   const isLoading =

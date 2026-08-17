@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getAdminSignups } from "@/lib/admin/actions";
+import { getPlanDefinition } from "@/lib/billing/plans";
 import type { AdminSignupRow } from "@/lib/db/admin-directory";
 
 const SIGNUP_LIMIT = 12;
@@ -36,6 +37,19 @@ function formatDate(date: Date): string {
 function initialsFor(row: AdminSignupRow): string {
   const source = row.name ?? row.username;
   return source.slice(0, 2).toUpperCase();
+}
+
+function planBadgeClassName(planId: string): string {
+  switch (planId) {
+    case "plus":
+      return "border-sky-500/30 bg-sky-500/10 text-sky-400";
+    case "pro":
+      return "border-violet-500/30 bg-violet-500/10 text-violet-400";
+    case "max":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+    default:
+      return "border-border bg-muted text-muted-foreground";
+  }
 }
 
 /** Most recently created accounts, for the admin Users tab. */
@@ -78,6 +92,7 @@ export function AdminSignupsSection() {
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
+                <TableHead>Plan</TableHead>
                 <TableHead>Joined</TableHead>
                 <TableHead>Connections</TableHead>
                 <TableHead className="text-right">Role</TableHead>
@@ -111,6 +126,14 @@ export function AdminSignupsSection() {
                         </span>
                       </div>
                     </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${planBadgeClassName(row.plan)}`}
+                    >
+                      {getPlanDefinition(row.plan).name}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(row.createdAt)}

@@ -23,10 +23,32 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { lookupAdminUsers } from "@/lib/admin/actions";
+import { getPlanDefinition } from "@/lib/billing/plans";
 import type { AdminUserLookupRow } from "@/lib/db/admin-directory";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(amount < 1 ? 4 : 2)}`;
+}
+
+function formatUsdCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/** Tailwind color classes per plan, so a support admin can eyeball tier
+ * at a glance in the results table without reading the label -- free
+ * (muted/gray) vs paid tiers (each a distinct accent) mirrors the same
+ * badge treatment used on /billing/plans. */
+function planBadgeClassName(planId: string): string {
+  switch (planId) {
+    case "plus":
+      return "border-sky-500/30 bg-sky-500/10 text-sky-400";
+    case "pro":
+      return "border-violet-500/30 bg-violet-500/10 text-violet-400";
+    case "max":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+    default:
+      return "border-border bg-muted text-muted-foreground";
+  }
 }
 
 function initialsFor(row: AdminUserLookupRow): string {
@@ -119,6 +141,7 @@ export function AdminUserLookupSection() {
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
+                <TableHead>Plan</TableHead>
                 <TableHead>Connections</TableHead>
                 <TableHead className="text-right">Sessions</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
@@ -156,6 +179,19 @@ export function AdminUserLookupSection() {
                         </span>
                       </div>
                     </Link>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-0.5">
+                      <Badge
+                        variant="outline"
+                        className={`w-fit text-[10px] ${planBadgeClassName(row.plan)}`}
+                      >
+                        {getPlanDefinition(row.plan).name}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatUsdCents(row.creditBalanceCents)} balance
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1.5">

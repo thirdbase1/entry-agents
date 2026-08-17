@@ -106,6 +106,36 @@ export async function creditAccount(
   return applyLedgerEntry(userId, amountCents, type, opts);
 }
 
+/**
+ * Admin-only manual decrease -- e.g. clawing back unused credit when an
+ * admin downgrades a comped account. `amountCents` must be positive (the
+ * function negates it internally) and is capped at the user's current
+ * balance so this can never push a user into negative credit -- if the
+ * requested amount is more than they have, it just zeroes the balance.
+ * Returns the resulting balance.
+ */
+export async function debitAccountAdmin(
+  userId: string,
+  amountCents: number,
+  opts: LedgerEntryOptions = {},
+): Promise<number> {
+  if (amountCents <= 0) {
+    throw new Error("debitAccountAdmin: amountCents must be positive");
+  }
+
+  const state = await getUserBillingState(userId);
+  if (!state) {
+    throw new Error(`debitAccountAdmin: user ${userId} not found`);
+  }
+
+  const cappedAmountCents = Math.min(amountCents, state.creditBalanceCents);
+  if (cappedAmountCents <= 0) {
+    return state.creditBalanceCents;
+  }
+
+  return applyLedgerEntry(userId, -cappedAmountCents, "admin_adjustment", opts);
+}
+
 /** Debits usage cost from a user's balance. Never blocks/throws on insufficient balance -- the balance is simply allowed to go negative; enforcement (hard-block for free, soft-cutoff for paid) happens at turn-start, not here. */
 export async function debitUsage(
   userId: string,

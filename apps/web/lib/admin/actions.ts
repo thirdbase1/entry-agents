@@ -49,6 +49,7 @@ import {
 } from "@/lib/db/model-overrides";
 import {
   creditAccount,
+  debitAccountAdmin,
   getUserBillingState,
 } from "@/lib/billing/credit-ledger";
 import { getPlanDefinition, isPlanId, type PlanId } from "@/lib/billing/plans";
@@ -525,6 +526,7 @@ export async function setAdminUserPlan(
   userId: string,
   planId: string,
   grantCreditCents: number,
+  debitCentsOnDowngrade = 0,
 ): Promise<{ plan: PlanId; creditBalanceCents: number }> {
   const adminUserId = await requireAdmin();
 
@@ -539,10 +541,17 @@ export async function setAdminUserPlan(
 
   const newPlanDef = getPlanDefinition(planId);
   const oldPlanDef = getPlanDefinition(before.plan);
+  const isDowngrade = newPlanDef.priceUsdCents < oldPlanDef.priceUsdCents;
 
-  if (grantCreditCents > 0 && newPlanDef.priceUsdCents < oldPlanDef.priceUsdCents) {
+  if (grantCreditCents > 0 && isDowngrade) {
     throw new Error(
       "Refusing to grant credit on a downgrade -- pass grantCreditCents=0 if you only want to change the plan tier.",
+    );
+  }
+
+  if (debitCentsOnDowngrade > 0 && !isDowngrade) {
+    throw new Error(
+      "debitCentsOnDowngrade only applies when moving to a lower-priced plan -- pass 0 for upgrades/lateral changes.",
     );
   }
 
@@ -558,6 +567,10 @@ export async function setAdminUserPlan(
         description: `Admin ${adminUserId} moved user to ${newPlanDef.name} plan and granted $${(grantCreditCents / 100).toFixed(2)} credit`,
       },
     );
+  } else if (debitCentsOnDowngrade > 0) {
+    creditBalanceCents = await debitAccountAdmin(userId, debitCentsOnDowngrade, {
+      description: `Admin ${adminUserId} downgraded user to ${newPlanDef.name} plan and decreased balance by $${(debitCentsOnDowngrade / 100).toFixed(2)}`,
+    });
   }
 
   return { plan: planId as PlanId, creditBalanceCents };

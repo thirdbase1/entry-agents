@@ -151,18 +151,32 @@ function PlanManagementCard({
     (profile.plan as PlanId) ?? "free",
   );
   const [grantCredit, setGrantCredit] = useState(true);
+  const [decreaseBalance, setDecreaseBalance] = useState(false);
+  const [decreaseAmountInput, setDecreaseAmountInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedPlan((profile.plan as PlanId) ?? "free");
+    setDecreaseBalance(false);
+    setDecreaseAmountInput("");
   }, [profile.plan]);
 
   const currentPlanDef = PLAN_CATALOG[(profile.plan as PlanId) ?? "free"];
   const targetPlanDef = PLAN_CATALOG[selectedPlan];
   const isUpgradeInPrice =
     targetPlanDef.priceUsdCents > currentPlanDef.priceUsdCents;
+  const isDowngradeInPrice =
+    targetPlanDef.priceUsdCents < currentPlanDef.priceUsdCents;
   const isChanged = selectedPlan !== profile.plan;
+
+  const parsedDecreaseAmountCents = Math.round(
+    (Number.parseFloat(decreaseAmountInput) || 0) * 100,
+  );
+  const isDecreaseAmountValid =
+    !decreaseBalance ||
+    (parsedDecreaseAmountCents > 0 &&
+      Number.isFinite(parsedDecreaseAmountCents));
 
   async function handleSave() {
     setSaving(true);
@@ -172,8 +186,26 @@ function PlanManagementCard({
         isChanged && grantCredit && isUpgradeInPrice
           ? targetPlanDef.creditGrantCents
           : 0;
-      const result = await setAdminUserPlan(userId, selectedPlan, grantCents);
+      const debitCents =
+        isChanged && isDowngradeInPrice && decreaseBalance
+          ? parsedDecreaseAmountCents
+          : 0;
+
+      if (debitCents > 0 && !isDecreaseAmountValid) {
+        setSaveError("Enter a valid amount to decrease.");
+        setSaving(false);
+        return;
+      }
+
+      const result = await setAdminUserPlan(
+        userId,
+        selectedPlan,
+        grantCents,
+        debitCents,
+      );
       onChanged(result);
+      setDecreaseBalance(false);
+      setDecreaseAmountInput("");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to update plan.");
     } finally {
@@ -221,7 +253,10 @@ function PlanManagementCard({
             </Select>
           </div>
 
-          <Button onClick={handleSave} disabled={!isChanged || saving}>
+          <Button
+            onClick={handleSave}
+            disabled={!isChanged || saving || !isDecreaseAmountValid}
+          >
             {saving ? (
               <Loader2 className="mr-1.5 size-3.5 animate-spin" />
             ) : null}
@@ -243,9 +278,50 @@ function PlanManagementCard({
           </label>
         )}
 
-        {isChanged && !isUpgradeInPrice && (
+        {isChanged && isDowngradeInPrice && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={decreaseBalance}
+                onChange={(e) => setDecreaseBalance(e.target.checked)}
+                className="size-3.5"
+              />
+              Also decrease this user&apos;s balance -- e.g. clawing back
+              unused credit on a downgrade.
+            </label>
+
+            {decreaseBalance && (
+              <div className="flex items-center gap-2 pl-6">
+                <span className="text-sm text-muted-foreground">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={decreaseAmountInput}
+                  onChange={(e) => setDecreaseAmountInput(e.target.value)}
+                  placeholder="0.00"
+                  className="w-24 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                />
+                <span className="text-xs text-muted-foreground">
+                  Amount to decrease (capped at their current balance of{" "}
+                  {formatUsdCents(profile.creditBalanceCents)})
+                </span>
+              </div>
+            )}
+
+            {decreaseBalance && !isDecreaseAmountValid && (
+              <p className="pl-6 text-xs text-destructive">
+                Enter an amount greater than $0.
+              </p>
+            )}
+          </div>
+        )}
+
+        {isChanged && !isUpgradeInPrice && !isDowngradeInPrice && (
           <p className="text-xs text-muted-foreground">
-            Downgrading changes model access only -- existing credit
+            Lateral plan change -- model access changes only, credit
             balance is left untouched.
           </p>
         )}

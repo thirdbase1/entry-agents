@@ -49,6 +49,42 @@ function isMissingRemoteRef(result: ExecResult): boolean {
   return output.includes("couldn't find remote ref");
 }
 
+/**
+ * Ensures the sandbox's `origin` remote is configured, re-adding it from
+ * `remoteUrl` if missing.
+ *
+ * Root-caused a real production failure (2026-08-17): a resumed/restored
+ * sandbox can come back with a `.git` directory that has no `origin`
+ * remote configured at all -- e.g. a hibernate/restore snapshot taken
+ * before the repo was linked, or any other path that leaves `.git`
+ * without its remote config. `git fetch origin` then fails immediately
+ * with the confusing "'origin' does not appear to be a git repository"
+ * error, permanently blocking every future commit for that session even
+ * though the actual repo and credentials are fine. Self-healing here
+ * closes that failure mode instead of surfacing a dead-end error to the
+ * user every time they try to commit.
+ */
+async function ensureOriginRemote(
+  sandbox: Sandbox,
+  remoteUrl: string,
+): Promise<void> {
+  const getUrlResult = await exec(sandbox, "git remote get-url origin", 10000);
+  if (getUrlResult.success && getUrlResult.stdout.trim().length > 0) {
+    return;
+  }
+
+  const addResult = await exec(
+    sandbox,
+    `git remote add origin ${shellQuote(remoteUrl)}`,
+    10000,
+  );
+  if (!addResult.success) {
+    throw new Error(
+      `Failed to configure missing origin remote: ${commandOutput(addResult)}`,
+    );
+  }
+}
+
 async function fetchRemoteBranch(
   sandbox: Sandbox,
   branch: string,
@@ -384,10 +420,13 @@ export async function getFileModes(
 export async function syncToRemote(
   sandbox: Sandbox,
   branch: string,
+  remoteUrl: string,
 ): Promise<void> {
   if (!isSafeBranchName(branch)) {
     throw new Error("Invalid branch name");
   }
+
+  await ensureOriginRemote(sandbox, remoteUrl);
 
   const fetchStatus = await fetchRemoteBranch(sandbox, branch);
   if (fetchStatus === "missing") {
@@ -405,10 +444,13 @@ export async function syncToRemote(
 export async function syncToRemotePreservingChanges(
   sandbox: Sandbox,
   branch: string,
+  remoteUrl: string,
 ): Promise<void> {
   if (!isSafeBranchName(branch)) {
     throw new Error("Invalid branch name");
   }
+
+  await ensureOriginRemote(sandbox, remoteUrl);
 
   const fetchStatus = await fetchRemoteBranch(sandbox, branch);
   if (fetchStatus === "missing") {

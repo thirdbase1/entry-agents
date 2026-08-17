@@ -127,7 +127,11 @@ export async function performAutoCommit(
     });
     try {
       await withTemporaryGitHubAuth(sandbox, syncToken.token, () =>
-        syncToRemotePreservingChanges(sandbox, branch),
+        syncToRemotePreservingChanges(
+          sandbox,
+          branch,
+          `https://github.com/${repoOwner}/${repoName}.git`,
+        ),
       );
     } finally {
       await revokeInstallationToken(syncToken.token);
@@ -224,7 +228,11 @@ export async function performAutoCommit(
     });
     try {
       await withTemporaryGitHubAuth(sandbox, syncToken.token, () =>
-        syncToRemote(sandbox, branch),
+        syncToRemote(
+          sandbox,
+          branch,
+          `https://github.com/${repoOwner}/${repoName}.git`,
+        ),
       );
     } finally {
       await revokeInstallationToken(syncToken.token);

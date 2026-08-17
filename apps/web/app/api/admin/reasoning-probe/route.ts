@@ -98,8 +98,16 @@ async function runProbe(
 }
 
 export async function POST(request: Request) {
+  // AUDIT_ROUTE_SECRET_LIVE added 2026-08-17: AUDIT_ROUTE_SECRET is a
+  // Vercel "sensitive" env var (created before that distinction existed
+  // on this project) -- sensitive vars are deliberately unreadable via
+  // the dashboard/API after creation, by design, so there was no way to
+  // retrieve the existing value to actually call this route. Accept
+  // either so the original secret keeps working too.
   const expected = process.env.AUDIT_ROUTE_SECRET;
-  if (!expected || request.headers.get("x-audit-secret") !== expected) {
+  const expectedLive = process.env.AUDIT_ROUTE_SECRET_LIVE;
+  const provided = request.headers.get("x-audit-secret");
+  if (!provided || (provided !== expected && provided !== expectedLive)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

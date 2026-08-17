@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { UserPreferencesData } from "@/lib/db/user-preferences";
+import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
   filterModelsForSession,
   sanitizeSelectedModelIdForSession,
@@ -61,7 +62,7 @@ describe("model access gating", () => {
       requestUrl,
     );
 
-    expect(result).toBe("deepseek-v4-flash");
+    expect(result).toBe(APP_DEFAULT_MODEL_ID);
   });
 
   test("sanitizes managed trial preferences without mutating the database shape", () => {
@@ -72,8 +73,8 @@ describe("model access gating", () => {
     );
 
     expect(result).toMatchObject({
-      defaultModelId: "deepseek-v4-flash",
-      defaultSubagentModelId: "deepseek-v4-flash",
+      defaultModelId: APP_DEFAULT_MODEL_ID,
+      defaultSubagentModelId: APP_DEFAULT_MODEL_ID,
       enabledModelIds: ["openai/gpt-5"],
     });
   });

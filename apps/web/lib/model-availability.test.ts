@@ -7,13 +7,8 @@ mock.module("@/lib/db/model-overrides", () => ({
   getDisabledModelIdSet: overrideSpy,
 }));
 
-const {
-  filterDisabledModels,
-  isModelDisabled,
-  isModelHardBlocked,
-  resolveAvailableModelId,
-} = await import("./model-availability");
-const { APP_DEFAULT_MODEL_ID } = await import("./models");
+const { filterDisabledModels, isModelDisabled, isModelHardBlocked } =
+  await import("./model-availability");
 
 describe("model availability", () => {
   test("disables OpenAI GPT pro models (hard block, code-level)", () => {
@@ -62,14 +57,8 @@ describe("model availability", () => {
     ]);
   });
 
-  test("resolves disabled model selections to the app default", async () => {
-    overrideSpy.mockImplementationOnce(async () => new Set<string>());
-    expect(await resolveAvailableModelId("openai/gpt-5.5-pro")).toBe(
-      APP_DEFAULT_MODEL_ID,
-    );
-    overrideSpy.mockImplementationOnce(async () => new Set<string>());
-    expect(await resolveAvailableModelId("openai/gpt-5.5")).toBe(
-      "openai/gpt-5.5",
-    );
-  });
+  // resolveAvailableModelId (silent-substitution helper) was removed
+  // 2026-08-17 -- disabled-model handling now lives entirely in
+  // resolveChatModelSelection, which throws a clear error instead of
+  // silently swapping in a different model. See that file's tests.
 });

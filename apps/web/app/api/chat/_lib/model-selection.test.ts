@@ -51,31 +51,19 @@ describe("resolveChatModelSelection", () => {
     });
   });
 
-  test("falls back to the default model and warns when the model is disabled", async () => {
-    const originalWarn = console.warn;
-    const warnings: unknown[][] = [];
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args);
-    };
-
-    try {
-      const selection = await resolveChatModelSelection({
+  // Changed 2026-08-17: silent substitution was removed entirely (owner
+  // instruction -- a user was invisibly moved off their selected model
+  // onto a disabled default and just saw a generic error). Disabled
+  // models must now throw a clear, specific error instead of resolving
+  // to APP_DEFAULT_MODEL_ID.
+  test("throws a clear error instead of silently falling back when the model is hard-blocked", async () => {
+    await expect(
+      resolveChatModelSelection({
         selectedModelId: "kimi-k3",
         reasoningEffort: null,
         missingModelLabel: "Selected model",
-      });
-
-      expect(selection).toEqual({
-        id: APP_DEFAULT_MODEL_ID,
-      });
-      expect(warnings).toEqual([
-        [
-          'Selected model "kimi-k3" resolves to disabled model. Falling back to default model.',
-        ],
-      ]);
-    } finally {
-      console.warn = originalWarn;
-    }
+      }),
+    ).rejects.toThrow(/kimi-k3.*currently unavailable/);
   });
 
   test("uses the default model when no model id is provided", async () => {
@@ -90,20 +78,18 @@ describe("resolveChatModelSelection", () => {
     });
   });
 
-  test("respects an admin-disabled model from the DB override table", async () => {
+  test("throws a clear error for an admin-disabled model from the DB override table", async () => {
     const { getDisabledModelIdSet } = await import("@/lib/db/model-overrides");
     (
       getDisabledModelIdSet as unknown as ReturnType<typeof mock>
     ).mockImplementationOnce(async () => new Set(["deepseek-v4-pro"]));
 
-    const selection = await resolveChatModelSelection({
-      selectedModelId: "deepseek-v4-pro",
-      reasoningEffort: null,
-      missingModelLabel: "Selected model",
-    });
-
-    expect(selection).toEqual({
-      id: APP_DEFAULT_MODEL_ID,
-    });
+    await expect(
+      resolveChatModelSelection({
+        selectedModelId: "deepseek-v4-pro",
+        reasoningEffort: null,
+        missingModelLabel: "Selected model",
+      }),
+    ).rejects.toThrow(/deepseek-v4-pro.*currently unavailable/);
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "active_billing_run_claimed_at" timestamp;

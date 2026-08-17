@@ -39,6 +39,20 @@ export const users = pgTable("users", {
   billingCycleAnchor: timestamp("billing_cycle_anchor"),
   paystackCustomerCode: text("paystack_customer_code"),
   paystackSubscriptionCode: text("paystack_subscription_code"),
+  // Per-user turn lock (billing correctness): holds the workflowRunId of
+  // whichever chat turn is currently allowed to spend this user's
+  // balance. Prevents two concurrent turns (e.g. two open tabs/chats)
+  // from each reading the same starting balance and both being allowed
+  // to spend against it before either notices -- see
+  // claimUserBillingTurn/releaseUserBillingTurn in credit-ledger.ts.
+  // Null means no turn currently holds the lock.
+  activeBillingRunId: text("active_billing_run_id"),
+  // When the current activeBillingRunId claim was taken. Used to let a
+  // new turn steal a stale lock (e.g. left behind by a crashed/orphaned
+  // workflow that never reached its cleanup) after
+  // BILLING_TURN_LOCK_STALE_MS -- see claimUserBillingTurn in
+  // credit-ledger.ts. Never left permanently stuck.
+  activeBillingRunClaimedAt: timestamp("active_billing_run_claimed_at"),
 });
 
 // oauth provider accounts

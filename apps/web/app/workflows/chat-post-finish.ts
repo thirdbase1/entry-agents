@@ -25,6 +25,7 @@ import {
   type WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
 import { recordUsage } from "@/lib/db/usage";
+import { releaseUserBillingTurn } from "@/lib/billing/credit-ledger";
 
 const cachedInputTokensFor = (usage: LanguageModelUsage) =>
   usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
@@ -263,6 +264,41 @@ export async function clearActiveStream(
       }
 
       await delay(ACTIVE_STREAM_CLEAR_RETRY_DELAY_MS);
+    }
+  }
+}
+
+const BILLING_TURN_RELEASE_MAX_ATTEMPTS = 3;
+const BILLING_TURN_RELEASE_RETRY_DELAY_MS = 50;
+
+/**
+ * Releases the per-user billing-turn lock (see claimUserBillingTurn in
+ * credit-ledger.ts) so a later turn for the same user isn't blocked.
+ * Mirrors clearActiveStream's retry-then-log-and-move-on pattern: never
+ * throws, since a stuck lock self-heals via the staleness fallback
+ * anyway -- this is just the fast path.
+ */
+export async function releaseUserBillingTurnStep(
+  userId: string,
+  workflowRunId: string,
+): Promise<void> {
+  "use step";
+
+  for (
+    let attempt = 1;
+    attempt <= BILLING_TURN_RELEASE_MAX_ATTEMPTS;
+    attempt++
+  ) {
+    try {
+      await releaseUserBillingTurn(userId, workflowRunId);
+      return;
+    } catch (error) {
+      if (attempt === BILLING_TURN_RELEASE_MAX_ATTEMPTS) {
+        console.error("[workflow] Failed to release billing turn lock:", error);
+        return;
+      }
+
+      await delay(BILLING_TURN_RELEASE_RETRY_DELAY_MS);
     }
   }
 }

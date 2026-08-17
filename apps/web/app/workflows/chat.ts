@@ -32,6 +32,7 @@ import {
   claimActiveStream,
   closeStream,
   clearActiveStream,
+  releaseUserBillingTurnStep,
   hasAutoCommitChangesStep,
   persistAssistantMessage,
   persistAssistantMessageWithToolResults,
@@ -267,6 +268,7 @@ async function resolveChatModelRuntime(params: {
   chatId: string;
   requestUrl: string;
   authSession: AuthSessionContext;
+  workflowRunId: string;
 }): Promise<ChatModelRuntime> {
   "use step";
 
@@ -363,12 +365,31 @@ async function resolveChatModelRuntime(params: {
   // finishes (see the old chat-post-finish.ts behavior this replaces).
   let startingBalanceCents = 0;
   if (!isAdminUser) {
-    const { getUserBillingState } = await import(
+    const { getUserBillingState, claimUserBillingTurn } = await import(
       "@/lib/billing/credit-ledger"
     );
     const { getPlanDefinition, FREE_PLAN_MODEL_ID } = await import(
       "@/lib/billing/plans"
     );
+
+    // Claim the per-user billing-turn lock BEFORE reading the balance
+    // that this turn will spend against. Without this, two concurrent
+    // turns for the same user (e.g. two open chat tabs) could each read
+    // the same starting balance and each be allowed to spend up to it
+    // before either one's own in-memory counter (see runAgentStep)
+    // notices -- a real double-spend window despite the ledger writes
+    // themselves being atomic. See claimUserBillingTurn's docstring for
+    // the staleness fallback that keeps a crashed workflow from
+    // permanently locking a user out.
+    const claimedTurn = await claimUserBillingTurn(
+      params.userId,
+      params.workflowRunId,
+    );
+    if (!claimedTurn) {
+      throw toSafeChatError(
+        "You already have another chat generating a response -- wait for it to finish, then try again.",
+      );
+    }
 
     const billingState = await getUserBillingState(params.userId);
     const plan = getPlanDefinition(billingState?.plan);
@@ -1145,6 +1166,7 @@ export async function runAgentWorkflow(options: Options) {
     chatId: options.chatId,
     requestUrl: options.requestUrl,
     authSession: options.authSession,
+    workflowRunId,
   });
   const runtimePromise = resolveChatSandboxRuntime({
     userId: options.userId,
@@ -1588,6 +1610,7 @@ export async function runAgentWorkflow(options: Options) {
 
     await Promise.all([
       clearActiveStream(options.chatId, workflowRunId),
+      releaseUserBillingTurnStep(options.userId, workflowRunId),
       sendFinish(writable).then(() => closeStream(writable)),
       ...(sandboxState && shouldRefreshCachedDiff
         ? [refreshDiffCache(options.sessionId, sandboxState)]
@@ -1620,6 +1643,7 @@ export async function runAgentWorkflow(options: Options) {
       if (!streamClosed) {
         await Promise.all([
           clearActiveStream(options.chatId, workflowRunId),
+          releaseUserBillingTurnStep(options.userId, workflowRunId),
           sendFinish(writable).then(() => closeStream(writable)),
         ]);
       }

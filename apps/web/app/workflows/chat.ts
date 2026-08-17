@@ -92,6 +92,15 @@ type ChatModelRuntime = {
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
+  /** This turn's credit balance (cents) at the moment the turn started --
+   * threaded into runAgentStep so it can decrement it in real time after
+   * every model step and abort mid-turn on exhaustion. See the block
+   * above that computes it for why admins get a value too. */
+  startingBalanceCents: number;
+  /** True for non-admins -- controls whether runAgentStep is allowed to
+   * abort the stream when the running balance hits zero. Admins are
+   * still billed (see runAgentStep) but never blocked. */
+  enforceCreditBlock: boolean;
 };
 
 type Writable = WritableStream<UIMessageChunk>;
@@ -338,35 +347,54 @@ async function resolveChatModelRuntime(params: {
   // Per-user plan gating (billing): Free plan is hard-restricted to
   // FREE_PLAN_MODEL_ID and hard-blocks once its trial credit is spent
   // (reusing the exact same free-tier-gate error marker/composer-lock UI
-  // as the admin kill-switch above). Paid plans (plus/pro/max) get every
-  // model, and never block on empty balance -- they're silently
-  // soft-cutoff downgraded to SOFT_CUTOFF_FALLBACK_MODEL_ID instead, per
-  // the owner's standing soft-cutoff instruction. Admins are exempt
-  // (checked above), same as the free-tier kill switch.
+  // as the admin kill-switch above). Soft-cutoff (silently downgrading a
+  // depleted paid account to a cheap fallback model) was REMOVED per
+  // owner instruction on 2026-08-17 -- every plan now hard-blocks the
+  // instant its balance hits zero instead of quietly swapping models.
+  // Admins are exempt from the block (checked above), same as the
+  // free-tier kill switch -- but their spend is still tracked (see
+  // startingBalanceCents below, threaded into runAgentStep for
+  // real-time per-step debiting during the turn).
+  //
+  // `startingBalanceCents` is fetched here (once per turn) and passed
+  // out so runAgentStep can decrement it after every model step and
+  // abort mid-turn the instant it goes to zero, instead of only
+  // discovering the overspend in one lump sum after the whole turn
+  // finishes (see the old chat-post-finish.ts behavior this replaces).
+  let startingBalanceCents = 0;
   if (!isAdminUser) {
     const { getUserBillingState } = await import(
       "@/lib/billing/credit-ledger"
     );
-    const {
-      getPlanDefinition,
-      FREE_PLAN_MODEL_ID,
-      SOFT_CUTOFF_FALLBACK_MODEL_ID,
-    } = await import("@/lib/billing/plans");
+    const { getPlanDefinition, FREE_PLAN_MODEL_ID } = await import(
+      "@/lib/billing/plans"
+    );
 
     const billingState = await getUserBillingState(params.userId);
     const plan = getPlanDefinition(billingState?.plan);
     const balanceCents = billingState?.creditBalanceCents ?? 0;
+    startingBalanceCents = balanceCents;
 
     if (plan.modelAccess === "luna-only") {
-      if (balanceCents <= 0) {
-        throw toSafeChatError(
-          "Free tier ended, upgrade your account to use Entry",
-        );
-      }
       selectedModelId = FREE_PLAN_MODEL_ID;
-    } else if (balanceCents <= 0) {
-      selectedModelId = SOFT_CUTOFF_FALLBACK_MODEL_ID;
     }
+
+    if (balanceCents <= 0) {
+      throw toSafeChatError(
+        plan.modelAccess === "luna-only"
+          ? "Free tier ended, upgrade your account to use Entry"
+          : "You're out of credit -- add more to keep chatting.",
+      );
+    }
+  } else {
+    // Admins are never blocked, but their usage is still billed (see
+    // runAgentStep) -- fetch their balance too so it stays accurate,
+    // just without any gating decision riding on it.
+    const { getUserBillingState } = await import(
+      "@/lib/billing/credit-ledger"
+    );
+    const billingState = await getUserBillingState(params.userId);
+    startingBalanceCents = billingState?.creditBalanceCents ?? 0;
   }
   const [mainModelSelection, subagentModelSelection] = await Promise.all([
     resolveChatModelSelection({
@@ -416,6 +444,8 @@ async function resolveChatModelRuntime(params: {
     },
     autoCommitEnabled,
     autoCreatePrEnabled,
+    startingBalanceCents,
+    enforceCreditBlock: !isAdminUser,
   };
 }
 
@@ -1256,6 +1286,8 @@ export async function runAgentWorkflow(options: Options) {
       ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
+    let remainingBalanceCents = modelRuntime.startingBalanceCents;
+    let creditExhausted = false;
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
       metadata: withModelMetadata(
@@ -1333,6 +1365,8 @@ export async function runAgentWorkflow(options: Options) {
           stepAgentOptions,
           step + 1,
           modelCostCatalog,
+          remainingBalanceCents,
+          modelRuntime.enforceCreditBlock,
         );
       } catch (error) {
         if (isStepTimingError(error)) {
@@ -1351,11 +1385,21 @@ export async function runAgentWorkflow(options: Options) {
       modelMessages.push(...result.responseMessages);
       wasAborted = wasAborted || result.stepWasAborted;
       finalFinishReason = result.finishReason;
+      remainingBalanceCents = result.remainingBalanceCents;
+      creditExhausted = creditExhausted || result.creditExhausted;
 
       if (result.stepUsage) {
         totalUsage = totalUsage
           ? addLanguageModelUsage(totalUsage, result.stepUsage)
           : result.stepUsage;
+      }
+
+      if (creditExhausted) {
+        // Real-time billing (see runAgentStep) already aborted the
+        // in-flight model call the instant the running balance hit
+        // zero -- stop the outer step loop too instead of starting
+        // another (now-unaffordable) step.
+        break;
       }
 
       const shouldContinue =
@@ -1384,6 +1428,21 @@ export async function runAgentWorkflow(options: Options) {
         metadata: {
           ...pendingAssistantResponse.metadata,
           totalMessageUsage: totalUsage,
+        },
+      };
+    }
+
+    if (creditExhausted) {
+      // Surfaced so the client can render a dedicated "you're out of
+      // credit" notice (see session-chat-content.tsx) distinct from the
+      // generic "The request was stopped." abort text -- real-time
+      // billing in runAgentStep already stopped generation the instant
+      // the balance hit zero.
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        metadata: {
+          ...pendingAssistantResponse.metadata,
+          creditExhausted: true,
         },
       };
     }
@@ -1614,6 +1673,8 @@ const runAgentStep = async (
   agentOptions: WorkflowAgentOptions,
   stepNumber: number,
   modelCostCatalog: AvailableModel[],
+  startingBalanceCents: number,
+  enforceCreditBlock: boolean,
 ) => {
   "use step";
 
@@ -1622,6 +1683,21 @@ const runAgentStep = async (
 
   const abortController = new AbortController();
   const stopMonitor = startStopMonitor(workflowRunId, abortController, userId);
+
+  // Real-time per-step billing: debited immediately after each model
+  // step finishes (see the messageMetadata "finish-step" handler below)
+  // instead of only once as a lump sum at the very end of the whole
+  // turn (the old chat-post-finish.ts behavior). `remainingBalanceCents`
+  // is a plain in-memory counter mutated synchronously inside the
+  // "finish-step" callback -- messageMetadata's type signature is sync
+  // (no Promise support), so the abort decision can't depend on an
+  // awaited DB round-trip without risking it firing a step late. The
+  // actual ledger writes are queued in `pendingDebits` and flushed with
+  // Promise.all before this step function returns, so they're still
+  // durably committed before any workflow checkpoint.
+  let remainingBalanceCents = startingBalanceCents;
+  let creditExhausted = false;
+  const pendingDebits: Promise<void>[] = [];
 
   try {
     let responseMessage: WebAgentUIMessage | undefined;
@@ -1769,6 +1845,43 @@ const runAgentStep = async (
           if (stepCost !== undefined) {
             lastStepCost = stepCost;
             totalMessageCost = (totalMessageCost ?? 0) + stepCost;
+
+            const stepCostCents = Math.round(stepCost * 100);
+            if (stepCostCents > 0) {
+              // Fire the ledger write now (queued, flushed before this
+              // step function returns) -- see the pendingDebits comment
+              // above for why this can't simply be awaited right here.
+              pendingDebits.push(
+                (async () => {
+                  const { debitUsage } = await import(
+                    "@/lib/billing/credit-ledger"
+                  );
+                  try {
+                    await debitUsage(userId, stepCostCents, {
+                      modelId,
+                      description: `Usage: ${modelId}`,
+                    });
+                  } catch (error) {
+                    console.error(
+                      "[workflow] Failed to debit credit ledger in real time:",
+                      error,
+                    );
+                  }
+                })(),
+              );
+
+              if (enforceCreditBlock) {
+                remainingBalanceCents -= stepCostCents;
+                if (remainingBalanceCents <= 0 && !creditExhausted) {
+                  creditExhausted = true;
+                  // Stop the model mid-turn the instant the balance is
+                  // spent -- the outer step loop (runAgentWorkflow) also
+                  // checks `creditExhausted` on the returned result so it
+                  // never starts another (now-unaffordable) step.
+                  abortController.abort();
+                }
+              }
+            }
           }
           stepFinishReasons = [
             ...stepFinishReasons,
@@ -1962,6 +2075,8 @@ const runAgentStep = async (
       stepUsage,
       stepCost: stepsCost,
       stepWasAborted: false,
+      remainingBalanceCents,
+      creditExhausted,
       stepTiming: buildStepTiming(
         stepNumber,
         stepStartedAt,
@@ -1983,6 +2098,8 @@ const runAgentStep = async (
         stepUsage: undefined,
         stepCost: undefined,
         stepWasAborted: true,
+        remainingBalanceCents,
+        creditExhausted,
         stepTiming: buildStepTiming(
           stepNumber,
           stepStartedAt,
@@ -2005,6 +2122,11 @@ const runAgentStep = async (
     });
     throw errorWithStepTiming;
   } finally {
+    // Flush queued real-time ledger debits before this step function
+    // returns/checkpoints, regardless of which branch above ran --
+    // otherwise a workflow suspend right after this call could lose an
+    // in-flight (unawaited) debitUsage write.
+    await Promise.all(pendingDebits);
     stopMonitor.stop();
     await stopMonitor.done;
   }

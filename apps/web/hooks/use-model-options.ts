@@ -15,9 +15,27 @@ export interface FreeTierGateStatus {
   reason: string | null;
 }
 
+/** Mirrors CreditGateStatus from app/api/models/route.ts -- the user's
+ * own account balance hit zero (free trial spent, or a paid plan's
+ * balance ran out mid-cycle). Distinct from FreeTierGateStatus, which is
+ * the admin-controlled capacity kill-switch, not a per-user thing. */
+export interface CreditGateStatus {
+  blocked: boolean;
+  reason: string | null;
+  kind: "free" | "paid" | null;
+}
+
+export interface UserPlanInfo {
+  id: string;
+  modelAccess: "luna-only" | "all";
+}
+
 interface ModelsResponse {
   models: AvailableModel[];
   freeTierGate?: FreeTierGateStatus | null;
+  creditGate?: CreditGateStatus | null;
+  userPlan?: UserPlanInfo | null;
+  freePlanModelId?: string;
 }
 
 interface UseModelOptionsConfig {
@@ -55,6 +73,11 @@ export function useModelOptions(config: UseModelOptionsConfig = {}) {
     // in resolveChatModelRuntime/startStopMonitor. Defaults to null while
     // loading so the composer never flashes a false-positive block.
     freeTierGate: modelsData?.freeTierGate ?? null,
+    // Same deal: UX-only. Real enforcement is resolveChatModelRuntime's
+    // hard balance<=0 throw plus runAgentStep's real-time mid-turn abort.
+    creditGate: modelsData?.creditGate ?? null,
+    userPlan: modelsData?.userPlan ?? null,
+    freePlanModelId: modelsData?.freePlanModelId ?? "gpt-5.6-luna",
     loading:
       initialModelOptions.length === 0 &&
       !hasCompleteFetchedData &&

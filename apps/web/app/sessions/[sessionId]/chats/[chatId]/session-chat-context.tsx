@@ -26,6 +26,8 @@ import { checkPullRequest } from "@/lib/github/queries/pr";
 import {
   useModelOptions,
   type FreeTierGateStatus,
+  type CreditGateStatus,
+  type UserPlanInfo,
 } from "@/hooks/use-model-options";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { useSessionDiff } from "@/hooks/use-session-diff";
@@ -218,6 +220,17 @@ type SessionChatContextValue = {
    * the gate is on / the user is an admin. UX-only signal -- real
    * enforcement is server-side. */
   freeTierGate: FreeTierGateStatus | null;
+  /** This user's own credit balance hit zero (free trial spent, or a
+   * paid plan ran out mid-cycle), or null if they still have balance /
+   * are an admin. UX-only signal, distinct from freeTierGate above --
+   * real enforcement is resolveChatModelRuntime + runAgentStep. */
+  creditGate: CreditGateStatus | null;
+  /** This user's plan (for gating the model picker to Luna-only on
+   * Free), or null while loading / for admins. */
+  userPlan: UserPlanInfo | null;
+  /** The one model ID Free-plan users can still pick (GPT-5.6 Luna) --
+   * used to know which option in the picker should NOT render locked. */
+  freePlanModelId: string;
 };
 
 type SessionChatRuntimeContextValue = Pick<
@@ -287,6 +300,9 @@ type SessionChatMetadataContextValue = Pick<
   | "modelOptions"
   | "modelOptionsLoading"
   | "freeTierGate"
+  | "creditGate"
+  | "userPlan"
+  | "freePlanModelId"
 >;
 
 const SessionChatRuntimeContext = createContext<
@@ -337,6 +353,9 @@ export function SessionChatProvider({
     modelOptions: allModelOptions,
     loading: modelOptionsLoadingFromApi,
     freeTierGate,
+    creditGate,
+    userPlan,
+    freePlanModelId,
   } = useModelOptions({
     initialModelOptions,
   });
@@ -1235,6 +1254,9 @@ export function SessionChatProvider({
       modelOptions,
       modelOptionsLoading,
       freeTierGate,
+      creditGate,
+      userPlan,
+      freePlanModelId,
     }),
     [
       sessionRecord,
@@ -1266,6 +1288,9 @@ export function SessionChatProvider({
       modelOptions,
       modelOptionsLoading,
       freeTierGate,
+      creditGate,
+      userPlan,
+      freePlanModelId,
     ],
   );
 

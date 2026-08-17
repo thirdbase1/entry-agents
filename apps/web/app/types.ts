@@ -55,6 +55,14 @@ export type WebAgentMessageMetadata = {
    * it were a real assistant answer.
    */
   providerQuotaExhausted?: boolean;
+  /**
+   * True when this turn was cut short mid-generation because the user's
+   * credit balance hit zero (real-time per-step billing in
+   * runAgentStep). Distinct from providerQuotaExhausted -- this is the
+   * user's own account balance, not the upstream provider's. Drives the
+   * "you're out of credit" notice in session-chat-content.tsx.
+   */
+  creditExhausted?: boolean;
 };
 
 export type WebAgentGitDataStatus = "pending" | "success" | "error" | "skipped";

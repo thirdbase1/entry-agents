@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
@@ -52,7 +51,11 @@ const PLAN_STYLES: Record<string, { badge: string }> = {
  * new-session button). Just the number, in a small rounded pill using
  * the repo's own muted/border/foreground tokens -- no progress bar, no
  * plan name (that's next to the username, see SidebarPlanBadge below).
- * Still links to /billing/plans as the upgrade/top-up entry point.
+ * Deliberately NOT a link to /billing/plans (owner feedback 2026-08-17:
+ * clicking the balance shouldn't jump straight to the plans page) --
+ * it's just a read-only glance at your current balance. The plan name
+ * next to the username (SidebarPlanBadge below) and the billing page
+ * reachable from settings remain the actual upgrade entry points.
  */
 export function SidebarBalancePill() {
   const { data, isLoading } = useSWR<BillingMeResponse>(
@@ -68,12 +71,12 @@ export function SidebarBalancePill() {
   }
 
   return (
-    <Link
-      href="/billing/plans"
-      className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground transition-colors hover:bg-muted/70"
+    <div
+      title="Current credit balance"
+      className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground"
     >
       {formatUsd(data.creditBalanceCents)}
-    </Link>
+    </div>
   );
 }
 

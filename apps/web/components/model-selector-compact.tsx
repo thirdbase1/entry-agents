@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckIcon, ChevronDown } from "lucide-react";
+import { CheckIcon, ChevronDown, Lock } from "lucide-react";
 import { type ModelOption, groupByProvider } from "@/lib/model-options";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,17 @@ interface ModelSelectorCompactProps {
   onChange: (modelId: string) => void;
   disabled?: boolean;
   onCloseAutoFocus?: () => void;
+  /** True when the signed-in user is on the Free plan (Luna-only access)
+   * -- every model other than `freePlanModelId` renders locked with an
+   * upgrade prompt instead of being selectable. Omit/false for every
+   * other plan, where the picker behaves exactly as before. */
+  isFreeTierLocked?: boolean;
+  /** The one model ID Free-tier users can still pick (Luna) -- required
+   * when isFreeTierLocked is true so that model doesn't render locked. */
+  freePlanModelId?: string;
+  /** Called instead of onChange when a Free-tier user clicks a locked
+   * (non-Luna) model -- typically routes to /billing/plans. */
+  onUpgradeRequired?: () => void;
 }
 
 export function ModelSelectorCompact({
@@ -37,6 +48,9 @@ export function ModelSelectorCompact({
   onChange,
   disabled = false,
   onCloseAutoFocus,
+  isFreeTierLocked = false,
+  freePlanModelId,
+  onUpgradeRequired,
 }: ModelSelectorCompactProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -153,33 +167,56 @@ export function ModelSelectorCompact({
                 key={group.provider}
                 heading={getProviderDisplayName(group.provider)}
               >
-                {group.options.map((option) => (
-                  <CommandItem
-                    key={option.id}
-                    value={`${option.label} ${option.id}`}
-                    onSelect={() => handleSelect(option.id)}
-                    className="flex items-center"
-                  >
-                    <ProviderIcon
-                      provider={option.provider}
-                      className="mr-1.5 size-3.5 shrink-0 opacity-70"
-                    />
-                    <span className="min-w-0 truncate">
-                      {option.shortLabel}
-                    </span>
-                    {option.id === APP_DEFAULT_MODEL_ID && (
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        default
-                      </span>
-                    )}
-                    <CheckIcon
+                {group.options.map((option) => {
+                  const isLocked =
+                    isFreeTierLocked && option.id !== freePlanModelId;
+                  return (
+                    <CommandItem
+                      key={option.id}
+                      value={`${option.label} ${option.id}`}
+                      onSelect={() => {
+                        if (isLocked) {
+                          setOpen(false);
+                          onUpgradeRequired?.();
+                          return;
+                        }
+                        handleSelect(option.id);
+                      }}
                       className={cn(
-                        "ml-auto size-4 shrink-0",
-                        value === option.id ? "opacity-100" : "opacity-0",
+                        "flex items-center",
+                        isLocked && "opacity-60",
                       )}
-                    />
-                  </CommandItem>
-                ))}
+                    >
+                      <ProviderIcon
+                        provider={option.provider}
+                        className="mr-1.5 size-3.5 shrink-0 opacity-70"
+                      />
+                      <span className="min-w-0 truncate">
+                        {option.shortLabel}
+                      </span>
+                      {isLocked ? (
+                        <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                          <Lock className="size-3" />
+                          Upgrade
+                        </span>
+                      ) : (
+                        <>
+                          {option.id === APP_DEFAULT_MODEL_ID && (
+                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                              default
+                            </span>
+                          )}
+                          <CheckIcon
+                            className={cn(
+                              "ml-auto size-4 shrink-0",
+                              value === option.id ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                        </>
+                      )}
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             ))}
           </CommandList>

@@ -1303,7 +1303,18 @@ export function SessionChatContent({
     modelOptions,
     modelOptionsLoading,
     freeTierGate,
+    creditGate,
+    userPlan,
+    freePlanModelId,
   } = useSessionChatMetadataContext();
+  // Two independent block reasons can both apply: freeTierGate is the
+  // admin-controlled capacity kill-switch (all non-admin users, plan
+  // irrelevant); creditGate is this specific user's own balance hitting
+  // zero. freeTierGate takes priority when both are somehow true since
+  // it's the more urgent, platform-wide reason. Both share the exact
+  // same hard-lock overlay/composer treatment below -- only the message
+  // text differs.
+  const composerGate = freeTierGate ?? creditGate;
   const {
     chat,
     contextLimit,
@@ -4334,7 +4345,7 @@ export function SessionChatContent({
                           // When inline question is active, don't send a chat message
                           if (showInlineQuestion) return;
                           if (isArchived) return;
-                          if (freeTierGate) return;
+                          if (composerGate) return;
 
                           const built = buildComposerMessagePayload();
                           if (!built) return;
@@ -4382,8 +4393,8 @@ export function SessionChatContent({
                           isArchived={isArchived}
                           snapshotPending={isArchiveSnapshotPending}
                           router={router}
-                          freeTierBlocked={Boolean(freeTierGate)}
-                          freeTierBlockedReason={freeTierGate?.reason ?? null}
+                          freeTierBlocked={Boolean(composerGate)}
+                          freeTierBlockedReason={composerGate?.reason ?? null}
                         />
 
                         {/* Attachments preview */}
@@ -4415,8 +4426,9 @@ export function SessionChatContent({
                             ref={inputRef}
                             value={input}
                             placeholder={
-                              freeTierGate
-                                ? "Free tier ended — upgrade your account to use Entry"
+                              composerGate
+                                ? composerGate.reason ||
+                                  "Free tier ended — upgrade your account to use Entry"
                                 : showInlineQuestion
                                   ? inlineQuestion.placeholder
                                   : "Request changes or ask a question..."
@@ -4498,8 +4510,8 @@ export function SessionChatContent({
                                 addTextAttachment(pastedText);
                               }
                             }}
-                            disabled={isArchived || Boolean(freeTierGate)}
-                            className={`w-full resize-none overflow-y-auto bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none ${freeTierGate ? "pointer-events-none select-none blur-[2px]" : ""}`}
+                            disabled={isArchived || Boolean(composerGate)}
+                            className={`w-full resize-none overflow-y-auto bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none ${composerGate ? "pointer-events-none select-none blur-[2px]" : ""}`}
                             style={{ minHeight: "24px" }}
                           />
                         </div>
@@ -4556,6 +4568,13 @@ export function SessionChatContent({
                                   onChange={(modelId) => {
                                     void handleModelChange(modelId);
                                   }}
+                                  isFreeTierLocked={
+                                    userPlan?.modelAccess === "luna-only"
+                                  }
+                                  freePlanModelId={freePlanModelId}
+                                  onUpgradeRequired={() =>
+                                    router.push("/billing/plans")
+                                  }
                                 />
                               </div>
                             )}
@@ -4687,7 +4706,7 @@ export function SessionChatContent({
                                       }}
                                       disabled={
                                         isArchived ||
-                                        Boolean(freeTierGate) ||
+                                        Boolean(composerGate) ||
                                         isUpdatingModel ||
                                         // While a turn is in flight this
                                         // branch only renders when there's

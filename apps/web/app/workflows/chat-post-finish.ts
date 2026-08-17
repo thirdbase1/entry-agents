@@ -392,9 +392,14 @@ export async function recordWorkflowUsage(
       }
     }
 
-    // Load the live model/pricing catalog once for this turn's billing
-    // debit below -- dynamic import for the same Node/db-module bundling
-    // reason as every other lib import in this "use step" function.
+    // Load the live model/pricing catalog once -- still needed below to
+    // price SUBAGENT usage (debitForModelUsage). Main-turn usage is now
+    // billed in real time, per model step, inside runAgentStep (see that
+    // function's messageMetadata "finish-step" handler in chat.ts) --
+    // debiting it again here would double-charge, so that call was
+    // removed on 2026-08-17. recordUsage below is unrelated to the
+    // credit ledger (it's the separate usage_events analytics table) and
+    // still runs for both main and subagent usage as before.
     const { fetchAvailableLanguageModels } = await import(
       "@/lib/models-with-context"
     );
@@ -433,7 +438,8 @@ export async function recordWorkflowUsage(
       }
     }
 
-    // Record main agent usage
+    // Record main agent usage (analytics only -- billing already
+    // happened in real time during the stream, see comment above).
     if (totalUsage) {
       const mainUsage = {
         inputTokens: totalUsage.inputTokens ?? 0,
@@ -447,7 +453,6 @@ export async function recordWorkflowUsage(
         messages: [responseMessage],
         usage: mainUsage,
       });
-      await debitForModelUsage(modelId, mainUsage);
     }
 
     // Record subagent usage (aggregated by model)

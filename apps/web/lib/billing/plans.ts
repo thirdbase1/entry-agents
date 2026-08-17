@@ -15,9 +15,11 @@
  *   routes are enabled on the gateway). They differ only by price and
  *   how much credit each renewal grants -- a flat 2x bonus on every
  *   tier ("pay $X, get $2X to spend"). If a paid user's balance hits
- *   zero mid-cycle, they are NOT blocked -- they're soft-cutoff
- *   downgraded to SOFT_CUTOFF_FALLBACK_MODEL_ID until they top up
- *   ($1 = $1) or the next renewal grants fresh credit.
+ *   zero mid-cycle, they are hard-blocked exactly like the free plan
+ *   (composer locked, "You're out of credit") until they top up
+ *   ($1 = $1) or the next renewal grants fresh credit. Soft-cutoff
+ *   (silently downgrading to a cheap fallback model instead of
+ *   blocking) was REMOVED per owner instruction on 2026-08-17.
  */
 
 export type PlanId = "free" | "plus" | "pro" | "max";
@@ -78,15 +80,6 @@ export const PLAN_IDS = Object.keys(PLAN_CATALOG) as PlanId[];
 
 /** The only model a Free-plan user may select. Gateway route id (see entry-gateway EXTRA_MODEL_ROUTES_JSON_2). */
 export const FREE_PLAN_MODEL_ID = "gpt-5.6-luna";
-
-/**
- * Where a paid user's turn gets silently rerouted when their credit
- * balance is at or below zero -- never blocked, per the owner's
- * soft-cutoff standing instruction. Cheap + always-on (not a
- * FreeModel-sourced route, so it can't itself run out of upstream
- * balance).
- */
-export const SOFT_CUTOFF_FALLBACK_MODEL_ID = "deepseek-v4-flash";
 
 export function getPlanDefinition(planId: string | null | undefined): PlanDefinition {
   if (planId && planId in PLAN_CATALOG) {

@@ -286,6 +286,71 @@ export async function getAdminUserModelBreakdown(
   );
 }
 
+export interface AdminUserModelCallRow {
+  id: string;
+  modelId: string;
+  provider: string | null;
+  toolCallCount: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number | undefined;
+  createdAt: Date;
+}
+
+/**
+ * Raw, per-call usage log for one user (one row per usage_event, not
+ * aggregated) -- the "every model call with its own input/output/cache
+ * tokens and cost" table on the admin drill-down page. Most recent
+ * first. Each row is priced on its own token counts (same per-event
+ * pricing approach as getAdminUserProfile/getAdminUserModelBreakdown
+ * above -- never pre-sum before pricing).
+ */
+export async function getAdminUserModelCallLog(
+  userId: string,
+  modelCostCatalog: AvailableModel[],
+  limit = 100,
+): Promise<AdminUserModelCallRow[]> {
+  const rows = await db
+    .select({
+      id: usageEvents.id,
+      modelId: usageEvents.modelId,
+      provider: usageEvents.provider,
+      toolCallCount: usageEvents.toolCallCount,
+      inputTokens: usageEvents.inputTokens,
+      cachedInputTokens: usageEvents.cachedInputTokens,
+      outputTokens: usageEvents.outputTokens,
+      createdAt: usageEvents.createdAt,
+    })
+    .from(usageEvents)
+    .where(eq(usageEvents.userId, userId))
+    .orderBy(desc(usageEvents.createdAt))
+    .limit(limit);
+
+  return rows.map((row) => {
+    const cost = costForModel(row.modelId, modelCostCatalog);
+    const estimatedCostUsd = estimateModelUsageCost(
+      {
+        inputTokens: row.inputTokens,
+        cachedInputTokens: row.cachedInputTokens,
+        outputTokens: row.outputTokens,
+      },
+      cost,
+    );
+    return {
+      id: row.id,
+      modelId: row.modelId ?? "unknown",
+      provider: row.provider,
+      toolCallCount: row.toolCallCount,
+      inputTokens: row.inputTokens,
+      cachedInputTokens: row.cachedInputTokens,
+      outputTokens: row.outputTokens,
+      estimatedCostUsd,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
 export interface AdminUserSessionRow {
   id: string;
   title: string;

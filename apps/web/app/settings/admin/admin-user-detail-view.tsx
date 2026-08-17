@@ -37,6 +37,7 @@ import {
 import { getAdminUserDetail, setAdminUserPlan } from "@/lib/admin/actions";
 import { PLAN_CATALOG, PLAN_IDS, type PlanId } from "@/lib/billing/plans";
 import type {
+  AdminUserModelCallRow,
   AdminUserModelRow,
   AdminUserProfile,
   AdminUserSessionRow,
@@ -59,6 +60,15 @@ function formatDate(date: Date): string {
   });
 }
 
+function formatDateTime(date: Date): string {
+  return new Date(date).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function initialsFor(profile: AdminUserProfile): string {
   const source = profile.name ?? profile.username;
   return source.slice(0, 2).toUpperCase();
@@ -78,6 +88,7 @@ interface UserDetailState {
   profile: AdminUserProfile | null;
   usageTrend: AdminUserUsageDayRow[];
   modelBreakdown: AdminUserModelRow[];
+  modelCallLog: AdminUserModelCallRow[];
   sessions: AdminUserSessionRow[];
 }
 
@@ -207,7 +218,9 @@ function PlanManagementCard({
       setDecreaseBalance(false);
       setDecreaseAmountInput("");
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to update plan.");
+      setSaveError(
+        err instanceof Error ? err.message : "Failed to update plan.",
+      );
     } finally {
       setSaving(false);
     }
@@ -218,8 +231,8 @@ function PlanManagementCard({
       <CardHeader>
         <CardTitle>Plan &amp; credit</CardTitle>
         <CardDescription>
-          Override this user&apos;s subscription tier. Takes effect
-          immediately, no redeploy.
+          Override this user&apos;s subscription tier. Takes effect immediately,
+          no redeploy.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -273,8 +286,8 @@ function PlanManagementCard({
               className="size-3.5"
             />
             Also grant {targetPlanDef.name}&apos;s credit (
-            {formatUsdCents(targetPlanDef.creditGrantCents)}) -- for
-            comping this account or fixing a missed payment webhook.
+            {formatUsdCents(targetPlanDef.creditGrantCents)}) -- for comping
+            this account or fixing a missed payment webhook.
           </label>
         )}
 
@@ -287,8 +300,8 @@ function PlanManagementCard({
                 onChange={(e) => setDecreaseBalance(e.target.checked)}
                 className="size-3.5"
               />
-              Also decrease this user&apos;s balance -- e.g. clawing back
-              unused credit on a downgrade.
+              Also decrease this user&apos;s balance -- e.g. clawing back unused
+              credit on a downgrade.
             </label>
 
             {decreaseBalance && (
@@ -321,14 +334,12 @@ function PlanManagementCard({
 
         {isChanged && !isUpgradeInPrice && !isDowngradeInPrice && (
           <p className="text-xs text-muted-foreground">
-            Lateral plan change -- model access changes only, credit
-            balance is left untouched.
+            Lateral plan change -- model access changes only, credit balance is
+            left untouched.
           </p>
         )}
 
-        {saveError && (
-          <p className="text-sm text-destructive">{saveError}</p>
-        )}
+        {saveError && <p className="text-sm text-destructive">{saveError}</p>}
       </CardContent>
     </Card>
   );
@@ -592,6 +603,77 @@ export function AdminUserDetailView({ userId }: { userId: string }) {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Model call log</CardTitle>
+              <CardDescription>
+                Every individual model call (most recent{" "}
+                {data.modelCallLog.length}), with its own input/cached/output
+                tokens and cost -- not aggregated. Use this to spot a single
+                turn that spiraled into an unusually long or expensive tool-call
+                chain.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.modelCallLog.length === 0 ? (
+                <p className="py-4 text-sm text-muted-foreground">
+                  No model calls recorded.
+                </p>
+              ) : (
+                <div className="max-h-[480px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead className="text-right">Tool calls</TableHead>
+                        <TableHead className="text-right">Input</TableHead>
+                        <TableHead className="text-right">Cached</TableHead>
+                        <TableHead className="text-right">Output</TableHead>
+                        <TableHead className="text-right">Cost</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.modelCallLog.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {formatDateTime(row.createdAt)}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {row.modelId}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right tabular-nums",
+                              row.toolCallCount >= 15 &&
+                                "font-semibold text-amber-500",
+                            )}
+                          >
+                            {row.toolCallCount}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatTokens(row.inputTokens)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {formatTokens(row.cachedInputTokens)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatTokens(row.outputTokens)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.estimatedCostUsd === undefined
+                              ? "—"
+                              : formatUsd(row.estimatedCostUsd)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

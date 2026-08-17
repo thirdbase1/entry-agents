@@ -19,9 +19,11 @@ import {
 } from "@/lib/db/admin-directory";
 import {
   getAdminUserModelBreakdown,
+  getAdminUserModelCallLog,
   getAdminUserProfile,
   getAdminUserSessions,
   getAdminUserUsageTrend,
+  type AdminUserModelCallRow,
   type AdminUserModelRow,
   type AdminUserProfile,
   type AdminUserSessionRow,
@@ -36,7 +38,12 @@ import {
   type AdminPlatformUsageOverview,
 } from "@/lib/db/admin-usage";
 import { db } from "@/lib/db/client";
-import { accounts, authSessions, githubInstallations, users } from "@/lib/db/schema";
+import {
+  accounts,
+  authSessions,
+  githubInstallations,
+  users,
+} from "@/lib/db/schema";
 import { isUserAdmin } from "@/lib/db/users";
 import {
   fetchAllLanguageModelsForAdmin,
@@ -491,22 +498,24 @@ export async function getAdminUserDetail(userId: string): Promise<{
   profile: AdminUserProfile | null;
   usageTrend: AdminUserUsageDayRow[];
   modelBreakdown: AdminUserModelRow[];
+  modelCallLog: AdminUserModelCallRow[];
   sessions: AdminUserSessionRow[];
 }> {
   await requireAdmin();
 
   const modelCostCatalog = await fetchModelCostCatalog().catch(() => []);
 
-  const [profile, usageTrend, modelBreakdown, sessions] = await Promise.all([
-    getAdminUserProfile(userId, modelCostCatalog),
-    getAdminUserUsageTrend(userId, modelCostCatalog),
-    getAdminUserModelBreakdown(userId, modelCostCatalog),
-    getAdminUserSessions(userId),
-  ]);
+  const [profile, usageTrend, modelBreakdown, modelCallLog, sessions] =
+    await Promise.all([
+      getAdminUserProfile(userId, modelCostCatalog),
+      getAdminUserUsageTrend(userId, modelCostCatalog),
+      getAdminUserModelBreakdown(userId, modelCostCatalog),
+      getAdminUserModelCallLog(userId, modelCostCatalog),
+      getAdminUserSessions(userId),
+    ]);
 
-  return { profile, usageTrend, modelBreakdown, sessions };
+  return { profile, usageTrend, modelBreakdown, modelCallLog, sessions };
 }
-
 
 /**
  * Admin override for a user's plan tier -- for support cases like a
@@ -568,9 +577,13 @@ export async function setAdminUserPlan(
       },
     );
   } else if (debitCentsOnDowngrade > 0) {
-    creditBalanceCents = await debitAccountAdmin(userId, debitCentsOnDowngrade, {
-      description: `Admin ${adminUserId} downgraded user to ${newPlanDef.name} plan and decreased balance by $${(debitCentsOnDowngrade / 100).toFixed(2)}`,
-    });
+    creditBalanceCents = await debitAccountAdmin(
+      userId,
+      debitCentsOnDowngrade,
+      {
+        description: `Admin ${adminUserId} downgraded user to ${newPlanDef.name} plan and decreased balance by $${(debitCentsOnDowngrade / 100).toFixed(2)}`,
+      },
+    );
   }
 
   return { plan: planId as PlanId, creditBalanceCents };

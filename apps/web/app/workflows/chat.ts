@@ -280,9 +280,8 @@ async function resolveChatModelRuntime(params: {
   // restricted "use workflow" bundle even when it's only ever called
   // from this "use step" function -- same reasoning as
   // performAgentCommitAndPush/checkVercelConnectedStep/etc. above.
-  const { resolveChatModelSelection } = await import(
-    "../api/chat/_lib/model-selection"
-  );
+  const { resolveChatModelSelection } =
+    await import("../api/chat/_lib/model-selection");
 
   const [sessionRecord, chat, rawPreferences] = await Promise.all([
     getSessionById(params.sessionId),
@@ -365,12 +364,10 @@ async function resolveChatModelRuntime(params: {
   // finishes (see the old chat-post-finish.ts behavior this replaces).
   let startingBalanceCents = 0;
   if (!isAdminUser) {
-    const { getUserBillingState, claimUserBillingTurn } = await import(
-      "@/lib/billing/credit-ledger"
-    );
-    const { getPlanDefinition, FREE_PLAN_MODEL_ID } = await import(
-      "@/lib/billing/plans"
-    );
+    const { getUserBillingState, claimUserBillingTurn } =
+      await import("@/lib/billing/credit-ledger");
+    const { getPlanDefinition, FREE_PLAN_MODEL_ID } =
+      await import("@/lib/billing/plans");
 
     // Claim the per-user billing-turn lock BEFORE reading the balance
     // that this turn will spend against. Without this, two concurrent
@@ -411,9 +408,7 @@ async function resolveChatModelRuntime(params: {
     // Admins are never blocked, but their usage is still billed (see
     // runAgentStep) -- fetch their balance too so it stays accurate,
     // just without any gating decision riding on it.
-    const { getUserBillingState } = await import(
-      "@/lib/billing/credit-ledger"
-    );
+    const { getUserBillingState } = await import("@/lib/billing/credit-ledger");
     const billingState = await getUserBillingState(params.userId);
     startingBalanceCents = billingState?.creditBalanceCents ?? 0;
   }
@@ -992,9 +987,8 @@ async function performAgentCommitAndPush(params: {
 async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
   "use step";
 
-  const { fetchAvailableLanguageModels } = await import(
-    "@/lib/models-with-context"
-  );
+  const { fetchAvailableLanguageModels } =
+    await import("@/lib/models-with-context");
   return fetchAvailableLanguageModels();
 }
 
@@ -1252,15 +1246,13 @@ export async function runAgentWorkflow(options: Options) {
   // Vercel-Gateway-shaped cost metadata. Best-effort: if the gateway is
   // briefly unreachable, cost tracking degrades to undefined for this
   // turn rather than failing the whole chat request.
-  const modelCostCatalog = await fetchModelCostCatalogStep().catch(
-    (error) => {
-      console.error(
-        "Failed to fetch entry-gateway model/pricing catalog for cost tracking:",
-        error,
-      );
-      return [];
-    },
-  );
+  const modelCostCatalog = await fetchModelCostCatalogStep().catch((error) => {
+    console.error(
+      "Failed to fetch entry-gateway model/pricing catalog for cost tracking:",
+      error,
+    );
+    return [];
+  });
 
   let pendingAssistantResponse: WebAgentUIMessage =
     latestMessage.role === "assistant"
@@ -1700,18 +1692,19 @@ export async function runAgentWorkflow(options: Options) {
   }
 }
 
-// Hard ceiling on how much a SINGLE turn (one user message, including
-// every internal tool-calling step the agent takes to answer it) may
-// spend, independent of the user's remaining account balance. Without
-// this, a single message that triggers a long multi-tool-call loop
-// (each step resending the growing conversation as input) can burn
-// through most/all of a user's plan credit in one shot before the
-// account-balance check (remainingBalanceCents <= 0) ever has a chance
-// to fire -- see the incident where two turns with 21-24 tool calls
-// each drained ~$9 of a user's $10 Plus-plan grant in under 25 minutes.
-// $2.00 comfortably covers legitimate heavy single-turn usage while
-// capping the blast radius of a runaway loop.
-const MAX_TURN_SPEND_CENTS = 200;
+// Last-resort backstop, NOT the primary fix. The primary fix for
+// runaway multi-tool-call turns is the "Tool-Call Economy" section in
+// packages/agent/system-prompt.ts (no blind retries, capped
+// verification loops, no redundant re-reads) -- that's what should stop
+// a turn from spiraling into 20+ tool calls in the first place.
+// This constant just caps the absolute worst case if the prompt fix
+// doesn't fully prevent a loop, so one turn can never again burn
+// through most/all of a plan's credit in one shot like the incident
+// where two turns with 21-24 tool calls each drained ~$9 of a user's
+// $10 Plus-plan grant in under 25 minutes. Set high on purpose so it
+// never interferes with legitimate heavy single-turn work -- it should
+// almost never fire.
+const MAX_TURN_SPEND_CENTS = 500;
 
 const runAgentStep = async (
   messages: ModelMessage[],
@@ -1913,9 +1906,8 @@ const runAgentStep = async (
               // above for why this can't simply be awaited right here.
               pendingDebits.push(
                 (async () => {
-                  const { debitUsage } = await import(
-                    "@/lib/billing/credit-ledger"
-                  );
+                  const { debitUsage } =
+                    await import("@/lib/billing/credit-ledger");
                   try {
                     await debitUsage(userId, stepCostCents, {
                       modelId,
@@ -2249,9 +2241,8 @@ function startStopMonitor(
         // client, which must not be statically imported into this
         // "use workflow" module -- see the matching comment in
         // resolveChatModelRuntime.
-        const { getFreeTierGateStatus } = await import(
-          "@/lib/db/platform-settings"
-        );
+        const { getFreeTierGateStatus } =
+          await import("@/lib/db/platform-settings");
         const gate = await getFreeTierGateStatus().catch(() => ({
           enabled: true,
           reason: null,

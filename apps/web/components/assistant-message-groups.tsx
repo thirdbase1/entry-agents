@@ -93,9 +93,32 @@ export function AssistantMessageGroups({
   // Force expand when there's an active approval the user needs to respond to
   const effectiveExpanded = isExpanded || hasActiveApproval;
 
+  // Stopped early because this turn tripped a billing safeguard.
+  // Distinct wording per cause: creditExhausted means the account ran
+  // out of balance; turnSpendCapped means the account still has
+  // balance but this single turn alone got too expensive (runaway
+  // multi-tool-call loop protection) -- see MAX_TURN_SPEND_CENTS in
+  // app/workflows/chat.ts.
+  const stopNotice = message.metadata?.creditExhausted
+    ? "Ran out of credit mid-response, so generation stopped here. Top up or upgrade your plan to continue."
+    : message.metadata?.turnSpendCapped
+      ? "This response got unusually expensive (a long tool-call loop) and was stopped early to protect your credit balance. Send a follow-up message to continue."
+      : null;
+
+  const stopNoticeCard = stopNotice ? (
+    <div className="w-fit max-w-[80%] rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-sm text-amber-700 dark:text-amber-400">
+      {stopNotice}
+    </div>
+  ) : null;
+
   // If no collapsible content, just render children directly
   if (!hasCollapsible) {
-    return <>{children(true)}</>;
+    return (
+      <>
+        {children(true)}
+        {stopNoticeCard}
+      </>
+    );
   }
 
   return (
@@ -111,6 +134,7 @@ export function AssistantMessageGroups({
         statusWordSeed={message.id}
       />
       <div className="space-y-1">{children(effectiveExpanded)}</div>
+      {stopNoticeCard}
     </>
   );
 }

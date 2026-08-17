@@ -1310,6 +1310,7 @@ export async function runAgentWorkflow(options: Options) {
     modelId = options.modelId ?? modelRuntime.modelId;
     let remainingBalanceCents = modelRuntime.startingBalanceCents;
     let creditExhausted = false;
+    let turnSpendCapped = false;
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
       metadata: withModelMetadata(
@@ -1409,6 +1410,7 @@ export async function runAgentWorkflow(options: Options) {
       finalFinishReason = result.finishReason;
       remainingBalanceCents = result.remainingBalanceCents;
       creditExhausted = creditExhausted || result.creditExhausted;
+      turnSpendCapped = turnSpendCapped || result.turnSpendCapped;
 
       if (result.stepUsage) {
         totalUsage = totalUsage
@@ -1416,11 +1418,12 @@ export async function runAgentWorkflow(options: Options) {
           : result.stepUsage;
       }
 
-      if (creditExhausted) {
+      if (creditExhausted || turnSpendCapped) {
         // Real-time billing (see runAgentStep) already aborted the
-        // in-flight model call the instant the running balance hit
-        // zero -- stop the outer step loop too instead of starting
-        // another (now-unaffordable) step.
+        // in-flight model call -- either the running balance hit zero,
+        // or this turn alone crossed MAX_TURN_SPEND_CENTS. Either way,
+        // stop the outer step loop too instead of starting another
+        // step.
         break;
       }
 
@@ -1465,6 +1468,21 @@ export async function runAgentWorkflow(options: Options) {
         metadata: {
           ...pendingAssistantResponse.metadata,
           creditExhausted: true,
+        },
+      };
+    }
+
+    if (turnSpendCapped) {
+      // Distinct from creditExhausted: the account still has balance,
+      // but this one turn alone crossed MAX_TURN_SPEND_CENTS (runaway
+      // multi-tool-call loop protection). Surfaced so the client can
+      // tell the user why generation stopped instead of just going
+      // silent mid-answer.
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        metadata: {
+          ...pendingAssistantResponse.metadata,
+          turnSpendCapped: true,
         },
       };
     }
@@ -1682,6 +1700,19 @@ export async function runAgentWorkflow(options: Options) {
   }
 }
 
+// Hard ceiling on how much a SINGLE turn (one user message, including
+// every internal tool-calling step the agent takes to answer it) may
+// spend, independent of the user's remaining account balance. Without
+// this, a single message that triggers a long multi-tool-call loop
+// (each step resending the growing conversation as input) can burn
+// through most/all of a user's plan credit in one shot before the
+// account-balance check (remainingBalanceCents <= 0) ever has a chance
+// to fire -- see the incident where two turns with 21-24 tool calls
+// each drained ~$9 of a user's $10 Plus-plan grant in under 25 minutes.
+// $2.00 comfortably covers legitimate heavy single-turn usage while
+// capping the blast radius of a runaway loop.
+const MAX_TURN_SPEND_CENTS = 200;
+
 const runAgentStep = async (
   messages: ModelMessage[],
   originalMessages: WebAgentUIMessage[],
@@ -1721,6 +1752,11 @@ const runAgentStep = async (
   // durably committed before any workflow checkpoint.
   let remainingBalanceCents = startingBalanceCents;
   let creditExhausted = false;
+  // Tripped when this turn's cumulative cost (totalMessageCost, which
+  // persists across outer-loop step calls via message metadata -- see
+  // the assignment below) crosses MAX_TURN_SPEND_CENTS, regardless of
+  // how much account balance remains.
+  let turnSpendCapped = false;
   const pendingDebits: Promise<void>[] = [];
 
   try {
@@ -1904,6 +1940,21 @@ const runAgentStep = async (
                   // never starts another (now-unaffordable) step.
                   abortController.abort();
                 }
+              }
+
+              // Per-turn cost circuit-breaker: independent of the
+              // account-balance check above, never let one turn spend
+              // past MAX_TURN_SPEND_CENTS. totalMessageCost already
+              // accumulates across every step of this turn (see its
+              // declaration above), including steps from earlier calls
+              // to runAgentStep for this same message.
+              if (
+                !turnSpendCapped &&
+                Math.round((totalMessageCost ?? 0) * 100) >=
+                  MAX_TURN_SPEND_CENTS
+              ) {
+                turnSpendCapped = true;
+                abortController.abort();
               }
             }
           }
@@ -2101,6 +2152,7 @@ const runAgentStep = async (
       stepWasAborted: false,
       remainingBalanceCents,
       creditExhausted,
+      turnSpendCapped,
       stepTiming: buildStepTiming(
         stepNumber,
         stepStartedAt,
@@ -2124,6 +2176,7 @@ const runAgentStep = async (
         stepWasAborted: true,
         remainingBalanceCents,
         creditExhausted,
+        turnSpendCapped,
         stepTiming: buildStepTiming(
           stepNumber,
           stepStartedAt,

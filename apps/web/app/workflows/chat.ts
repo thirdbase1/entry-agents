@@ -229,6 +229,72 @@ const convertMessages = async (
   });
 };
 
+/**
+ * Defensive guard against AI_MissingToolResultsError (real incident,
+ * 2026-08-17: a chat's turn started failing identically on every retry --
+ * "Tool result is missing for tool call X" -- 4 attempts in a row, same
+ * toolCallId every time, then a fatal AI_NoOutputGeneratedError once the
+ * Workflow SDK's step retries ran out). Root cause: `modelMessages` is
+ * appended to directly across step iterations (see
+ * `modelMessages.push(...result.responseMessages)` in the main loop
+ * below) using the raw AI SDK response messages, which is NOT run back
+ * through `convertMessages`'s `ignoreIncompleteToolCalls: true` --
+ * that sanitization only ever runs once, on the turn's ORIGINAL history
+ * from the DB. If a tool-call ends up in `response.messages` without a
+ * matching tool-result (e.g. the step aborted mid tool-execution from
+ * real-time credit-exhaustion/turn-spend-cap billing, or any other path
+ * that stops generation between the tool-call and its result), that
+ * broken pair then poisons every subsequent model call for the rest of
+ * the turn -- and because the Workflow SDK retries the exact same step
+ * input on transient failures, it fails the identical way every retry
+ * until the whole turn dies with an empty response.
+ *
+ * Called right after every append to `modelMessages` so the array going
+ * into the next `runAgentStep` call can never contain an orphaned
+ * tool-call, regardless of which path produced it. Mutates the array
+ * in place (via splice) since `modelMessages` is a `const` binding to a
+ * shared array across the loop.
+ */
+function stripDanglingToolCalls(messages: ModelMessage[]): void {
+  const resultedToolCallIds = new Set<string>();
+  for (const message of messages) {
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (part.type === "tool-result") {
+          resultedToolCallIds.add(part.toolCallId);
+        }
+      }
+    }
+  }
+
+  const sanitized = messages
+    .map((message) => {
+      if (message.role !== "assistant" || !Array.isArray(message.content)) {
+        return message;
+      }
+      const filteredContent = message.content.filter(
+        (part) => part.type !== "tool-call" || resultedToolCallIds.has(part.toolCallId),
+      );
+      if (filteredContent.length === message.content.length) {
+        return message;
+      }
+      return { ...message, content: filteredContent };
+    })
+    .filter((message) => {
+      if (message.role !== "assistant") {
+        return true;
+      }
+      return !Array.isArray(message.content) || message.content.length > 0;
+    });
+
+  if (
+    sanitized.length !== messages.length ||
+    sanitized.some((message, index) => message !== messages[index])
+  ) {
+    messages.splice(0, messages.length, ...sanitized);
+  }
+}
+
 // Owner decision (2026-08-12): permission mode (ask / autoAccept /
 // fullAccess) must be changeable "anytime, per model turn" -- not frozen
 // for the whole assistant response the way it used to be. The multi-step
@@ -1398,6 +1464,10 @@ export async function runAgentWorkflow(options: Options) {
         shouldRefreshDiffCacheForParts(pendingAssistantResponse.parts);
       originalMessagesForStep = [pendingAssistantResponse];
       modelMessages.push(...result.responseMessages);
+      // See stripDanglingToolCalls's own comment above -- guards against
+      // AI_MissingToolResultsError poisoning every subsequent step of
+      // this same turn.
+      stripDanglingToolCalls(modelMessages);
       wasAborted = wasAborted || result.stepWasAborted;
       finalFinishReason = result.finishReason;
       remainingBalanceCents = result.remainingBalanceCents;

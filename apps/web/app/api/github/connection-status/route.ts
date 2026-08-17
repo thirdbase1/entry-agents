@@ -6,7 +6,7 @@ import {
   syncUserInstallations,
 } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { getGitHubUsername, hasGitHubAccount } from "@/lib/github/users";
+import { getGitHubUsernameStrict, hasGitHubAccount } from "@/lib/github/users";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 export async function GET() {
@@ -41,7 +41,7 @@ export async function GET() {
   }
 
   try {
-    const username = await getGitHubUsername(session.user.id);
+    const username = await getGitHubUsernameStrict(session.user.id);
     if (!username) {
       return NextResponse.json({
         status: "reconnect_required",

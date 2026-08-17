@@ -157,7 +157,7 @@ function addModelsDevMetadata(
 ): AvailableModel {
   const metadata = metadataMap.get(model.id);
   if (!metadata) {
-    return model;
+    return applyFallbackCachePricing(model);
   }
 
   const nextModel: AvailableModel = { ...model };
@@ -173,7 +173,53 @@ function addModelsDevMetadata(
     nextModel.cost = metadata.cost;
   }
 
-  return nextModel;
+  return applyFallbackCachePricing(nextModel);
+}
+
+/**
+ * Mirrors the CACHE_RATE_MULTIPLIERS_BY_PREFIX fallback in the gateway's
+ * server.js (added 2026-08-17, see that file for the full rationale and
+ * pricing-ratio sourcing) -- purely so the UI's cost pill/estimate
+ * matches what the gateway will actually bill. gpt-5.6-sol/terra/luna's
+ * routes don't have cost.cache_read/cache_write set in the gateway's own
+ * config, so without this the picker/composer would display an inflated
+ * estimate (full input rate on cached tokens) even though the gateway
+ * itself already applies the discount when computing the real charge.
+ * Only fills in the two fields when they're genuinely absent -- any
+ * route with real configured rates (e.g. Claude's) passes through
+ * unchanged.
+ */
+const CACHE_RATE_MULTIPLIERS_BY_PREFIX: Array<
+  [string, { cacheRead: number; cacheWrite: number }]
+> = [["gpt-5.6-", { cacheRead: 0.1, cacheWrite: 1.25 }]];
+
+function applyFallbackCachePricing(model: AvailableModel): AvailableModel {
+  const cost = model.cost;
+  if (!cost || typeof cost.input !== "number") {
+    return model;
+  }
+  if (
+    typeof cost.cache_read === "number" &&
+    typeof cost.cache_write === "number"
+  ) {
+    return model;
+  }
+
+  const multipliers = CACHE_RATE_MULTIPLIERS_BY_PREFIX.find(([prefix]) =>
+    model.id.startsWith(prefix),
+  )?.[1];
+  if (!multipliers) {
+    return model;
+  }
+
+  return {
+    ...model,
+    cost: {
+      ...cost,
+      cache_read: cost.cache_read ?? cost.input * multipliers.cacheRead,
+      cache_write: cost.cache_write ?? cost.input * multipliers.cacheWrite,
+    },
+  };
 }
 
 const gatewayModelsResponseSchema = z.object({
@@ -200,10 +246,12 @@ const gatewayModelsResponseSchema = z.object({
 
 /**
  * Fetches the live model list from Entry's self-hosted gateway
- * (entry-gateway, deployed on Pxxl). This is intentionally a live network
- * call, not a hardcoded catalog -- adding/removing a model is a config
- * change on the gateway (GATEWAY env vars in its own dashboard), and this
- * app picks it up automatically on the next fetch, no redeploy needed.
+ * (entry-gateway, deployed on Vercel -- see the entry-gateway project,
+ * migrated off Pxxl; this comment used to say Pxxl, which is retired for
+ * hosting entirely). This is intentionally a live network call, not a
+ * hardcoded catalog -- adding/removing a model is a config change on the
+ * gateway (GATEWAY env vars in its own dashboard), and this app picks it
+ * up automatically on the next fetch, no redeploy needed.
  */
 async function fetchGatewayModels(): Promise<GatewayModel[]> {
   const baseURL = process.env.GATEWAY_BASE_URL;

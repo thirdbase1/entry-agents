@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Sparkles, Zap } from "lucide-react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
@@ -30,26 +29,19 @@ function formatUsd(cents: number) {
  * Tailwind config (bg-muted, border-border, text-foreground, etc. plus
  * the accent hues), not one-off hardcoded values.
  */
-const PLAN_STYLES: Record<
-  string,
-  { badge: string; icon: typeof Sparkles }
-> = {
+const PLAN_STYLES: Record<string, { badge: string }> = {
   free: {
     badge: "bg-muted text-muted-foreground",
-    icon: Zap,
   },
   plus: {
     badge: "bg-blue-500/15 text-blue-400",
-    icon: Zap,
   },
   pro: {
     badge: "bg-violet-500/15 text-violet-400",
-    icon: Sparkles,
   },
   max: {
     badge:
       "bg-gradient-to-r from-amber-400/20 via-orange-400/20 to-pink-500/20 text-amber-400",
-    icon: Sparkles,
   },
 };
 
@@ -81,7 +73,6 @@ export function SidebarBalancePill() {
       href="/billing/plans"
       className="flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground transition-colors hover:bg-muted/70"
     >
-      <Zap className="h-3 w-3 text-primary" />
       {formatUsd(data.creditBalanceCents)}
     </Link>
   );
@@ -107,16 +98,14 @@ export function SidebarPlanBadge() {
   }
 
   const style = PLAN_STYLES[data.plan] ?? PLAN_STYLES.free;
-  const Icon = style.icon;
 
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
         style.badge,
       )}
     >
-      <Icon className="h-2.5 w-2.5" />
       {data.planName}
     </span>
   );

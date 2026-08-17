@@ -13,6 +13,13 @@ interface PlanRow {
   priceNgnKobo: number;
 }
 
+interface BillingMeResponse {
+  plan: string;
+  planName: string;
+  creditBalanceCents: number;
+  creditGrantCents: number;
+}
+
 const PLAN_BLURB: Record<string, string> = {
   free: "Try Entry with GPT-5.6 Luna. $1 trial credit, no card required.",
   plus: "Full model access. 2x credit on every renewal.",
@@ -33,6 +40,16 @@ export default function BillingPlansPage() {
   const [rate, setRate] = useState<number | null>(null);
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Current subscription state, if the visitor is logged in and already
+  // on a plan -- undefined while still loading, null once we know
+  // they're logged out / /api/billing/me 401'd. Added 2026-08-17: this
+  // page previously never checked this at all, so an already-subscribed
+  // user clicking the sidebar balance pill landed on the exact same
+  // "pick a plan" marketing page a first-time visitor sees, with no
+  // acknowledgement they were already paying for something.
+  const [me, setMe] = useState<BillingMeResponse | null | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     fetch("/api/billing/plans")
@@ -42,6 +59,11 @@ export default function BillingPlansPage() {
         setRate(data.usdToNgnRate);
       })
       .catch(() => setErrorMessage("Couldn't load plans, try refreshing."));
+
+    fetch("/api/billing/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setMe(data))
+      .catch(() => setMe(null));
   }, []);
 
   async function handleSubscribe(planId: string) {
@@ -95,14 +117,40 @@ export default function BillingPlansPage() {
               <p className="mt-6 text-sm text-red-500">{errorMessage}</p>
             )}
 
+            {me && (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-(--l-border) bg-(--l-fg)/[0.04] px-5 py-4">
+                <p className="text-sm text-(--l-fg-2)">
+                  You&apos;re on the{" "}
+                  <span className="font-semibold text-(--l-fg)">
+                    {me.planName}
+                  </span>{" "}
+                  plan -- {formatUsd(me.creditBalanceCents)} credit
+                  remaining.
+                </p>
+              </div>
+            )}
+
             <div className="mt-12 grid gap-4 md:mt-16 md:grid-cols-4">
-              {(plans ?? []).map((plan) => (
+              {(plans ?? []).map((plan) => {
+                const isCurrentPlan = me?.plan === plan.id;
+                return (
                 <div
                   key={plan.id}
-                  className="flex flex-col justify-between rounded-2xl border border-(--l-border) p-6"
+                  className={`flex flex-col justify-between rounded-2xl border p-6 ${
+                    isCurrentPlan
+                      ? "border-(--l-fg) ring-1 ring-(--l-fg)/20"
+                      : "border-(--l-border)"
+                  }`}
                 >
                   <div>
-                    <div className="text-lg font-semibold">{plan.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-lg font-semibold">{plan.name}</div>
+                      {isCurrentPlan && (
+                        <span className="rounded-full bg-(--l-fg) px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-(--l-bg)">
+                          Current plan
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-2 text-3xl font-semibold tracking-tight">
                       {formatUsd(plan.priceUsdCents)}
                       <span className="text-sm font-normal text-(--l-fg-3)">
@@ -135,18 +183,30 @@ export default function BillingPlansPage() {
 
                   <button
                     type="button"
-                    disabled={plan.id === "free" || pendingPlan === plan.id}
+                    disabled={
+                      plan.id === "free" ||
+                      pendingPlan === plan.id ||
+                      isCurrentPlan
+                    }
                     onClick={() => handleSubscribe(plan.id)}
-                    className="mt-6 rounded-full bg-(--l-fg) px-6 py-2.5 text-sm font-medium text-(--l-bg) disabled:opacity-50"
+                    className={`mt-6 rounded-full px-6 py-2.5 text-sm font-medium disabled:opacity-50 ${
+                      isCurrentPlan
+                        ? "border border-(--l-border) bg-transparent text-(--l-fg)"
+                        : "bg-(--l-fg) text-(--l-bg)"
+                    }`}
                   >
-                    {plan.id === "free"
-                      ? "Default"
-                      : pendingPlan === plan.id
-                        ? "Redirecting..."
-                        : "Subscribe"}
+                    {isCurrentPlan
+                      ? "Your plan"
+                      : plan.id === "free"
+                        ? "Default"
+                        : pendingPlan === plan.id
+                          ? "Redirecting..."
+                          : me
+                            ? "Switch"
+                            : "Subscribe"}
                   </button>
                 </div>
-              ))}
+              );})}
             </div>
 
             {rate && (

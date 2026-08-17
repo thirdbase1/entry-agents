@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckIcon, ChevronDown, Lock } from "lucide-react";
+import { CheckIcon, ChevronDown, Lock, Sparkles } from "lucide-react";
 import { type ModelOption, groupByProvider } from "@/lib/model-options";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,15 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import {
   ProviderIcon,
   getProviderDisplayName,
@@ -37,8 +46,8 @@ interface ModelSelectorCompactProps {
   /** The one model ID Free-tier users can still pick (Luna) -- required
    * when isFreeTierLocked is true so that model doesn't render locked. */
   freePlanModelId?: string;
-  /** Called instead of onChange when a Free-tier user clicks a locked
-   * (non-Luna) model -- typically routes to /billing/plans. */
+  /** Called when a Free-tier user clicks "Upgrade" inside the locked-
+   * model popup -- typically routes to /billing/plans. */
   onUpgradeRequired?: () => void;
 }
 
@@ -54,6 +63,7 @@ export function ModelSelectorCompact({
 }: ModelSelectorCompactProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [lockedModel, setLockedModel] = useState<ModelOption | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const focusSearchInput = useCallback(() => {
@@ -113,16 +123,17 @@ export function ModelSelectorCompact({
   const groups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) {
-          setSearch("");
-        }
-      }}
-    >
-      <PopoverTrigger asChild>
+    <>
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) {
+            setSearch("");
+          }
+        }}
+      >
+        <PopoverTrigger asChild>
         <button
           type="button"
           disabled={disabled}
@@ -177,7 +188,8 @@ export function ModelSelectorCompact({
                       onSelect={() => {
                         if (isLocked) {
                           setOpen(false);
-                          onUpgradeRequired?.();
+                          setSearch("");
+                          setLockedModel(option);
                           return;
                         }
                         handleSelect(option.id);
@@ -222,6 +234,44 @@ export function ModelSelectorCompact({
           </CommandList>
         </Command>
       </PopoverContent>
-    </Popover>
+      </Popover>
+      <Dialog
+        open={lockedModel !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setLockedModel(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <div className="mb-1 flex size-9 items-center justify-center rounded-full bg-primary/10">
+              <Sparkles className="size-4.5 text-primary" />
+            </div>
+            <DialogTitle>
+              {lockedModel?.shortLabel ?? "This model"} is a paid model
+            </DialogTitle>
+            <DialogDescription>
+              Your Free plan only includes GPT-5.6 Luna. Upgrade to Plus,
+              Pro, or Max to unlock every model, including{" "}
+              {lockedModel?.shortLabel ?? "this one"}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end">
+            <Button variant="ghost" onClick={() => setLockedModel(null)}>
+              Maybe later
+            </Button>
+            <Button
+              onClick={() => {
+                setLockedModel(null);
+                onUpgradeRequired?.();
+              }}
+            >
+              Upgrade
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

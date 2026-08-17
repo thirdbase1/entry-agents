@@ -7,7 +7,6 @@ import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/hooks/use-session";
 import { cn } from "@/lib/utils";
-import { GitHubLink } from "./github-link";
 import { Logo } from "./logo";
 
 export function LandingNav({
@@ -53,7 +52,6 @@ export function LandingNav({
                 : "pointer-events-none opacity-0 blur-xs",
             )}
           >
-            <GitHubLink variant="ghost" size="sm" />
             {!loading && isAuthenticated ? (
               <>
                 <Button asChild size="sm" variant="ghost">

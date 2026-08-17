@@ -1,6 +1,7 @@
 import { connectSandbox } from "@open-agents/sandbox";
 import { generateText } from "ai";
 import { gateway } from "@open-agents/agent";
+import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { checkBotProtection } from "@/lib/botid";
 import { getSessionById } from "@/lib/db/sessions";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
@@ -58,7 +59,7 @@ export async function POST(
   }
 
   const result = await generateText({
-    model: gateway("deepseek-v4-flash"),
+    model: gateway(APP_DEFAULT_MODEL_ID),
     prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${dbSession.title}

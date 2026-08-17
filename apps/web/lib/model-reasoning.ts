@@ -59,24 +59,31 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "medium", label: "Medium" },
     { value: "xhigh", label: "XHigh" },
   ],
-  // FIXED 2026-08-17: these three were previously falling through to
-  // DEFAULT_LEVELS (a generic low/medium/high), but GPT-5.6's own docs
-  // (developers.openai.com/api/docs/guides/reasoning +
-  // .../guides/latest-model) are explicit that the whole GPT-5.6 family
-  // -- Sol, Terra, and Luna alike -- accepts a 6-level `reasoning_effort`
-  // vocabulary: none, low, medium, high, xhigh, max. Shipping only 3 of
-  // those 6 real levels silently threw away "none" (fully-off, cheapest/
-  // fastest) and the two above "high" (xhigh, max) that this family
-  // specifically supports over the plain o-series low/medium/high set.
-  // Passed straight through as `reasoning_effort` on the OpenAI-compat
-  // route -- no remapping, see toReasoningProviderOptions below.
+  // CORRECTED 2026-08-17 (twice, same day): first pass wrongly assumed
+  // Sol/Terra/Luna all share the same reasoning_effort vocabulary since
+  // they're the same model family -- they don't. Live production error
+  // confirmed gpt-5.6-luna specifically rejects "max": 400
+  // invalid_request_error "level \"max\" not supported, valid levels:
+  // low, medium, high, xhigh" (killed the whole chat turn, no fallback,
+  // AI_NoOutputGeneratedError after retries exhausted). Initially removed
+  // "max" from all three GPT-5.6 ids on the assumption the family shares
+  // one upstream route -- then ran a live probe
+  // (POST /api/admin/reasoning-probe) across all 6 levels x all 3 model
+  // ids to check that assumption directly instead of guessing again: Sol
+  // and Terra both return 200 with real reasoning content for "max", only
+  // Luna 400s. So Luna genuinely has a narrower real vocabulary than its
+  // Sol/Terra siblings on this specific route -- "max" stays for Sol and
+  // Terra, removed only for Luna. (Also noted but NOT acted on: Sol's
+  // "none" still produces reasoning_content and its "low" doesn't --
+  // inconsistent-looking, but every call returned 200 with a valid
+  // answer, so it's a behavior quirk, not a failure, and out of scope
+  // for this fix.)
   "gpt-5.6-luna": [
     { value: "none", label: "Off" },
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
     { value: "xhigh", label: "XHigh" },
-    { value: "max", label: "Max" },
   ],
   "gpt-5.6-sol": [
     { value: "none", label: "Off" },

@@ -6,6 +6,14 @@ let githubToken: string | null;
 let githubUsername: string | null;
 let syncedInstallationsCount = 0;
 let syncInstallationsError: Error | null;
+let syncInstallationsErrorIsTransient = false;
+
+class MockGitHubSyncTransientError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "MockGitHubSyncTransientError";
+  }
+}
 
 mock.module("next/headers", () => ({
   cookies: async () => ({
@@ -26,13 +34,17 @@ mock.module("@/lib/github/token", () => ({
 
 mock.module("@/lib/github/users", () => ({
   getGitHubUsername: async () => githubUsername,
+  getGitHubUsernameStrict: async () => githubUsername,
   getGitHubAccountId: async () => null,
 }));
 
 mock.module("@/lib/github/sync", () => ({
-  syncUserInstallations: async () => {
+  GitHubSyncTransientError: MockGitHubSyncTransientError,
+  syncUserInstallationsWithRetry: async () => {
     if (syncInstallationsError) {
-      throw syncInstallationsError;
+      throw syncInstallationsErrorIsTransient
+        ? new MockGitHubSyncTransientError(syncInstallationsError.message)
+        : syncInstallationsError;
     }
 
     return syncedInstallationsCount;
@@ -57,6 +69,7 @@ describe("GET /api/github/app/callback", () => {
     githubUsername = "octocat";
     syncedInstallationsCount = 1;
     syncInstallationsError = null;
+    syncInstallationsErrorIsTransient = false;
   });
 
   test("returns no_action when the user exits before selecting an installation", async () => {

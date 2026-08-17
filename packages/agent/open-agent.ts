@@ -8,6 +8,7 @@ import {
   sharedProvider,
   type ProviderOptionsByProvider,
 } from "./models";
+import { defaultModelLabel } from "./default-model";
 
 import type { SkillMetadata } from "./skills/types";
 import type { GithubToolContext, VercelToolContext } from "./types";
@@ -79,7 +80,9 @@ export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
 // only ever used as the ToolLoopAgent constructor's placeholder model;
 // prepareCall below always resolves the real per-request model from
 // call options and overrides it before any real request is made.
-export const defaultModelLabel = "deepseek-v4-flash" as const;
+// Defined in ./default-model (not here) to break an import cycle -- see
+// that file's docstring.
+export { defaultModelLabel };
 // Inert placeholder: a real sharedProvider() call here at module scope
 // would throw immediately if GATEWAY_BASE_URL/GATEWAY_API_KEY aren't set
 // yet, which breaks Next.js's build-time page-data collection for any

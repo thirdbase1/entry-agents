@@ -46,6 +46,38 @@ export async function getGitHubUsername(
 }
 
 /**
+ * Like getGitHubUsername, but distinguishes a real auth failure (401/403 --
+ * token is genuinely bad, caller should treat this as "reconnect required")
+ * from a transient GitHub-side failure (5xx, 429, network error/timeout --
+ * e.g. a GitHub outage). Transient failures are thrown instead of silently
+ * collapsing to null, so callers checking connection health don't mistake
+ * "GitHub is down right now" for "this user's connection is broken."
+ */
+export async function getGitHubUsernameStrict(
+  userId: string,
+): Promise<string | null> {
+  const token = await getUserGitHubToken(userId);
+  if (!token) return null;
+
+  const res = await fetch("https://api.github.com/user", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+    },
+  });
+
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      return null;
+    }
+    throw new Error(`GitHub /user request failed transiently: ${res.status}`);
+  }
+
+  const user = (await res.json()) as { login?: string };
+  return user.login ?? null;
+}
+
+/**
  * Get the GitHub user profile (username + numeric ID) for the given user.
  * Used for git author identity and noreply email construction.
  */

@@ -1,4 +1,3 @@
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { getDisabledModelIdSet } from "@/lib/db/model-overrides";
 
 const DISABLED_OPENAI_GPT_PREFIX = "openai/gpt-";
@@ -50,6 +49,17 @@ export function isModelHardBlocked(modelId: string): boolean {
  * code, or turned off by an admin via the DB-backed override table (the
  * /settings/admin/models page). This is the check every real call site
  * should use.
+ *
+ * NOTE: this is the ONLY thing call sites should do with the result --
+ * surface a clear error to the user. Do NOT silently substitute a
+ * different model when this returns true (see model-selection.ts's
+ * docstring for why: a previous version of resolveChatModelSelection did
+ * exactly that -- silently swapped a disabled model for
+ * APP_DEFAULT_MODEL_ID with just a console.warn -- and it went unnoticed
+ * for days while the fallback target itself was also disabled, so users
+ * just saw generic failed-response errors with no explanation. Removed
+ * 2026-08-17 per owner instruction to eliminate every silent model
+ * fallback, not just the credit-based soft-cutoff.)
  */
 export async function isModelDisabled(modelId: string): Promise<boolean> {
   if (isModelHardBlocked(modelId)) {
@@ -67,14 +77,4 @@ export async function filterDisabledModels<T extends { id: string }>(
   return models.filter(
     (model) => !isModelHardBlocked(model.id) && !disabledIds.has(model.id),
   );
-}
-
-export async function resolveAvailableModelId(
-  modelId: string,
-): Promise<string> {
-  if (await isModelDisabled(modelId)) {
-    return APP_DEFAULT_MODEL_ID;
-  }
-
-  return modelId;
 }

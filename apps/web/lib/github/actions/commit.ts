@@ -128,6 +128,9 @@ export async function commitChanges(params: {
   if (!sessionRecord) {
     return { committed: false, pushed: false, error: "Session not found" };
   }
+  const remoteUrl =
+    sessionRecord.cloneUrl ??
+    `https://github.com/${sessionRecord.repoOwner}/${sessionRecord.repoName}.git`;
   if (sessionRecord.userId !== session.user.id) {
     return { committed: false, pushed: false, error: "Forbidden" };
   }
@@ -226,7 +229,7 @@ export async function commitChanges(params: {
       });
       try {
         await withTemporaryGitHubAuth(sandbox, syncToken.token, () =>
-          syncToRemotePreservingChanges(sandbox, resolvedBranch),
+          syncToRemotePreservingChanges(sandbox, resolvedBranch, remoteUrl),
         );
       } finally {
         await revokeInstallationToken(syncToken.token);
@@ -387,7 +390,7 @@ export async function commitChanges(params: {
     });
     try {
       await withTemporaryGitHubAuth(sandbox, syncToken.token, () =>
-        syncToRemote(sandbox, resolvedBranch),
+        syncToRemote(sandbox, resolvedBranch, remoteUrl),
       );
     } finally {
       await revokeInstallationToken(syncToken.token);

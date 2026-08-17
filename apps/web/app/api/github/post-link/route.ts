@@ -4,8 +4,11 @@ import {
   getInstallationsByUserId,
 } from "@/lib/db/installations";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { deleteGitHubAccountLink, getGitHubUsername } from "@/lib/github/users";
-import { syncUserInstallations } from "@/lib/github/sync";
+import { deleteGitHubAccountLink } from "@/lib/github/users";
+import {
+  GitHubSyncTransientError,
+  syncUserInstallationsWithRetry,
+} from "@/lib/github/sync";
 import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -43,23 +46,21 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // sync installations using the freshly-linked token
-  const username = await getGitHubUsername(session.user.id);
-  if (username) {
-    try {
-      const count = await syncUserInstallations(
-        session.user.id,
-        token,
-        username,
-      );
-
-      if (count > 0) {
-        redirectUrl.searchParams.set("github", "account_connected");
-        return NextResponse.redirect(redirectUrl);
-      }
-    } catch (error) {
-      console.error("Failed syncing installations after GitHub link:", error);
+  // sync installations using the freshly-linked token (retries transient
+  // GitHub-side failures instead of silently giving up on the first one)
+  try {
+    const count = await syncUserInstallationsWithRetry(session.user.id, token);
+    if ((count ?? 0) > 0) {
+      redirectUrl.searchParams.set("github", "account_connected");
+      return NextResponse.redirect(redirectUrl);
     }
+  } catch (error) {
+    if (error instanceof GitHubSyncTransientError) {
+      console.error("Transient GitHub sync failure after link:", error);
+      redirectUrl.searchParams.set("github", "sync_unavailable");
+      return NextResponse.redirect(redirectUrl);
+    }
+    console.error("Failed syncing installations after GitHub link:", error);
   }
 
   // no installations found — check if any exist in DB from a previous install

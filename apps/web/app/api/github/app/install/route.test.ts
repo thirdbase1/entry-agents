@@ -25,6 +25,7 @@ mock.module("@/lib/github/token", () => ({
 mock.module("@/lib/github/users", () => ({
   hasGitHubAccount: async () => hasLinkedGitHub,
   getGitHubUsername: async () => (hasLinkedGitHub ? "testuser" : null),
+  getGitHubUsernameStrict: async () => (hasLinkedGitHub ? "testuser" : null),
   getGitHubAccountId: async () => (hasLinkedGitHub ? "12345" : null),
 }));
 
@@ -32,8 +33,16 @@ mock.module("@/lib/db/installations", () => ({
   getInstallationsByUserId: async () => installations,
 }));
 
+class MockGitHubSyncTransientError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "MockGitHubSyncTransientError";
+  }
+}
+
 mock.module("@/lib/github/sync", () => ({
-  syncUserInstallations: async () => installations.length,
+  GitHubSyncTransientError: MockGitHubSyncTransientError,
+  syncUserInstallationsWithRetry: async () => installations.length,
 }));
 
 const routeModulePromise = import("./route");

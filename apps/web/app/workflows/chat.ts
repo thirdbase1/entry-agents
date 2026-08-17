@@ -1,4 +1,5 @@
 import {
+  APICallError,
   convertToModelMessages,
   type FinishReason,
   generateId as generateIdAi,
@@ -13,7 +14,7 @@ import type {
   OpenAgentCallOptions,
   VercelCliToolResult,
 } from "@open-agents/agent";
-import { getWorkflowMetadata, getWritable } from "workflow";
+import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
@@ -32,6 +33,7 @@ import {
   claimActiveStream,
   closeStream,
   clearActiveStream,
+  releaseUserBillingTurnStep,
   hasAutoCommitChangesStep,
   persistAssistantMessage,
   persistAssistantMessageWithToolResults,
@@ -228,6 +230,72 @@ const convertMessages = async (
   });
 };
 
+/**
+ * Defensive guard against AI_MissingToolResultsError (real incident,
+ * 2026-08-17: a chat's turn started failing identically on every retry --
+ * "Tool result is missing for tool call X" -- 4 attempts in a row, same
+ * toolCallId every time, then a fatal AI_NoOutputGeneratedError once the
+ * Workflow SDK's step retries ran out). Root cause: `modelMessages` is
+ * appended to directly across step iterations (see
+ * `modelMessages.push(...result.responseMessages)` in the main loop
+ * below) using the raw AI SDK response messages, which is NOT run back
+ * through `convertMessages`'s `ignoreIncompleteToolCalls: true` --
+ * that sanitization only ever runs once, on the turn's ORIGINAL history
+ * from the DB. If a tool-call ends up in `response.messages` without a
+ * matching tool-result (e.g. the step aborted mid tool-execution from
+ * real-time credit-exhaustion/turn-spend-cap billing, or any other path
+ * that stops generation between the tool-call and its result), that
+ * broken pair then poisons every subsequent model call for the rest of
+ * the turn -- and because the Workflow SDK retries the exact same step
+ * input on transient failures, it fails the identical way every retry
+ * until the whole turn dies with an empty response.
+ *
+ * Called right after every append to `modelMessages` so the array going
+ * into the next `runAgentStep` call can never contain an orphaned
+ * tool-call, regardless of which path produced it. Mutates the array
+ * in place (via splice) since `modelMessages` is a `const` binding to a
+ * shared array across the loop.
+ */
+function stripDanglingToolCalls(messages: ModelMessage[]): void {
+  const resultedToolCallIds = new Set<string>();
+  for (const message of messages) {
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (part.type === "tool-result") {
+          resultedToolCallIds.add(part.toolCallId);
+        }
+      }
+    }
+  }
+
+  const sanitized = messages
+    .map((message) => {
+      if (message.role !== "assistant" || !Array.isArray(message.content)) {
+        return message;
+      }
+      const filteredContent = message.content.filter(
+        (part) => part.type !== "tool-call" || resultedToolCallIds.has(part.toolCallId),
+      );
+      if (filteredContent.length === message.content.length) {
+        return message;
+      }
+      return { ...message, content: filteredContent };
+    })
+    .filter((message) => {
+      if (message.role !== "assistant") {
+        return true;
+      }
+      return !Array.isArray(message.content) || message.content.length > 0;
+    });
+
+  if (
+    sanitized.length !== messages.length ||
+    sanitized.some((message, index) => message !== messages[index])
+  ) {
+    messages.splice(0, messages.length, ...sanitized);
+  }
+}
+
 // Owner decision (2026-08-12): permission mode (ask / autoAccept /
 // fullAccess) must be changeable "anytime, per model turn" -- not frozen
 // for the whole assistant response the way it used to be. The multi-step
@@ -267,6 +335,7 @@ async function resolveChatModelRuntime(params: {
   chatId: string;
   requestUrl: string;
   authSession: AuthSessionContext;
+  workflowRunId: string;
 }): Promise<ChatModelRuntime> {
   "use step";
 
@@ -278,9 +347,8 @@ async function resolveChatModelRuntime(params: {
   // restricted "use workflow" bundle even when it's only ever called
   // from this "use step" function -- same reasoning as
   // performAgentCommitAndPush/checkVercelConnectedStep/etc. above.
-  const { resolveChatModelSelection } = await import(
-    "../api/chat/_lib/model-selection"
-  );
+  const { resolveChatModelSelection } =
+    await import("../api/chat/_lib/model-selection");
 
   const [sessionRecord, chat, rawPreferences] = await Promise.all([
     getSessionById(params.sessionId),
@@ -363,12 +431,29 @@ async function resolveChatModelRuntime(params: {
   // finishes (see the old chat-post-finish.ts behavior this replaces).
   let startingBalanceCents = 0;
   if (!isAdminUser) {
-    const { getUserBillingState } = await import(
-      "@/lib/billing/credit-ledger"
+    const { getUserBillingState, claimUserBillingTurn } =
+      await import("@/lib/billing/credit-ledger");
+    const { getPlanDefinition, FREE_PLAN_MODEL_ID } =
+      await import("@/lib/billing/plans");
+
+    // Claim the per-user billing-turn lock BEFORE reading the balance
+    // that this turn will spend against. Without this, two concurrent
+    // turns for the same user (e.g. two open chat tabs) could each read
+    // the same starting balance and each be allowed to spend up to it
+    // before either one's own in-memory counter (see runAgentStep)
+    // notices -- a real double-spend window despite the ledger writes
+    // themselves being atomic. See claimUserBillingTurn's docstring for
+    // the staleness fallback that keeps a crashed workflow from
+    // permanently locking a user out.
+    const claimedTurn = await claimUserBillingTurn(
+      params.userId,
+      params.workflowRunId,
     );
-    const { getPlanDefinition, FREE_PLAN_MODEL_ID } = await import(
-      "@/lib/billing/plans"
-    );
+    if (!claimedTurn) {
+      throw toSafeChatError(
+        "You already have another chat generating a response -- wait for it to finish, then try again.",
+      );
+    }
 
     const billingState = await getUserBillingState(params.userId);
     const plan = getPlanDefinition(billingState?.plan);
@@ -390,9 +475,7 @@ async function resolveChatModelRuntime(params: {
     // Admins are never blocked, but their usage is still billed (see
     // runAgentStep) -- fetch their balance too so it stays accurate,
     // just without any gating decision riding on it.
-    const { getUserBillingState } = await import(
-      "@/lib/billing/credit-ledger"
-    );
+    const { getUserBillingState } = await import("@/lib/billing/credit-ledger");
     const billingState = await getUserBillingState(params.userId);
     startingBalanceCents = billingState?.creditBalanceCents ?? 0;
   }
@@ -971,9 +1054,8 @@ async function performAgentCommitAndPush(params: {
 async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
   "use step";
 
-  const { fetchAvailableLanguageModels } = await import(
-    "@/lib/models-with-context"
-  );
+  const { fetchAvailableLanguageModels } =
+    await import("@/lib/models-with-context");
   return fetchAvailableLanguageModels();
 }
 
@@ -1145,6 +1227,7 @@ export async function runAgentWorkflow(options: Options) {
     chatId: options.chatId,
     requestUrl: options.requestUrl,
     authSession: options.authSession,
+    workflowRunId,
   });
   const runtimePromise = resolveChatSandboxRuntime({
     userId: options.userId,
@@ -1230,15 +1313,13 @@ export async function runAgentWorkflow(options: Options) {
   // Vercel-Gateway-shaped cost metadata. Best-effort: if the gateway is
   // briefly unreachable, cost tracking degrades to undefined for this
   // turn rather than failing the whole chat request.
-  const modelCostCatalog = await fetchModelCostCatalogStep().catch(
-    (error) => {
-      console.error(
-        "Failed to fetch entry-gateway model/pricing catalog for cost tracking:",
-        error,
-      );
-      return [];
-    },
-  );
+  const modelCostCatalog = await fetchModelCostCatalogStep().catch((error) => {
+    console.error(
+      "Failed to fetch entry-gateway model/pricing catalog for cost tracking:",
+      error,
+    );
+    return [];
+  });
 
   let pendingAssistantResponse: WebAgentUIMessage =
     latestMessage.role === "assistant"
@@ -1288,6 +1369,7 @@ export async function runAgentWorkflow(options: Options) {
     modelId = options.modelId ?? modelRuntime.modelId;
     let remainingBalanceCents = modelRuntime.startingBalanceCents;
     let creditExhausted = false;
+    let turnSpendCapped = false;
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
       metadata: withModelMetadata(
@@ -1383,10 +1465,15 @@ export async function runAgentWorkflow(options: Options) {
         shouldRefreshDiffCacheForParts(pendingAssistantResponse.parts);
       originalMessagesForStep = [pendingAssistantResponse];
       modelMessages.push(...result.responseMessages);
+      // See stripDanglingToolCalls's own comment above -- guards against
+      // AI_MissingToolResultsError poisoning every subsequent step of
+      // this same turn.
+      stripDanglingToolCalls(modelMessages);
       wasAborted = wasAborted || result.stepWasAborted;
       finalFinishReason = result.finishReason;
       remainingBalanceCents = result.remainingBalanceCents;
       creditExhausted = creditExhausted || result.creditExhausted;
+      turnSpendCapped = turnSpendCapped || result.turnSpendCapped;
 
       if (result.stepUsage) {
         totalUsage = totalUsage
@@ -1394,11 +1481,12 @@ export async function runAgentWorkflow(options: Options) {
           : result.stepUsage;
       }
 
-      if (creditExhausted) {
+      if (creditExhausted || turnSpendCapped) {
         // Real-time billing (see runAgentStep) already aborted the
-        // in-flight model call the instant the running balance hit
-        // zero -- stop the outer step loop too instead of starting
-        // another (now-unaffordable) step.
+        // in-flight model call -- either the running balance hit zero,
+        // or this turn alone crossed MAX_TURN_SPEND_CENTS. Either way,
+        // stop the outer step loop too instead of starting another
+        // step.
         break;
       }
 
@@ -1443,6 +1531,21 @@ export async function runAgentWorkflow(options: Options) {
         metadata: {
           ...pendingAssistantResponse.metadata,
           creditExhausted: true,
+        },
+      };
+    }
+
+    if (turnSpendCapped) {
+      // Distinct from creditExhausted: the account still has balance,
+      // but this one turn alone crossed MAX_TURN_SPEND_CENTS (runaway
+      // multi-tool-call loop protection). Surfaced so the client can
+      // tell the user why generation stopped instead of just going
+      // silent mid-answer.
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        metadata: {
+          ...pendingAssistantResponse.metadata,
+          turnSpendCapped: true,
         },
       };
     }
@@ -1588,6 +1691,7 @@ export async function runAgentWorkflow(options: Options) {
 
     await Promise.all([
       clearActiveStream(options.chatId, workflowRunId),
+      releaseUserBillingTurnStep(options.userId, workflowRunId),
       sendFinish(writable).then(() => closeStream(writable)),
       ...(sandboxState && shouldRefreshCachedDiff
         ? [refreshDiffCache(options.sessionId, sandboxState)]
@@ -1620,6 +1724,7 @@ export async function runAgentWorkflow(options: Options) {
       if (!streamClosed) {
         await Promise.all([
           clearActiveStream(options.chatId, workflowRunId),
+          releaseUserBillingTurnStep(options.userId, workflowRunId),
           sendFinish(writable).then(() => closeStream(writable)),
         ]);
       }
@@ -1657,6 +1762,20 @@ export async function runAgentWorkflow(options: Options) {
     });
   }
 }
+
+// Last-resort backstop, NOT the primary fix. The primary fix for
+// runaway multi-tool-call turns is the "Tool-Call Economy" section in
+// packages/agent/system-prompt.ts (no blind retries, capped
+// verification loops, no redundant re-reads) -- that's what should stop
+// a turn from spiraling into 20+ tool calls in the first place.
+// This constant just caps the absolute worst case if the prompt fix
+// doesn't fully prevent a loop, so one turn can never again burn
+// through most/all of a plan's credit in one shot like the incident
+// where two turns with 21-24 tool calls each drained ~$9 of a user's
+// $10 Plus-plan grant in under 25 minutes. Set high on purpose so it
+// never interferes with legitimate heavy single-turn work -- it should
+// almost never fire.
+const MAX_TURN_SPEND_CENTS = 500;
 
 const runAgentStep = async (
   messages: ModelMessage[],
@@ -1697,6 +1816,11 @@ const runAgentStep = async (
   // durably committed before any workflow checkpoint.
   let remainingBalanceCents = startingBalanceCents;
   let creditExhausted = false;
+  // Tripped when this turn's cumulative cost (totalMessageCost, which
+  // persists across outer-loop step calls via message metadata -- see
+  // the assignment below) crosses MAX_TURN_SPEND_CENTS, regardless of
+  // how much account balance remains.
+  let turnSpendCapped = false;
   const pendingDebits: Promise<void>[] = [];
 
   try {
@@ -1853,9 +1977,8 @@ const runAgentStep = async (
               // above for why this can't simply be awaited right here.
               pendingDebits.push(
                 (async () => {
-                  const { debitUsage } = await import(
-                    "@/lib/billing/credit-ledger"
-                  );
+                  const { debitUsage } =
+                    await import("@/lib/billing/credit-ledger");
                   try {
                     await debitUsage(userId, stepCostCents, {
                       modelId,
@@ -1880,6 +2003,21 @@ const runAgentStep = async (
                   // never starts another (now-unaffordable) step.
                   abortController.abort();
                 }
+              }
+
+              // Per-turn cost circuit-breaker: independent of the
+              // account-balance check above, never let one turn spend
+              // past MAX_TURN_SPEND_CENTS. totalMessageCost already
+              // accumulates across every step of this turn (see its
+              // declaration above), including steps from earlier calls
+              // to runAgentStep for this same message.
+              if (
+                !turnSpendCapped &&
+                Math.round((totalMessageCost ?? 0) * 100) >=
+                  MAX_TURN_SPEND_CENTS
+              ) {
+                turnSpendCapped = true;
+                abortController.abort();
               }
             }
           }
@@ -2077,6 +2215,7 @@ const runAgentStep = async (
       stepWasAborted: false,
       remainingBalanceCents,
       creditExhausted,
+      turnSpendCapped,
       stepTiming: buildStepTiming(
         stepNumber,
         stepStartedAt,
@@ -2100,6 +2239,7 @@ const runAgentStep = async (
         stepWasAborted: true,
         remainingBalanceCents,
         creditExhausted,
+        turnSpendCapped,
         stepTiming: buildStepTiming(
           stepNumber,
           stepStartedAt,
@@ -2120,6 +2260,34 @@ const runAgentStep = async (
         errorWithStepTiming.name,
       ),
     });
+
+    // Real incident, 2026-08-17: a bad-param request (reasoning_effort
+    // "max" not accepted by the real upstream behind gpt-5.6-luna) threw
+    // an AI_APICallError that the AI SDK itself had already correctly
+    // flagged `isRetryable: false` -- but nothing here told the Workflow
+    // SDK's own step-retry layer that, so it retried the identical
+    // guaranteed-to-fail request 3 more times (4 attempts total) before
+    // finally giving up, needlessly delaying the failure and burning a
+    // model-call attempt each time for no chance of success. Any 4xx
+    // APICallError the AI SDK itself marks non-retryable is exactly the
+    // class of error `FatalError` exists for -- skips the Workflow SDK's
+    // retries entirely so a permanent, param-level failure fails once
+    // and immediately instead of 4 times.
+    if (isNonRetryableApiCallError(errorWithStepTiming)) {
+      // FatalError's constructor only takes a message string (see
+      // node_modules/workflow's own docs -- no options/cause param), so
+      // stepTiming has to be reattached manually to keep the outer
+      // loop's isStepTimingError(error) pickup working the same way it
+      // does for the plain-throw path above.
+      const fatalError = new FatalError(errorWithStepTiming.message);
+      Object.assign(fatalError, {
+        stepTiming: (errorWithStepTiming as { stepTiming?: unknown })
+          .stepTiming,
+        cause: errorWithStepTiming,
+      });
+      throw fatalError;
+    }
+
     throw errorWithStepTiming;
   } finally {
     // Flush queued real-time ledger debits before this step function
@@ -2172,9 +2340,8 @@ function startStopMonitor(
         // client, which must not be statically imported into this
         // "use workflow" module -- see the matching comment in
         // resolveChatModelRuntime.
-        const { getFreeTierGateStatus } = await import(
-          "@/lib/db/platform-settings"
-        );
+        const { getFreeTierGateStatus } =
+          await import("@/lib/db/platform-settings");
         const gate = await getFreeTierGateStatus().catch(() => ({
           enabled: true,
           reason: null,
@@ -2205,6 +2372,38 @@ function delay(ms: number) {
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
+}
+
+/**
+ * See the FatalError-throwing block above (2026-08-17 incident: a
+ * guaranteed-to-fail bad-param request retried 4 identical times before
+ * failing for good -- gpt-5.6-luna rejecting reasoning_effort "max"). An
+ * AI SDK `APICallError` is authoritative here -- the SDK itself already
+ * inspects the HTTP status code/response shape and sets `isRetryable`
+ * accordingly (false for 4xx client errors like an unsupported param
+ * value, true for 429/5xx). If some future provider/route sends back a
+ * 4xx without APICallError's own retry heuristic catching it, this also
+ * treats any explicit "invalid_request_error" statusCode-400 response
+ * as non-retryable on its own merits, independent of `isRetryable` --
+ * belt and suspenders, since a malformed request will never succeed on
+ * retry regardless of what any single provider's error-classification
+ * happens to set.
+ */
+function isNonRetryableApiCallError(error: unknown): boolean {
+  if (!(error instanceof APICallError)) {
+    return false;
+  }
+  if (error.isRetryable === false) {
+    return true;
+  }
+  if (error.statusCode !== 400) {
+    return false;
+  }
+  const data = error.data;
+  if (isObjectRecord(data) && isObjectRecord(data.error)) {
+    return data.error.type === "invalid_request_error";
+  }
+  return false;
 }
 
 async function sendTextMessage(writable: Writable, id: string, text: string) {

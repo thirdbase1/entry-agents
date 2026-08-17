@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { gateway } from "@open-agents/agent";
+import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 
 export const SAFE_BRANCH_PATTERN = /^[\w\-/.]+$/;
 
@@ -57,7 +58,7 @@ export async function generateCommitMessage(
 
   try {
     const result = await generateText({
-      model: gateway("deepseek-v4-flash"),
+      model: gateway(APP_DEFAULT_MODEL_ID),
       prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${sessionTitle}

@@ -63,6 +63,15 @@ export type WebAgentMessageMetadata = {
    * "you're out of credit" notice in session-chat-content.tsx.
    */
   creditExhausted?: boolean;
+  /**
+   * True when this single turn's own cumulative cost crossed the
+   * MAX_TURN_SPEND_CENTS circuit-breaker in app/workflows/chat.ts,
+   * independent of the account's remaining balance (protects against a
+   * runaway multi-tool-call loop burning most/all of a plan's credit in
+   * one turn). Drives the "this response got expensive, stopped early"
+   * notice in session-chat-content.tsx.
+   */
+  turnSpendCapped?: boolean;
 };
 
 export type WebAgentGitDataStatus = "pending" | "success" | "error" | "skipped";

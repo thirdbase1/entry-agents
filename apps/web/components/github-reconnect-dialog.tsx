@@ -30,21 +30,29 @@ function getReconnectDescription(
 export function GitHubReconnectDialog({
   open,
   reason,
+  onDismiss,
 }: {
   open: boolean;
   reason: GitHubConnectionReason | null;
+  onDismiss?: () => void;
 }) {
   return (
-    <Dialog open={open}>
-      <DialogContent showCloseButton={false}>
+    <Dialog open={open} onOpenChange={(next) => !next && onDismiss?.()}>
+      <DialogContent showCloseButton={Boolean(onDismiss)}>
         <DialogHeader>
           <DialogTitle>Reconnect GitHub</DialogTitle>
           <DialogDescription>
-            {getReconnectDescription(reason)} Reconnect now to restore
-            repository access and keep using the app.
+            {getReconnectDescription(reason)} Reconnect to restore repository
+            access for this session, or continue without it if you&apos;re not
+            using a GitHub repo right now.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
+          {onDismiss && (
+            <Button variant="ghost" onClick={onDismiss}>
+              Not now
+            </Button>
+          )}
           <Button asChild>
             <Link href="/settings/connections">Reconnect GitHub</Link>
           </Button>

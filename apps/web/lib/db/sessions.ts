@@ -301,7 +301,7 @@ export async function getStuckArchivedSessions(minStuckMs = 5 * 60 * 1000) {
         isNull(sessions.snapshotUrl),
         sql`${sessions.sandboxState} IS NOT NULL`,
         ne(sessions.lifecycleState, "archived"),
-        sql`${sessions.updatedAt} < ${staleBefore}`,
+        sql`${sessions.updatedAt} < ${staleBefore.toISOString()}`,
       ),
     );
 }

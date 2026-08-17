@@ -4,6 +4,8 @@ import { syncToRemotePreservingChanges } from "./git";
 
 const fetchFeatureCommand =
   "GIT_TERMINAL_PROMPT=0 git fetch --force origin feature:refs/remotes/origin/feature";
+const getOriginUrlCommand = "git remote get-url origin";
+const remoteUrl = "https://github.com/octo/repo.git";
 
 function result(params: Partial<ExecResult> = {}): ExecResult {
   return {
@@ -48,6 +50,7 @@ function createSandbox(results: ExecResult[]): Sandbox {
 describe("syncToRemotePreservingChanges", () => {
   test("stashes local changes, resets to remote, and restores changes", async () => {
     const sandbox = createSandbox([
+      result({ stdout: "https://github.com/octo/repo.git\n" }),
       result(),
       result({ stdout: " M file.ts\n" }),
       result({ stdout: "original-head\n" }),
@@ -57,9 +60,38 @@ describe("syncToRemotePreservingChanges", () => {
       result(),
     ]) as Sandbox & { commands: string[] };
 
-    await syncToRemotePreservingChanges(sandbox, "feature");
+    await syncToRemotePreservingChanges(sandbox, "feature", remoteUrl);
 
     expect(sandbox.commands).toEqual([
+      getOriginUrlCommand,
+      fetchFeatureCommand,
+      "git status --porcelain",
+      "git rev-parse HEAD",
+      "git stash push --include-untracked -m open-agents-pre-commit-sync",
+      "git reset --hard origin/feature",
+      "git branch --set-upstream-to=origin/feature feature",
+      "git stash pop",
+    ]);
+  });
+
+  test("re-adds a missing origin remote before fetching (self-heal after a broken restore)", async () => {
+    const sandbox = createSandbox([
+      result({ success: false, exitCode: 2, stderr: "" }),
+      result(),
+      result(),
+      result({ stdout: " M file.ts\n" }),
+      result({ stdout: "original-head\n" }),
+      result(),
+      result(),
+      result(),
+      result(),
+    ]) as Sandbox & { commands: string[] };
+
+    await syncToRemotePreservingChanges(sandbox, "feature", remoteUrl);
+
+    expect(sandbox.commands).toEqual([
+      getOriginUrlCommand,
+      `git remote add origin '${remoteUrl}'`,
       fetchFeatureCommand,
       "git status --porcelain",
       "git rev-parse HEAD",
@@ -72,6 +104,7 @@ describe("syncToRemotePreservingChanges", () => {
 
   test("returns without touching local changes when the remote branch is missing", async () => {
     const sandbox = createSandbox([
+      result({ stdout: "https://github.com/octo/repo.git\n" }),
       result({
         success: false,
         exitCode: 128,
@@ -79,13 +112,14 @@ describe("syncToRemotePreservingChanges", () => {
       }),
     ]) as Sandbox & { commands: string[] };
 
-    await syncToRemotePreservingChanges(sandbox, "feature");
+    await syncToRemotePreservingChanges(sandbox, "feature", remoteUrl);
 
-    expect(sandbox.commands).toEqual([fetchFeatureCommand]);
+    expect(sandbox.commands).toEqual([getOriginUrlCommand, fetchFeatureCommand]);
   });
 
   test("rolls back and restores local changes when stash restore conflicts after sync", async () => {
     const sandbox = createSandbox([
+      result({ stdout: "https://github.com/octo/repo.git\n" }),
       result(),
       result({ stdout: " M file.ts\n" }),
       result({ stdout: "original-head\n" }),
@@ -103,12 +137,13 @@ describe("syncToRemotePreservingChanges", () => {
     ]) as Sandbox & { commands: string[] };
 
     await expect(
-      syncToRemotePreservingChanges(sandbox, "feature"),
+      syncToRemotePreservingChanges(sandbox, "feature", remoteUrl),
     ).rejects.toThrow(
       "Failed to restore local changes after syncing remote branch",
     );
 
     expect(sandbox.commands).toEqual([
+      getOriginUrlCommand,
       fetchFeatureCommand,
       "git status --porcelain",
       "git rev-parse HEAD",

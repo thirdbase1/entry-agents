@@ -1,6 +1,7 @@
 import type { LanguageModel } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { createInertPlaceholderModel, sharedProvider } from "../models";
+import { defaultModelLabel } from "../default-model";
 import { z } from "zod";
 import { bashTool } from "../tools/bash";
 import { globTool } from "../tools/glob";
@@ -79,7 +80,7 @@ export const explorerSubagent = new ToolLoopAgent({
   // can't be a real sharedProvider() call at module scope. prepareCall
   // below lazily constructs the real default model if the caller
   // doesn't pass one explicitly.
-  model: createInertPlaceholderModel("deepseek-v4-flash"),
+  model: createInertPlaceholderModel(defaultModelLabel),
   instructions: EXPLORER_SYSTEM_PROMPT,
   tools: {
     read: readFileTool(),
@@ -95,7 +96,7 @@ export const explorerSubagent = new ToolLoopAgent({
     }
 
     const sandbox = options.sandbox;
-    const model = options.model ?? sharedProvider("deepseek-v4-flash");
+    const model = options.model ?? sharedProvider(defaultModelLabel);
     return {
       ...settings,
       model,

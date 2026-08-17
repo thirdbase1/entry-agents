@@ -1,5 +1,16 @@
-export const DEFAULT_MODEL_ID = "deepseek-v4-flash"; // TEMP: ling-3.0-flash-free is down on Opencode Zen (503 "Endpoint is unavailable", confirmed 2026-08-11). Revert once Opencode Zen restores it.
-export const APP_DEFAULT_MODEL_ID = "deepseek-v4-flash"; // TEMP: same outage, see DEFAULT_MODEL_ID above.
+// Changed 2026-08-17: deepseek-v4-flash was left as a "TEMP" default from
+// an old 2026-08-11 ling-3.0-flash-free outage, then got admin-disabled
+// itself on 2026-08-17 -- meaning any request that fell through to this
+// default was guaranteed to fail. Using gpt-5.6-luna instead: it's the
+// free-tier model (see FREE_PLAN_MODEL_ID in lib/billing/plans.ts), so it's
+// verified working and always enabled by definition. This is only used as
+// the INITIAL selection when no model has been chosen yet -- if a model a
+// user actually picked turns out to be disabled, resolveChatModelSelection
+// throws a clear error instead of silently substituting this (or any other)
+// default. See that file's docstring for why silent substitution was
+// removed entirely.
+export const DEFAULT_MODEL_ID = "gpt-5.6-luna";
+export const APP_DEFAULT_MODEL_ID = "gpt-5.6-luna";
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 const TOKENS_PER_MILLION = 1_000_000;
 

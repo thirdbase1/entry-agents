@@ -8,6 +8,7 @@ import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { Octokit } from "@octokit/rest";
 import { generateText } from "ai";
 import { gateway } from "@open-agents/agent";
+import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -158,7 +159,7 @@ async function compactLog(rawLog: string): Promise<string> {
   }
 
   const result = await generateText({
-    model: gateway("deepseek-v4-flash"),
+    model: gateway(APP_DEFAULT_MODEL_ID),
     system: LOG_SUMMARIZATION_PROMPT,
     prompt: logInput,
   });

@@ -1,8 +1,16 @@
-import { describe, expect, test } from "bun:test";
-import {
-  GitHubInstallationsSyncError,
-  isGitHubInstallationsAuthError,
-} from "./sync";
+import { describe, expect, mock, test } from "bun:test";
+
+// ./sync also exports syncUserInstallationsWithRetry, which imports
+// getGitHubUsernameStrict from ./users -- and users.ts has a top-level
+// `import "server-only"`, which throws outside Next's RSC test condition.
+// Mock it out since none of the tests below need real GitHub/DB access.
+mock.module("server-only", () => ({}));
+mock.module("./users", () => ({
+  getGitHubUsernameStrict: async () => null,
+}));
+
+const { GitHubInstallationsSyncError, isGitHubInstallationsAuthError } =
+  await import("./sync");
 
 describe("isGitHubInstallationsAuthError", () => {
   test("treats 401 responses as auth failures", () => {

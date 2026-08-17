@@ -1,6 +1,7 @@
 import { checkBotProtection } from "@/lib/botid";
 import { generateText } from "ai";
 import { gateway } from "@open-agents/agent";
+import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { z } from "zod";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -19,7 +20,7 @@ export async function generateSessionTitle(
 
   try {
     const result = await generateText({
-      model: gateway("deepseek-v4-flash"),
+      model: gateway(APP_DEFAULT_MODEL_ID),
       prompt: `You are a developer tool that names coding sessions. Generate a concise title (max 5 words) for a coding session based on the user's first message below. The title should help the user quickly identify what this session is about at a glance. Do NOT use quotes or punctuation around the title. Respond with ONLY the title, nothing else.
 
 User message:

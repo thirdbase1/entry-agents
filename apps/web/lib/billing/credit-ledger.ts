@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import { creditTransactions, users } from "@/lib/db/schema";
@@ -92,6 +92,85 @@ async function applyLedgerEntry(
 
     return updated.creditBalanceCents;
   });
+}
+
+/**
+ * Per-user turn lock (billing correctness).
+ *
+ * Real-time credit enforcement inside a single turn (see
+ * apps/web/app/workflows/chat.ts) tracks the running balance in-memory,
+ * seeded once from a DB read at turn start. That in-memory counter is
+ * NOT aware of any other turn's concurrent spend, so two turns started
+ * around the same time for the same user (e.g. two open chat tabs) could
+ * each read the same starting balance and each be allowed to spend up to
+ * it before either one's own local counter hits zero -- a real
+ * double-spend window, even though the underlying ledger writes
+ * themselves are atomic per-row DB updates.
+ *
+ * This lock closes that window: exactly one turn per user may hold the
+ * slot at a time. A second concurrent turn is rejected immediately,
+ * before it spends anything, with a clear "already generating elsewhere"
+ * error -- instead of racing the first turn on stale balance state.
+ */
+
+/**
+ * Atomically claims the billing-turn slot for `workflowRunId`. Returns
+ * true when the slot is now owned by this run (it was free, or already
+ * owned by this exact run -- safe to call more than once for the same
+ * run). Returns false when a *different* run currently holds it.
+ */
+// A held lock older than this is treated as abandoned (e.g. a crashed
+// or orphaned workflow run that never reached its cleanup/finally) and
+// can be stolen by a new turn. Generous relative to a normal turn's
+// length so it never fires on a merely-slow-but-alive turn.
+const BILLING_TURN_LOCK_STALE_MS = 15 * 60 * 1000;
+
+export async function claimUserBillingTurn(
+  userId: string,
+  workflowRunId: string,
+): Promise<boolean> {
+  const staleThreshold = new Date(Date.now() - BILLING_TURN_LOCK_STALE_MS);
+
+  const [updated] = await db
+    .update(users)
+    .set({
+      activeBillingRunId: workflowRunId,
+      activeBillingRunClaimedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(users.id, userId),
+        or(
+          isNull(users.activeBillingRunId),
+          eq(users.activeBillingRunId, workflowRunId),
+          isNull(users.activeBillingRunClaimedAt),
+          lt(users.activeBillingRunClaimedAt, staleThreshold),
+        ),
+      ),
+    )
+    .returning({ id: users.id });
+
+  return Boolean(updated);
+}
+
+/**
+ * Releases the billing-turn slot, but only if `workflowRunId` is still
+ * the current holder -- so a slow/stale release from an already-aborted
+ * run can never clobber a newer run's active lock.
+ */
+export async function releaseUserBillingTurn(
+  userId: string,
+  workflowRunId: string,
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ activeBillingRunId: null, activeBillingRunClaimedAt: null })
+    .where(
+      and(
+        eq(users.id, userId),
+        eq(users.activeBillingRunId, workflowRunId),
+      ),
+    );
 }
 
 export async function creditAccount(

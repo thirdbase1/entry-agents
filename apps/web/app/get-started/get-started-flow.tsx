@@ -352,16 +352,26 @@ function GitHubConnectStep({
         <p className="text-xs text-zinc-500">
           GitHub account linked. Install the GitHub App to grant repo access.
         </p>
-        <Button
-          asChild
-          variant="outline"
-          className="gap-2 border-zinc-700 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"
-        >
-          <Link href={githubInstallHref}>
-            <Github className="size-4" />
-            Install GitHub App
-          </Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            asChild
+            variant="outline"
+            className="gap-2 border-zinc-700 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"
+          >
+            <Link href={githubInstallHref}>
+              <Github className="size-4" />
+              Install GitHub App
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onComplete}
+            className="text-zinc-500 hover:text-zinc-300"
+          >
+            Skip for now
+          </Button>
+        </div>
       </div>
     );
   }
@@ -393,6 +403,17 @@ function GitHubConnectStep({
         )}
         {forceReconnect ? "Reconnect GitHub" : "Connect GitHub"}
       </Button>
+      <div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onComplete}
+          className="px-0 text-zinc-500 hover:bg-transparent hover:text-zinc-300"
+        >
+          Skip for now &ndash; connect GitHub later from Settings
+        </Button>
+      </div>
     </div>
   );
 }

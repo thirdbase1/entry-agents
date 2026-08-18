@@ -233,3 +233,48 @@ Deployed: commit a4438d1, live on entry-agents.vercel.app.
 
 Deployed: commit 5bec7f1, live on entry-agents.vercel.app. Gateway fix
 deployed separately via `entry-gateway-six.vercel.app`.
+
+## 2026-08-18: chat image attachments leaking into user GitHub repos
+
+- Root cause: chat images get offloaded into the sandbox at
+  `uploads/<hash>.ext` for the agent to read via its own tools (see
+  `persistImageAttachmentsToSandbox` in
+  `apps/web/app/workflows/chat-sandbox-runtime.ts`). That path is
+  relative to the sandbox's `workingDirectory`, which *is* the repo
+  root -- `git clone ... .` clones straight into it, there's no
+  separate non-repo path in this sandbox setup. So `git add -A`
+  (whether from our own auto-commit step in `packages/sandbox/git.ts`
+  `stageAll()`, or the agent's own bash tool) was sweeping these chat
+  attachments straight into the user's GitHub repo. This is exactly
+  what caused the stray `uploads/*.webp` file found during the PR #6
+  review.
+- Fix: added `ensureUploadsGitignored()` in the new
+  `apps/web/lib/sandbox/uploads-gitignore.ts`, called right before any
+  image is written to the sandbox. It idempotently appends a
+  root-anchored `/uploads/` line to `.gitignore` (creates the file if
+  missing), so no future `git add` -- ours or the agent's own -- can
+  ever pick the directory up again, regardless of who runs it or in
+  what order commits happen.
+- Deliberately root-anchored (`/uploads/`, not bare `uploads/`) so it
+  only excludes the exact top-level directory our own offload code
+  writes to, not a same-named nested directory a real project might
+  legitimately have and want tracked (e.g. `apps/web/public/uploads`).
+- Extracted into its own dependency-light module (only a type-only
+  import of `Sandbox`) instead of leaving it inline in
+  `chat-sandbox-runtime.ts`, specifically so it's unit-testable without
+  pulling in that file's `server-only`-guarded transitive imports
+  (`lib/db/sessions`, sandbox provisioning, etc. -- importing any of
+  those in a `bun:test` file throws "This module cannot be imported
+  from a Client Component module"). 4 `bun:test` cases cover
+  create/append/idempotency/pre-existing-non-anchored-entry.
+- Side benefit: this also retroactively protects any *already-live*
+  session that had an ungitignored `uploads/` dir sitting around from
+  before this fix -- the very next image upload in that session now
+  adds the `.gitignore` entry too.
+- Noted but explicitly NOT touched: `apps/web/app/api/generate-title/
+  route.test.ts` fails locally with `SyntaxError: Export named
+  'wrapLanguageModel' not found in module 'ai'` -- confirmed
+  pre-existing and unrelated (different file, no shared imports, fails
+  the same way on a clean `git diff` against this change). Follow-up,
+  not blocking.
+- Deployed: commit `5b0975d`, live on `entry-agents.vercel.app`.

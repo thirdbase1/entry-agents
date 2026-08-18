@@ -24,6 +24,7 @@ import {
   skillTool,
   taskTool,
   todoWriteTool,
+  vercelApiTool,
   vercelCliTool,
   webFetchTool,
   webSearchTool,
@@ -117,6 +118,7 @@ const tools = {
   web_search: webSearchTool,
   github_cli: githubCliTool(),
   vercel_cli: vercelCliTool(),
+  vercel_api: vercelApiTool(),
 } satisfies ToolSet;
 
 export const openAgent = new ToolLoopAgent({

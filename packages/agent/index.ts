@@ -50,9 +50,12 @@ export type {
   GithubApiResult,
   GithubCliToolResult,
   GithubCommitToolResult,
+  GithubRawCliResult,
   GithubToolContext,
   TodoItem,
   TodoStatus,
+  VercelApiRequestInput,
+  VercelApiResult,
   VercelCliToolResult,
   VercelToolContext,
 } from "./types";

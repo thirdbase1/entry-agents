@@ -19,4 +19,5 @@ export { skillTool, type SkillToolInput } from "./skill";
 export { webFetchTool } from "./fetch";
 export { githubCliTool, type GithubCliToolInput } from "./github";
 export { vercelCliTool, type VercelCliToolInput } from "./vercel";
+export { vercelApiTool, type VercelApiToolInput } from "./vercel-api";
 export { webSearchTool } from "./web-search";

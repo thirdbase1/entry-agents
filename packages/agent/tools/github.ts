@@ -5,9 +5,9 @@ import type { GithubCliToolResult } from "../types";
 
 const githubCliInputSchema = z.object({
   action: z
-    .enum(["commit_and_push", "api"])
+    .enum(["commit_and_push", "api", "cli"])
     .describe(
-      "'commit_and_push': commit and push all current uncommitted sandbox changes to the connected repo on the current branch. 'api': call any GitHub REST API endpoint for this repo (or beyond) -- list/create/update/close/merge pull requests and issues, read or post comments and reviews, manage labels, branches, releases, etc.",
+      "'commit_and_push': commit and push all current uncommitted sandbox changes to the connected repo on the current branch. 'api': call any GitHub REST API endpoint for this repo (or beyond) -- list/create/update/close/merge pull requests and issues, read or post comments and reviews, manage labels, branches, releases, etc. 'cli': run an arbitrary gh <args> command for anything a single REST call can't cover cleanly (gh pr create/checks/review, gh run watch/rerun, gh release create with assets, gh workflow run with inputs, gh issue develop, etc.).",
     ),
   commitTitle: z
     .string()
@@ -40,6 +40,12 @@ const githubCliInputSchema = z.object({
     .describe(
       "Only used with action 'api'. Octokit-style params: keys matching {templates} in the path fill the URL, everything else becomes query params (GET/DELETE) or JSON body fields (POST/PATCH/PUT). E.g. for 'issues/{issue_number}/comments' pass { issue_number: 12, body: 'Looks good!' }.",
     ),
+  args: z
+    .string()
+    .optional()
+    .describe(
+      "Only used with action 'cli'. Everything that goes after gh on the command line, e.g. 'pr create --title \"fix\" --body \"...\" --base main', 'pr checks 12', 'run list --limit 5', 'release create v1.0.0 ./dist/app.zip'. Do not include the word 'gh' itself, and never pass a token yourself -- authentication and repo scoping are injected automatically for this session's connected repo.",
+    ),
 });
 
 export type GithubCliToolInput = z.infer<typeof githubCliInputSchema>;
@@ -71,7 +77,7 @@ export type GithubCliToolInput = z.infer<typeof githubCliInputSchema>;
 export function githubCliTool() {
   return tool({
     description:
-      "Take a GitHub action on the connected repository for this session: commit_and_push (commit and push all current uncommitted sandbox changes, using the exact same verified path as the UI's 'Commit & Push' button) or api (call any GitHub REST API endpoint -- PRs, issues, comments, reviews, labels, merges, branches, releases, anything). Use 'api' whenever the user asks about PR/issue feedback, wants to merge/close/label something, or any other GitHub action that isn't a plain commit. If no repository is connected yet, this returns a clear error -- relay that to the user (repo icon next to the chat), don't try to work around it with raw git commands.",
+      "Take a GitHub action on the connected repository for this session: commit_and_push (commit and push all current uncommitted sandbox changes, using the exact same verified path as the UI's 'Commit & Push' button), api (call any GitHub REST API endpoint -- PRs, issues, comments, reviews, labels, merges, branches, releases, anything), or cli (run an arbitrary authenticated `gh <args>` command for anything the api action can't express as one REST call). Use 'api' for simple one-shot REST reads/writes (fetching PR comments, adding a label). Use 'cli' for multi-step or file-upload gh workflows (gh pr create with a body from a file, gh release create with asset uploads, gh run watch, gh workflow run with typed -f inputs). If no repository is connected yet, this returns a clear error -- relay that to the user (repo icon next to the chat), don't try to work around it with raw git commands.",
     inputSchema: githubCliInputSchema,
     execute: async (
       input,
@@ -120,6 +126,34 @@ export function githubCliTool() {
             committed: false,
             pushed: false,
             error: error instanceof Error ? error.message : "Commit failed",
+          };
+        }
+      }
+
+      if (input.action === "cli") {
+        if (!input.args) {
+          return {
+            success: false,
+            action: input.action,
+            error: "Action 'cli' requires 'args'.",
+          };
+        }
+        try {
+          const result = await github.cli({ args: input.args });
+          return {
+            success: result.success,
+            action: input.action,
+            exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            error: result.error,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            action: input.action,
+            error:
+              error instanceof Error ? error.message : "gh CLI command failed",
           };
         }
       }

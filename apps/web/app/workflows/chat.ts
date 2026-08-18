@@ -11,7 +11,9 @@ import {
 } from "ai";
 import type {
   GithubApiResult,
+  GithubRawCliResult,
   OpenAgentCallOptions,
+  VercelApiResult,
   VercelCliToolResult,
 } from "@open-agents/agent";
 import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
@@ -1249,6 +1251,212 @@ async function performAgentVercelCli(params: {
   }
 }
 
+// Deliberately not the real token -- same reasoning as
+// VERCEL_CLI_PLACEHOLDER_TOKEN above, just for `gh`'s own local
+// "am I logged in" check. The real Authorization header sent to
+// api.github.com/github.com/uploads.github.com/codeload.github.com is
+// overwritten with the real scoped installation token by the sandbox's
+// existing GitHub credential broker (withTemporaryGitHubAuth /
+// setGitHubAuthToken -- the same mechanism auto-commit-direct.ts already
+// uses for git push), so this placeholder is never actually presented to
+// GitHub and is harmless even if it leaked.
+const GITHUB_CLI_PLACEHOLDER_TOKEN = "sandboxed-cli-do-not-use";
+
+// One-time-per-command install guard for `gh` -- the sandbox base image
+// isn't guaranteed to ship the GitHub CLI (unlike `vercel`, which the
+// base image already includes), so this downloads the static release
+// binary straight from GitHub's own release assets (no apt/sudo
+// dependency, works regardless of the base image's package manager) the
+// first time it's missing, then reuses it for the rest of the session.
+const ENSURE_GH_CLI_INSTALLED = [
+  "command -v gh >/dev/null 2>&1 || {",
+  "  GH_VER=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest",
+  '    | grep -m1 tag_name | grep -oE "[0-9]+\\.[0-9]+\\.[0-9]+");',
+  '  mkdir -p "$HOME/.local/bin";',
+  '  curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh-cli.tar.gz &&',
+  "    tar -xzf /tmp/gh-cli.tar.gz -C /tmp &&",
+  '    cp "/tmp/gh_${GH_VER}_linux_amd64/bin/gh" "$HOME/.local/bin/gh" &&',
+  '    chmod +x "$HOME/.local/bin/gh";',
+  "}",
+].join(" ");
+
+/**
+ * Runs an arbitrary `gh <args>` command for the agent's `github_cli`
+ * tool's 'cli' action, as a step -- same zero-token-exposure reasoning
+ * as performAgentVercelCli below, reusing the exact broker mechanism
+ * auto-commit-direct.ts already relies on for git push
+ * (withTemporaryGitHubAuth / setGitHubAuthToken): a short-lived GitHub
+ * App installation token, scoped to exactly this one repo, is injected
+ * as an Authorization header at the sandbox's network-egress layer for
+ * api.github.com/github.com/uploads.github.com/codeload.github.com
+ * only -- the sandbox process (where the agent's own bash tool has full
+ * shell access) never sees the real token, only the harmless
+ * GITHUB_CLI_PLACEHOLDER_TOKEN needed for `gh`'s own local login check.
+ * Minted with write access across the common gh-cli surface (contents,
+ * issues, pull_requests, actions, checks, statuses, workflows) but
+ * deliberately NOT 'administration' -- repo settings/deletion/transfer
+ * stay out of scope for an agent-initiated CLI call. Always revoked in
+ * a `finally`, even on error/timeout, same as auto-commit-direct.ts.
+ */
+async function performAgentGithubCli(params: {
+  userId: string;
+  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  workingDirectory: string;
+  repoOwner: string;
+  repoName: string;
+  args: string;
+}): Promise<GithubRawCliResult> {
+  "use step";
+
+  const { connectSandbox, withTemporaryGitHubAuth } =
+    await import("@open-agents/sandbox");
+  const { verifyRepoAccess } = await import("@/lib/github/access");
+  const { mintInstallationToken, revokeInstallationToken } =
+    await import("@/lib/github/app");
+
+  const access = await verifyRepoAccess({
+    userId: params.userId,
+    owner: params.repoOwner,
+    repo: params.repoName,
+  });
+  if (!access.ok) {
+    return {
+      success: false,
+      error: "No GitHub access to this repository for this user.",
+    };
+  }
+
+  const sandbox = await connectSandbox(params.sandboxState);
+  if (!sandbox.setGitHubAuthToken) {
+    return {
+      success: false,
+      error: "This sandbox doesn't support secure GitHub CLI credential brokering.",
+    };
+  }
+
+  const scoped = await mintInstallationToken({
+    installationId: access.installationId,
+    repositoryIds: [access.repositoryId],
+    permissions: {
+      contents: "write",
+      issues: "write",
+      pull_requests: "write",
+      actions: "write",
+      checks: "write",
+      statuses: "write",
+      workflows: "write",
+    },
+  });
+
+  const command = `${ENSURE_GH_CLI_INSTALLED}; export PATH="$HOME/.local/bin:$PATH"; GH_TOKEN=${GITHUB_CLI_PLACEHOLDER_TOKEN} GH_REPO=${params.repoOwner}/${params.repoName} gh ${params.args}`;
+
+  try {
+    const result = await withTemporaryGitHubAuth(
+      sandbox,
+      scoped.token,
+      () => sandbox.exec(command, params.workingDirectory, 120000),
+    );
+
+    // Defense in depth only -- see redact() in performAgentVercelCli.
+    const redact = (text: string) =>
+      text
+        ? text
+            .split(scoped.token)
+            .join("[REDACTED]")
+            .split(GITHUB_CLI_PLACEHOLDER_TOKEN)
+            .join("[REDACTED]")
+        : text;
+
+    return {
+      success: result.success,
+      exitCode: result.exitCode,
+      stdout: redact(result.stdout),
+      stderr: redact(result.stderr),
+    };
+  } finally {
+    await revokeInstallationToken(scoped.token).catch((error) =>
+      console.warn(
+        "[performAgentGithubCli] failed to revoke installation token:",
+        error,
+      ),
+    );
+  }
+}
+
+/**
+ * Generic Vercel REST API passthrough for the agent's `vercel_api`
+ * tool, as its own step -- same reasoning as
+ * performAgentGithubApiRequest above, mirrored for Vercel. Unlike
+ * performAgentVercelCli, this never touches the sandbox at all: it's a
+ * plain authenticated fetch to api.vercel.com from inside the step,
+ * using the same per-user OAuth token (auto-refreshed by better-auth)
+ * as the CLI tool. Useful for structured JSON reads/writes the CLI
+ * doesn't expose cleanly -- full deployment/build metadata, edge
+ * config, webhooks, some project settings.
+ */
+async function performAgentVercelApiRequest(params: {
+  userId: string;
+  method: string;
+  path: string;
+  params?: Record<string, unknown>;
+}): Promise<VercelApiResult> {
+  "use step";
+
+  const { getUserVercelToken } = await import("@/lib/vercel/token");
+
+  const token = await getUserVercelToken(params.userId);
+  if (!token) {
+    return {
+      success: false,
+      error: "No Vercel account is connected for this user.",
+    };
+  }
+
+  const rawPath = params.path.trim().replace(/^\/+/, "");
+  const url = new URL(`https://api.vercel.com/${rawPath}`);
+
+  const method = params.method.toUpperCase();
+  const bodyMethods = new Set(["POST", "PATCH", "PUT"]);
+  let body: string | undefined;
+
+  if (params.params) {
+    if (bodyMethods.has(method)) {
+      body = JSON.stringify(params.params);
+    } else {
+      for (const [key, value] of Object.entries(params.params)) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+  }
+
+  try {
+    const response = await fetch(url.toString(), {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body ? { body } : {}),
+    });
+
+    const text = await response.text();
+    let data: unknown = text;
+    try {
+      data = text ? JSON.parse(text) : undefined;
+    } catch {
+      // Non-JSON response -- keep the raw text.
+    }
+
+    return { success: response.ok, status: response.status, data };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Vercel API request failed",
+    };
+  }
+}
+
 export async function runAgentWorkflow(options: Options) {
   "use workflow";
 
@@ -1959,6 +2167,27 @@ const runAgentStep = async (
                 params: input.params,
               });
             },
+            cli: async (input): Promise<GithubRawCliResult> => {
+              if (
+                !githubContext.hasRepo ||
+                !githubContext.repoOwner ||
+                !githubContext.repoName
+              ) {
+                return {
+                  success: false,
+                  error:
+                    "No GitHub repository is connected to this session yet.",
+                };
+              }
+              return performAgentGithubCli({
+                userId,
+                sandboxState: agentOptions.sandbox.state,
+                workingDirectory: agentOptions.sandbox.workingDirectory,
+                repoOwner: githubContext.repoOwner,
+                repoName: githubContext.repoName,
+                args: input.args,
+              });
+            },
           }
         : undefined,
       vercel: vercelContext
@@ -1978,6 +2207,20 @@ const runAgentStep = async (
                 repoOwner: githubContext?.repoOwner,
                 repoName: githubContext?.repoName,
                 args: input.args,
+              });
+            },
+            request: async (input): Promise<VercelApiResult> => {
+              if (!vercelContext.connected) {
+                return {
+                  success: false,
+                  error: "No Vercel account is connected for this user.",
+                };
+              }
+              return performAgentVercelApiRequest({
+                userId,
+                method: input.method,
+                path: input.path,
+                params: input.params,
               });
             },
           }

@@ -123,7 +123,10 @@ const tools = {
 
 export const openAgent = new ToolLoopAgent({
   model: defaultModel,
-  instructions: buildSystemPrompt({}),
+  instructions: addCacheControl({
+    instructions: buildSystemPrompt({}),
+    model: defaultModel,
+  }),
   tools,
   stopWhen: stepCountIs(1),
   callOptionsSchema,
@@ -176,7 +179,10 @@ export const openAgent = new ToolLoopAgent({
         tools: settings.tools ?? tools,
         model: callModel,
       }),
-      instructions,
+      instructions: addCacheControl({
+        instructions,
+        model: callModel,
+      }),
       experimental_context: {
         sandbox,
         skills,

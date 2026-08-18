@@ -398,3 +398,72 @@ local-only state) needs its "in flight" flag threaded through *every*
 path that could act on the stale value, not just the selector's own
 disabled state. Here that meant the submit handler too, not just the
 dropdown.
+
+## 2026-08-18: system prompt never had an Anthropic cache breakpoint (main agent + all 3 subagents)
+
+Prompted by a broad "improve caching everywhere, research the harness"
+ask. Audited all 46 gateway routes' cache accounting first (separate
+entry-gateway fix, see that repo's notes) then turned to the agent
+harness itself, since caching correctness at the gateway is moot if the
+agent never asks for a cache hit in the first place.
+
+Found: `packages/agent/context-management/cache-control.ts`'s
+`addCacheControl()` only ever marked `tools` (last tool) and `messages`
+(last message) with Anthropic's `cache_control: { type: "ephemeral" }`.
+The **system prompt** -- `CORE_SYSTEM_PROMPT` alone is ~10.5K+ tokens
+per `auto-compact.ts`'s own measurement, and it's byte-identical across
+every turn of every session -- was always passed to the SDK as a plain
+`instructions: string`. Anthropic's Messages API has no way to cache a
+bare string; `cache_control` can only be set on a message/content block
+via `providerOptions`. So the single largest, most stable, most
+valuable-to-cache block in the entire request was never cached at all
+-- full latency and full input-token price, every single turn, forever.
+Confirmed via ai-sdk.dev's own Anthropic provider docs plus multiple
+open SDK issues describing the identical gap elsewhere
+(OpenRouterTeam/ai-sdk-provider#389, laravel/ai#119).
+
+Same exact bug existed independently in all three subagents (executor,
+design, explorer) -- `prepareCall` built `instructions` as a template
+string concatenating the static subagent system prompt with the
+per-task `options.task`/`options.instructions`, again never wrapped
+with `cache_control`. Doesn't help caching *across* different subagent
+tasks (the task text legitimately differs each time), but each
+subagent's own tool loop can run up to `SUBAGENT_STEP_LIMIT` steps
+re-sending that *same* instructions string every step -- that
+within-task reuse was also going uncached.
+
+Fix: `ai@6.0.194`'s `instructions` field on `ToolLoopAgent` accepts
+`string | SystemModelMessage | Array<SystemModelMessage>` (confirmed in
+the installed package's own `.d.ts`), and `SystemModelMessage` supports
+the same `providerOptions` shape as any message. Added a 4th overload
+to `addCacheControl()` for `{ instructions: string }` that wraps it as
+`{ role: "system", content, providerOptions }` for Anthropic models
+only (reuses the existing `isAnthropicModel()` check) and returns the
+plain string unchanged for everyone else (OpenAI/Gemini/DeepSeek cache
+automatically on prefix match -- wrapping would just be inert extra
+metadata for them). Wired into `open-agent.ts` (both the module-level
+default and the per-call `prepareCall` path) and all three subagent
+`prepareCall`s. Well within Anthropic's 4-breakpoint limit (now using 3:
+tools, system, last message).
+
+Also audited for the other cache-buster class research turned up --
+tools listing where the framework mutates/reorders tool definitions per
+call, or a tool description embedding a per-request UUID/timestamp
+(both documented as silent full-cache-invalidation bugs elsewhere,
+e.g. anthropics/claude-agent-sdk-typescript#197). Checked every tool
+description under `packages/agent/tools/`: all static strings, no
+`Date.now()`/`crypto.randomUUID()`/etc. anywhere in a description or
+schema. Checked whether the exposed toolset ever varies by
+`permissionMode` or session state: it doesn't -- `permissionMode` only
+gates *execution-time* approval prompts, the tool list itself is a
+fixed object literal with stable insertion order on every call. No
+further caching bugs found in the harness itself.
+
+Lesson: `addCacheControl()`'s own type signature (tools-or-messages
+only) made it easy to forget the biggest cacheable block exists outside
+those two categories entirely. Any future new "thing that gets sent to
+the model every turn" (structured output schemas, a future response
+prefix, etc.) should get the same "does this need its own
+`providerOptions.anthropic.cacheControl`?" question asked explicitly,
+not assumed covered because *some* cache-control wrapper already
+exists in the codebase.

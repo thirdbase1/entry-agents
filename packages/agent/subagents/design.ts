@@ -1,4 +1,5 @@
 import type { LanguageModel } from "ai";
+import { addCacheControl } from "../context-management/cache-control";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { createInertPlaceholderModel, sharedProvider } from "../models";
 import { z } from "zod";
@@ -116,7 +117,16 @@ export const designSubagent = new ToolLoopAgent({
     return {
       ...settings,
       model,
-      instructions: `${DESIGN_SYSTEM_PROMPT}
+      // Wrapped in addCacheControl() (2026-08-18): this whole block used to
+      // be a bare string with no cache_control breakpoint at all, so
+      // Anthropic reprocessed it from scratch on every single step of a
+      // subagent's own tool loop (up to SUBAGENT_STEP_LIMIT steps for ONE
+      // task), even though it's byte-identical across every step of that
+      // task. Doesn't help caching ACROSS different subagent tasks (the
+      // task/instructions text legitimately differs each time), but the
+      // within-task multi-step savings are real and free.
+      instructions: addCacheControl({
+        instructions: `${DESIGN_SYSTEM_PROMPT}
 
 ${SUBAGENT_WORKING_DIR}
 
@@ -127,6 +137,8 @@ ${options.task}
 ${options.instructions}
 
 ${SUBAGENT_REMINDER}`,
+        model,
+      }),
       experimental_context: {
         sandbox,
         model,

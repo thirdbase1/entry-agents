@@ -363,3 +363,38 @@ individually wired as a named action. Now it can do essentially anything
 boundary enforced at the credential layer (repo-scoped token,
 capability-scoped permissions, never touching the untrusted sandbox
 shell) rather than by trying to allowlist specific subcommands/paths.
+
+## 2026-08-18: "selected Claude, got Luna's error" -- composer send/model-switch race
+
+Owner report: picked claude-opus-5 in the model dropdown, sent a message,
+and got back "This model has hit its usage limit" tagged `gpt-5.6-luna`
+-- despite Claude being visibly selected in the UI. Read as "there's a
+hidden fallback to Luna" -- there isn't, and there's deliberately no such
+thing anywhere server-side (the credit-based soft-cutoff-to-Luna path
+was already removed on 2026-08-17 per owner instruction; every plan hard
+-blocks at zero balance now instead of silently swapping models).
+
+Actual root cause: `ChatRequestBody` never carries a `modelId` at all --
+`runAgentWorkflow` always reads `chat.modelId` fresh from the DB.
+Switching models in the composer fires an async `PATCH
+/api/sessions/.../chats/...` that updates the DB (and local
+`chatInfo.modelId` state) only once it resolves; the model selector
+itself greys out during that window (`isUpdatingModel`) but the
+textarea/Enter/Send were never gated on the same flag. A fast Enter
+right after switching could submit while the DB still held the
+previous model, so the turn ran against the OLD model even though the
+UI already showed the new one -- and if that old model then hit a
+provider quota error, the error correctly named the model that actually
+ran, which just didn't match what was on screen anymore.
+
+Fix: the composer's `onSubmit` now also returns early while
+`isUpdatingModel` is true, same as the existing `isArchived`/
+`composerGate` guards -- runs before `setInput("")`, so typed text is
+preserved and the user just needs to press Enter again a few hundred ms
+later once the switch has actually landed.
+
+Lesson: any UI selector that persists via an async round-trip (not
+local-only state) needs its "in flight" flag threaded through *every*
+path that could act on the stale value, not just the selector's own
+disabled state. Here that meant the submit handler too, not just the
+dropdown.

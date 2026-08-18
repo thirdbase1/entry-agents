@@ -180,3 +180,56 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
   Flagged as a real follow-up, not done yet.
 
 Deployed: commit a4438d1, live on entry-agents.vercel.app.
+
+## 2026-08-18: gpt-5.6-sol/terra/luna were billed at 35% of real price (entry-gateway config bug)
+
+- Root cause lived in a **Vercel "Sensitive" env var** on the
+  entry-gateway project (`EXTRA_MODEL_ROUTES_JSON_3`), not in code:
+  the `cost.input`/`cost.output` fields for these 3 routes were
+  hardcoded at exactly 0.35x OpenAI's real published price (e.g. terra
+  was `$0.70/$4.20` instead of `$2.00/$12.00`; luna `$0.07/$0.42`
+  instead of `$0.20/$1.20`). Also found a duplicate `gpt-5.6-luna`
+  route entry whose `upstreamModel` was mistakenly `"gpt-5.6-terra"` --
+  some luna requests were silently served by terra while still billed
+  at luna's (wrong, cheap) price.
+- **Vercel "Sensitive" type env vars are write-only, by design.** No
+  API path, no `vercel env pull`, nothing can read the value back once
+  set -- confirmed via `GET /v9/projects/{id}/env/{envId}?decrypt=true`
+  returning `"decrypted": false` with no `value` key at all for
+  `type: "sensitive"`, vs. `type: "encrypted"` vars which decrypt fine
+  the same way. This explains why past sessions kept creating
+  `EXTRA_MODEL_ROUTES_JSON_2`, `_3` duplicates instead of editing the
+  base `MODEL_ROUTES_JSON` -- nobody could actually read it back to
+  patch it. `gpt-5.6-sol`'s route lives in that unreadable base file;
+  fixed it by adding a NEW higher-priority (`priority: 1`) override
+  entry with correct pricing into the readable `EXTRA_MODEL_ROUTES_JSON_3`
+  instead of blind-overwriting the base sensitive var (which would risk
+  destroying every other model's config with no way to verify or undo).
+- Fixed `EXTRA_MODEL_ROUTES_JSON_3` (sol added at priority 1, terra/luna
+  corrected in place, duplicate luna's upstreamModel fixed) via the
+  Vercel API `PATCH /v9/projects/{id}/env/{envId}`, then redeployed
+  entry-gateway (`vercel deploy --prod`) so the new value took effect.
+- Verified fix by reading the var back post-write (it's `encrypted`
+  type, readable) and confirming `/health` shows all 3 models routing.
+- Reconciled historical impact directly against the Neon Postgres DB
+  (entry-agents' `DATABASE_URL` -- readable via Vercel API since it's
+  `encrypted`, not `sensitive`). **Sandbox can't reach Postgres directly
+  on port 5432** (free-plan network only allows HTTPS/443) -- worked
+  around it with the `@neondatabase/serverless` HTTP driver (`neon()`
+  from `@neondatabase/serverless`, queries over HTTPS). Only 2 user
+  accounts (clearly internal/test) had ever used these 3 models; real
+  dollar undercharge was ~$15 total (~$7.4 terra + ~$7.8 sol; luna
+  actually roundedly overcharged slightly due to its 1-cent-minimum
+  per-step billing rounding on many tiny steps, which happened to mask
+  the pricing bug at that scale). Given the tiny blast radius, decided
+  NOT to auto-adjust balances -- flagged the option to the owner instead
+  of guessing on a financial correction.
+- Built a proper fix for *next time this happens*: added a manual
+  "Add / remove credit" card to the admin user-detail page
+  (`apps/web/app/settings/admin/admin-user-detail-view.tsx` +
+  `adjustAdminUserCredit` in `apps/web/lib/admin/actions.ts`), on top of
+  the existing `creditAccount`/`debitAccountAdmin` ledger helpers, so
+  corrections like this don't need a one-off DB script in the future.
+
+Deployed: commit 5bec7f1, live on entry-agents.vercel.app. Gateway fix
+deployed separately via `entry-gateway-six.vercel.app`.

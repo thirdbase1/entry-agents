@@ -278,3 +278,44 @@ deployed separately via `entry-gateway-six.vercel.app`.
   the same way on a clean `git diff` against this change). Follow-up,
   not blocking.
 - Deployed: commit `5b0975d`, live on `entry-agents.vercel.app`.
+
+## 2026-08-18: Vercel CLI credentials were exposed inside the agent's own sandbox
+
+Found while researching how to make the agent's Vercel CLI auth as safe as
+its GitHub auth already was. `performAgentVercelCli` was setting
+`VERCEL_TOKEN=<real token>` directly in the shell command string executed
+inside the connected sandbox -- the same sandbox where the agent's own
+`bash` tool has full shell access. That meant a real, live Vercel OAuth
+token sat in a child process's environment (readable via
+`/proc/<pid>/environ` by any co-resident process owned by the same user,
+including a concurrent tool call in the same agent step) for the duration
+of every `vercel_cli` call.
+
+GitHub already avoided this entirely two different ways depending on the
+operation: commit/push/API calls go straight from the server via Octokit
+(sandbox never touches git credentials at all), and the one case that
+does need real git protocol inside the sandbox (private repo clone) uses
+the sandbox's network-egress-layer credential brokering
+(`setGitHubAuthToken` / `@vercel/sandbox`'s `updateNetworkPolicy`) --
+the real token is injected as an `Authorization` header on outbound
+requests to github.com domains only, and never enters the sandbox's
+process env, filesystem, or command history at all.
+
+Fix: generalized that mechanism (now `buildCredentialBrokeringPolicy` in
+`packages/sandbox/vercel/sandbox.ts`, tracking both GitHub and Vercel
+grants together via a `WeakMap` so setting one never clobbers the other's
+rules or the `"*"` catch-all) and added a matching `setVercelAuthToken`
+to the sandbox interface. `performAgentVercelCli` now brokers the real
+token at the network layer for `api.vercel.com` only, and the sandboxed
+process only ever sees a harmless placeholder value
+(`VERCEL_TOKEN=sandboxed-cli-do-not-use`) just so the CLI's own local
+"am I logged in" check passes without dropping into an interactive
+browser-login flow. The broker is cleared in a `finally` immediately
+after the command completes, even on error/timeout.
+
+Lesson: any credential a sandboxed CLI needs, where that same sandbox
+also has an untrusted (or prompt-injectable) shell-access surface, should
+go through network-egress-layer brokering, not a process env var --
+env vars set for "one process" are still readable by any other
+same-user process on the same box for the process's lifetime, which is a
+real side channel when the agent can run tool calls concurrently.

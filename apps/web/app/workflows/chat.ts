@@ -1126,15 +1126,30 @@ function shellEscapeForVercelEnv(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
+// Deliberately not the real token -- just enough for the Vercel CLI's own
+// local "am I logged in" check to pass so it doesn't drop into an
+// interactive browser-login flow instead of running the command. The
+// actual Authorization header sent to api.vercel.com is overwritten with
+// the real token by the sandbox's network-egress credential broker (see
+// setVercelAuthToken), so this placeholder value is never actually
+// presented to Vercel and is harmless even if it leaked.
+const VERCEL_CLI_PLACEHOLDER_TOKEN = "sandboxed-cli-do-not-use";
+
 /**
  * Runs an arbitrary Vercel CLI command for the agent's `vercel_cli` tool
  * as a step, same reasoning as the two steps above. Fetches a fresh
  * per-user Vercel OAuth token (better-auth auto-refreshes it) plus the
- * Vercel project already linked to this repo, then runs the command in
- * the connected sandbox with the token set only for that single bash
- * invocation's environment -- never written to disk, never passed to the
- * model. Output is scrubbed of the raw token before it's returned, in
- * case the command itself echoes its environment.
+ * Vercel project already linked to this repo, then brokers the real
+ * token at the sandbox's network-egress layer for api.vercel.com only
+ * (see setVercelAuthToken / buildCredentialBrokeringPolicy in
+ * packages/sandbox/vercel/sandbox.ts -- the same zero-exposure mechanism
+ * already used for GitHub) instead of setting it as an env var on the
+ * exec'd process. The sandbox -- where the agent's own bash tool has
+ * full shell access -- never has the real token in its process
+ * environment, filesystem, or command history; only a harmless
+ * placeholder value is ever visible there. The network policy is always
+ * cleared in a `finally` immediately after the command completes, even
+ * on error/timeout.
  */
 async function performAgentVercelCli(params: {
   userId: string;
@@ -1182,23 +1197,56 @@ async function performAgentVercelCli(params: {
 
   const sandbox = await connectSandbox(params.sandboxState);
 
-  const tokenArg = shellEscapeForVercelEnv(token);
+  if (!sandbox.setVercelAuthToken) {
+    return {
+      success: false,
+      error:
+        "This sandbox doesn't support secure Vercel CLI credential brokering.",
+    };
+  }
+
   const scopeFlag = projectLink?.teamSlug
     ? ` --scope=${shellEscapeForVercelEnv(projectLink.teamSlug)}`
     : "";
-  const command = `VERCEL_TOKEN=${tokenArg} vercel ${params.args}${scopeFlag}`;
+  const command = `VERCEL_TOKEN=${shellEscapeForVercelEnv(VERCEL_CLI_PLACEHOLDER_TOKEN)} vercel ${params.args}${scopeFlag}`;
 
-  const result = await sandbox.exec(command, params.workingDirectory, 120000);
+  await sandbox.setVercelAuthToken(token);
+  try {
+    const result = await sandbox.exec(
+      command,
+      params.workingDirectory,
+      120000,
+    );
 
-  const redact = (text: string) =>
-    text ? text.split(token).join("[REDACTED]") : text;
+    // Defense in depth only -- the real token should never reach the
+    // sandbox process or its output at all (see comment above), but this
+    // still guards against it accidentally echoing the placeholder or
+    // any stray env dump.
+    const redact = (text: string) =>
+      text
+        ? text
+            .split(token)
+            .join("[REDACTED]")
+            .split(VERCEL_CLI_PLACEHOLDER_TOKEN)
+            .join("[REDACTED]")
+        : text;
 
-  return {
-    success: result.success,
-    exitCode: result.exitCode,
-    stdout: redact(result.stdout),
-    stderr: redact(result.stderr),
-  };
+    return {
+      success: result.success,
+      exitCode: result.exitCode,
+      stdout: redact(result.stdout),
+      stderr: redact(result.stderr),
+    };
+  } finally {
+    await sandbox
+      .setVercelAuthToken(undefined)
+      .catch((error) =>
+        console.warn(
+          "[performAgentVercelCli] failed to clear Vercel CLI credential broker:",
+          error,
+        ),
+      );
+  }
 }
 
 export async function runAgentWorkflow(options: Options) {

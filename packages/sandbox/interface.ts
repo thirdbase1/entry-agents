@@ -156,6 +156,15 @@ export interface Sandbox {
   setGitHubAuthToken?(token?: string): Promise<void>;
 
   /**
+   * Temporarily update Vercel CLI credential brokering for trusted broker
+   * work (same network-egress-layer injection as setGitHubAuthToken --
+   * the real token never enters the sandbox's process env, filesystem,
+   * or command history). Callers must clear the token as soon as the
+   * trusted operation completes.
+   */
+  setVercelAuthToken?(token?: string): Promise<void>;
+
+  /**
    * Get the public URL for an exposed port.
    */
   domain?(port: number): string;

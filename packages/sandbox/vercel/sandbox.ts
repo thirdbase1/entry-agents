@@ -44,50 +44,78 @@ const DEFAULT_NETWORK_POLICY: SandboxNetworkPolicy = {
   },
 };
 
-function buildGitHubCredentialBrokeringPolicy(
-  token?: string,
-): SandboxNetworkPolicy {
-  if (!token) {
-    return DEFAULT_NETWORK_POLICY;
-  }
-
-  const basicAuthToken = Buffer.from(
-    `x-access-token:${token}`,
-    "utf-8",
-  ).toString("base64");
-
-  return {
-    allow: {
-      "api.github.com": [
-        {
-          transform: [{ headers: { Authorization: `Bearer ${token}` } }],
-        },
-      ],
-      "uploads.github.com": [
-        {
-          transform: [{ headers: { Authorization: `Bearer ${token}` } }],
-        },
-      ],
-      "codeload.github.com": [
-        {
-          transform: [{ headers: { Authorization: `Bearer ${token}` } }],
-        },
-      ],
-      "github.com": [
-        {
-          transform: [
-            { headers: { Authorization: `Basic ${basicAuthToken}` } },
-          ],
-        },
-      ],
-      "*": [],
-    },
-  };
+// Domain-scoped credential grants currently in effect for a sandbox's
+// egress network policy. Both GitHub and Vercel CLI auth can be active
+// at once (e.g. an agent doing `vercel env pull` mid-session while a
+// git clone is also brokered), so this is tracked per-grant and the
+// FULL policy is rebuilt from whichever grants are non-empty every time
+// either one changes -- updateNetworkPolicy replaces the whole policy
+// object, it does not merge, so naively calling it with just one
+// domain's rules would silently drop the other credential's rules (and
+// the "*" catch-all, which would break all other outbound traffic from
+// the sandbox, not just credentialed calls).
+interface CredentialBrokeringGrants {
+  github?: string;
+  vercel?: string;
 }
 
-async function syncGitHubCredentialBrokering(
+function buildCredentialBrokeringPolicy(
+  grants: CredentialBrokeringGrants,
+): SandboxNetworkPolicy {
+  const allow: Record<string, SandboxNetworkRule[]> = { "*": [] };
+
+  if (grants.github) {
+    const token = grants.github;
+    const basicAuthToken = Buffer.from(
+      `x-access-token:${token}`,
+      "utf-8",
+    ).toString("base64");
+    allow["api.github.com"] = [
+      { transform: [{ headers: { Authorization: `Bearer ${token}` } }] },
+    ];
+    allow["uploads.github.com"] = [
+      { transform: [{ headers: { Authorization: `Bearer ${token}` } }] },
+    ];
+    allow["codeload.github.com"] = [
+      { transform: [{ headers: { Authorization: `Bearer ${token}` } }] },
+    ];
+    allow["github.com"] = [
+      { transform: [{ headers: { Authorization: `Basic ${basicAuthToken}` } }] },
+    ];
+  }
+
+  if (grants.vercel) {
+    const token = grants.vercel;
+    // Vercel CLI talks to api.vercel.com exclusively over HTTPS with a
+    // plain `Authorization: Bearer <token>` header (this is literally
+    // what setting VERCEL_TOKEN does under the hood) -- same shape as
+    // GitHub's REST API above, so the identical transform mechanism
+    // applies unconditionally to every request to that host, regardless
+    // of whatever (if any) Authorization header the CLI itself sent.
+    allow["api.vercel.com"] = [
+      { transform: [{ headers: { Authorization: `Bearer ${token}` } }] },
+    ];
+  }
+
+  return { allow };
+}
+
+/**
+ * Tracks which credential grants are currently active for a given
+ * @vercel/sandbox SDK instance, so setting/clearing one doesn't clobber
+ * the other. Keyed by the SDK instance itself (not the VercelSandbox
+ * wrapper) since sessions can be recreated/reconnected across the
+ * wrapper's lifetime (see refreshStateFromCurrentSession) while the
+ * underlying policy state should still track correctly.
+ */
+const activeCredentialGrantsBySdk = new WeakMap<
+  VercelSandboxSDK,
+  CredentialBrokeringGrants
+>();
+
+async function syncCredentialBrokering(
   sdk: VercelSandboxSDK,
-  token?: string,
+  patch: CredentialBrokeringGrants,
 ): Promise<void> {
   const updateNetworkPolicy = (
     sdk as VercelSandboxSDK & {
@@ -95,19 +123,33 @@ async function syncGitHubCredentialBrokering(
     }
   ).updateNetworkPolicy;
 
+  const current = activeCredentialGrantsBySdk.get(sdk) ?? {};
+  const next: CredentialBrokeringGrants = { ...current, ...patch };
+  // Drop explicit `undefined` entries entirely rather than keeping the key
+  // around with an undefined value, so buildCredentialBrokeringPolicy's
+  // `if (grants.github)` checks work as plain presence checks.
+  for (const key of Object.keys(next) as (keyof CredentialBrokeringGrants)[]) {
+    if (next[key] === undefined) delete next[key];
+  }
+
   if (typeof updateNetworkPolicy !== "function") {
-    if (token) {
+    if (next.github || next.vercel) {
       throw new Error(
-        "Current @vercel/sandbox SDK does not support network policy updates required for GitHub credential brokering",
+        "Current @vercel/sandbox SDK does not support network policy updates required for credential brokering",
       );
     }
     return;
   }
 
-  await updateNetworkPolicy.call(
-    sdk,
-    buildGitHubCredentialBrokeringPolicy(token),
-  );
+  await updateNetworkPolicy.call(sdk, buildCredentialBrokeringPolicy(next));
+  activeCredentialGrantsBySdk.set(sdk, next);
+}
+
+async function syncGitHubCredentialBrokering(
+  sdk: VercelSandboxSDK,
+  token?: string,
+): Promise<void> {
+  await syncCredentialBrokering(sdk, { github: token });
 }
 
 async function clearGitHubCredentialBrokering(
@@ -123,6 +165,23 @@ async function clearGitHubCredentialBrokeringBestEffort(
     await clearGitHubCredentialBrokering(sdk);
   } catch (error) {
     console.warn("[VercelSandbox] failed to clear GitHub setup auth:", error);
+  }
+}
+
+async function syncVercelCredentialBrokering(
+  sdk: VercelSandboxSDK,
+  token?: string,
+): Promise<void> {
+  await syncCredentialBrokering(sdk, { vercel: token });
+}
+
+async function clearVercelCredentialBrokeringBestEffort(
+  sdk: VercelSandboxSDK,
+): Promise<void> {
+  try {
+    await syncVercelCredentialBrokering(sdk, undefined);
+  } catch (error) {
+    console.warn("[VercelSandbox] failed to clear Vercel CLI auth:", error);
   }
 }
 
@@ -544,7 +603,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       timeout: sdkTimeout,
       runtime,
       persistent,
-      networkPolicy: buildGitHubCredentialBrokeringPolicy(githubToken),
+      networkPolicy: buildCredentialBrokeringPolicy({ github: githubToken }),
       ...(ports && { ports }),
       ...(snapshotExpiration !== undefined && { snapshotExpiration }),
     };
@@ -571,6 +630,15 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       });
     } else {
       sdk = await VercelSandboxSDK.create(createBaseConfig);
+    }
+
+    // Seed the tracked-grants map to match the networkPolicy this sdk
+    // instance was actually created with (set directly via createBaseConfig
+    // above, bypassing syncCredentialBrokering) -- keeps later
+    // clear/patch calls correct even if one ever runs before the explicit
+    // clearGitHubCredentialBrokering call below.
+    if (githubToken) {
+      activeCredentialGrantsBySdk.set(sdk, { github: githubToken });
     }
 
     const workingDirectory = DEFAULT_WORKING_DIRECTORY;
@@ -1036,6 +1104,19 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
   async setGitHubAuthToken(token?: string): Promise<void> {
     await syncGitHubCredentialBrokering(this.sdk, token);
+  }
+
+  /**
+   * Same zero-exposure credential brokering as setGitHubAuthToken, for
+   * the Vercel CLI: the real OAuth token is injected as an Authorization
+   * header at the sandbox's network egress layer for api.vercel.com
+   * only, and never set as an env var, written to a config file, or
+   * otherwise made readable from inside the sandbox (where the agent's
+   * own bash tool runs with full shell access). Callers must clear the
+   * token (call with no argument) as soon as the CLI command completes.
+   */
+  async setVercelAuthToken(token?: string): Promise<void> {
+    await syncVercelCredentialBrokering(this.sdk, token);
   }
 
   /**

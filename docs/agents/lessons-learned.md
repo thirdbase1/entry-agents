@@ -319,3 +319,47 @@ go through network-egress-layer brokering, not a process env var --
 env vars set for "one process" are still readable by any other
 same-user process on the same box for the process's lifetime, which is a
 real side channel when the agent can run tool calls concurrently.
+
+## 2026-08-18: gh CLI + generic Vercel REST API, same broker pattern
+
+Extended `github_cli` with a `cli` action (arbitrary authenticated
+`gh <args>` commands) and added a new `vercel_api` tool (generic Vercel
+REST passthrough), so the agent isn't limited to the couple of GitHub
+REST endpoints and CLI subcommands we thought to hardcode.
+
+`github_cli`'s new `cli` action reuses the exact same network-egress
+credential broker as commit/push (`withTemporaryGitHubAuth` /
+`setGitHubAuthToken`, see the entry just above) -- a short-lived GitHub
+App installation token, scoped to exactly the one connected repo via
+`verifyRepoAccess` + `mintInstallationToken`, is injected as an
+`Authorization` header on outbound requests to
+`github.com`/`api.github.com`/`uploads.github.com`/`codeload.github.com`
+only. The sandbox process itself only ever sees
+`GH_TOKEN=sandboxed-cli-do-not-use`, a harmless placeholder needed
+purely so `gh`'s own local "am I logged in" check passes. Token is
+always revoked in a `finally`, even on error/timeout. Scoped to
+contents/issues/pull_requests/actions/checks/statuses/workflows write --
+deliberately NOT `administration`, so an agent-initiated `gh` command
+can never touch repo settings/deletion/transfer/collaborator management.
+
+Also: the sandbox base image doesn't ship `gh` (unlike `vercel`, which
+it already has), so `performAgentGithubCli` installs the static Linux
+release binary from GitHub's own release assets on first use per
+session if `command -v gh` fails -- no apt/sudo dependency, works
+regardless of the base image's package manager.
+
+`vercel_api` needed no new broker at all: unlike `vercel_cli`, it never
+touches the sandbox. It's a plain authenticated `fetch` to
+`api.vercel.com` from inside the step function itself, using the same
+per-user OAuth token (`getUserVercelToken`, auto-refreshed by
+better-auth) `performAgentVercelCli` already uses. Simpler and faster
+for the structured-JSON-read use case (full deployment metadata, edge
+config, webhooks, some project settings) that the CLI's text output
+doesn't expose cleanly.
+
+Both close the same gap: previously the agent could only do what we'd
+individually wired as a named action. Now it can do essentially anything
+`gh`/the GitHub API or the Vercel API expose, with the security
+boundary enforced at the credential layer (repo-scoped token,
+capability-scoped permissions, never touching the untrusted sandbox
+shell) rather than by trying to allowlist specific subcommands/paths.

@@ -4346,6 +4346,19 @@ export function SessionChatContent({
                           if (showInlineQuestion) return;
                           if (isArchived) return;
                           if (composerGate) return;
+                          // Hard block while a model switch is in flight -- without
+                          // this, Enter/Send during the tiny window between picking
+                          // a new model and the PATCH actually committing would
+                          // submit against the OLD model still persisted in the DB
+                          // (runAgentWorkflow reads chat.modelId fresh server-side,
+                          // there's no modelId in the request body at all -- see
+                          // ChatRequestBody). The model selector itself already
+                          // greys out during this window; block the composer too
+                          // so there's no way to send a turn the UI doesn't yet
+                          // reflect. Owner-reported bug (2026-08-18): a turn showed
+                          // gpt-5.6-luna's quota-exhausted error immediately after
+                          // switching to claude-opus-5 in the picker.
+                          if (isUpdatingModel) return;
 
                           const built = buildComposerMessagePayload();
                           if (!built) return;

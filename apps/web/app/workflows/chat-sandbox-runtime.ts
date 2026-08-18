@@ -7,6 +7,10 @@ import {
 } from "@open-agents/sandbox";
 import { getSessionById } from "@/lib/db/sessions";
 import {
+  ensureUploadsGitignored,
+  IMAGE_UPLOADS_DIR,
+} from "@/lib/sandbox/uploads-gitignore";
+import {
   kickSandboxProvisioningWorkflow,
   waitForSandboxProvisioningRun,
 } from "@/lib/sandbox/provisioning-kick";
@@ -138,7 +142,6 @@ export type PendingImageAttachment = {
   dataUrl: string;
 };
 
-const IMAGE_UPLOADS_DIR = "uploads";
 
 function extensionForMediaType(mediaType: string): string {
   const subtype = mediaType.split("/")[1] ?? "bin";
@@ -178,6 +181,12 @@ export async function persistImageAttachmentsToSandbox(params: {
   }
 
   const sandbox = await connectSandbox(params.sandboxState);
+
+  // Belt-and-suspenders: make sure this directory is gitignored *before*
+  // writing anything into it, so there's no window where an uncommitted
+  // auto-commit step (or the agent's own bash tool) could sweep it up.
+  await ensureUploadsGitignored(sandbox);
+
   const paths: string[] = [];
 
   for (const image of params.images) {

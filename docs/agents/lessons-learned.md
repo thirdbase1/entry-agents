@@ -136,3 +136,47 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 
 - Found 2026-08-17: the GitHub -> Vercel git-integration auto-deploy (push to `main`) silently stopped firing for `entry-agents` -- project's git `link` config was verified correct via the Vercel API (github/thirdbase1/entry-agents/main, `gitCredentialId` present), and pushes to `main` landed correctly on GitHub (verified HEAD sha via API), but **two consecutive pushes produced zero new deployments** over 40+ minutes (checked via `GET /v6/deployments?projectId=...` filtering on `meta.githubCommitSha`, not just eyeballing `vercel ls`). Root cause not fully diagnosed (likely a stuck/disconnected webhook on Vercel's side) -- workaround: `vercel deploy --prod --token $TOKEN --yes` from the repo directory uploads local source and builds+deploys directly through the Vercel API/CLI, bypassing the webhook entirely; confirmed this produces a deployment whose `meta.githubCommitSha` matches the exact local commit and gets aliased to `entry-agents.vercel.app`. Until the webhook is confirmed fixed, always verify a push actually produced a matching deployment (by commit SHA) before assuming "git-based auto-deploy" worked -- fall back to `vercel deploy --prod` immediately if it didn't.
 - Fixed the same day: `.agents/skills/deploy_entry_vercel/scripts/run.sh` used to poll `vercel ls` text output and grab the *first* row matching `Ready/Building/Error`, with no check that it was actually the deployment for the commit just pushed. Since `vercel ls` is sorted newest-first but a stale pre-existing "Ready" deployment can still be top-of-list before the new one appears, this produced a false "Done, should now be serving commit X" success message while the site was actually still serving an old commit from ~50 minutes earlier. Rewrote the script to poll the Vercel API directly and match on `meta.githubCommitSha == <exact local commit sha>`, and to automatically fall back to a direct `vercel deploy --prod` source deploy if no matching deployment appears within 2 minutes, instead of ever reporting success against an unverified/mismatched deployment.
+
+## 2026-08-18 — PR #6 dependency-security merge (auth/Next.js/nanoid + vuln overrides)
+
+- Reviewed an auto-opened PR (chore(deps), branch `o/22a8703b`, from an
+  in-app Entry coding-agent session) bumping better-auth 1.6.5->1.6.29,
+  nanoid 5.1.6->5.1.16, and adding pnpm override entries for
+  brace-expansion/dompurify/esbuild/hono/mermaid/postcss/sharp/undici.
+  This resolved all 60 Dependabot alerts (18 high, 32 moderate, 10 low)
+  on the default branch. `pnpm audit --prod` now returns clean.
+- The PR was opened before the 2026-08-17 Next.js 16.3.1 upgrade landed
+  on main, so it carried a stale `next: ^16.2.11` that would have
+  **downgraded** prod Next.js if merged blindly -- GitHub's own
+  mergeable_state correctly flagged this as `dirty`. Always check
+  `mergeable_state` / do a local `git merge-tree` before merging any
+  bot/agent-opened dependency PR, don't just click merge because CI is
+  green -- CI here was green on the stale branch tip, conflict only
+  shows up against current main.
+- The PR also carried an unrelated `uploads/*.webp` file, almost
+  certainly a chat-session artifact swept into the same auto-commit.
+  Dropped it before merging -- worth eyeballing the full file list on
+  any agent-opened PR, not just the intended diff.
+- Gotcha: after resolving a `package.json` merge conflict, a plain
+  `pnpm install --no-frozen-lockfile` updated the *resolved version* in
+  pnpm-lock.yaml but did NOT rewrite the lockfile's `specifier:` string
+  to match the new package.json value -- Vercel's `--frozen-lockfile`
+  build then failed with "specifiers in the lockfile don't match
+  specifiers in package.json". Fix: run a targeted
+  `pnpm add <pkg>@<version>` inside the affected workspace (apps/web)
+  -- that does force the specifier field. Always verify with a clean
+  `rm -rf node_modules && pnpm install --frozen-lockfile` locally before
+  pushing merge-conflict-lockfile fixes; it reproduces Vercel's exact
+  failure mode.
+- Found but deliberately NOT touched in this change: `arctic` (used
+  only in apps/web/app/api/github/app/install/route.ts for the GitHub
+  App OAuth flow) was deprecated by its maintainer (pilcrowonpaper) in
+  July 2026 -- npm shows "Package no longer supported" and the GitHub
+  repo says "some example code to replace the package can be found
+  under /code". Given how many past painful bugs lived in this exact
+  GitHub OAuth/install flow (invalid_state races, installation sync,
+  etc. -- see entries above), migrating off arctic needs its own
+  dedicated, carefully-tested change, not a drive-by inside a deps PR.
+  Flagged as a real follow-up, not done yet.
+
+Deployed: commit a4438d1, live on entry-agents.vercel.app.

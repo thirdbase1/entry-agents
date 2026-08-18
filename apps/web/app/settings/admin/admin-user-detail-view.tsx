@@ -1,7 +1,7 @@
 "use client";
 
 import { formatTokens } from "@open-agents/shared";
-import { AlertTriangle, ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -34,7 +34,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getAdminUserDetail, setAdminUserPlan } from "@/lib/admin/actions";
+import {
+  adjustAdminUserCredit,
+  getAdminUserDetail,
+  setAdminUserPlan,
+} from "@/lib/admin/actions";
 import { PLAN_CATALOG, PLAN_IDS, type PlanId } from "@/lib/billing/plans";
 import type {
   AdminUserModelCallRow,
@@ -345,6 +349,147 @@ function PlanManagementCard({
   );
 }
 
+/**
+ * Standalone add/remove credit control -- for one-off corrections (e.g.
+ * crediting a user back for a billing bug, or clawing back a mistaken
+ * grant) that aren't tied to a plan change. Always logged as an
+ * "admin_adjustment" ledger entry with an optional reason for the audit
+ * trail. Remove is capped server-side at the user's current balance.
+ */
+function CreditAdjustmentCard({
+  userId,
+  creditBalanceCents,
+  onChanged,
+}: {
+  userId: string;
+  creditBalanceCents: number;
+  onChanged: (creditBalanceCents: number) => void;
+}) {
+  const [amountInput, setAmountInput] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState<"add" | "remove" | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSuccess, setLastSuccess] = useState<string | null>(null);
+
+  const parsedAmountCents = Math.round(
+    (Number.parseFloat(amountInput) || 0) * 100,
+  );
+  const isAmountValid =
+    parsedAmountCents > 0 && Number.isFinite(parsedAmountCents);
+
+  async function handleAdjust(direction: "add" | "remove") {
+    if (!isAmountValid) {
+      setSaveError("Enter an amount greater than $0.");
+      return;
+    }
+    setSaving(direction);
+    setSaveError(null);
+    setLastSuccess(null);
+    try {
+      const result = await adjustAdminUserCredit(
+        userId,
+        direction,
+        parsedAmountCents,
+        reason,
+      );
+      onChanged(result.creditBalanceCents);
+      setLastSuccess(
+        `${direction === "add" ? "Added" : "Removed"} $${(parsedAmountCents / 100).toFixed(2)}. New balance: ${formatUsdCents(result.creditBalanceCents)}.`,
+      );
+      setAmountInput("");
+      setReason("");
+    } catch (err) {
+      setSaveError(
+        err instanceof Error ? err.message : "Failed to adjust credit.",
+      );
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Add / remove credit</CardTitle>
+        <CardDescription>
+          One-off manual correction to this user&apos;s balance. Logged in
+          the ledger with your admin id and the reason below.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Current balance</span>
+          <span className="font-medium">
+            {formatUsdCents(creditBalanceCents)}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <p className="mb-1.5 text-xs text-muted-foreground">Amount</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-muted-foreground">$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={amountInput}
+                onChange={(e) => setAmountInput(e.target.value)}
+                placeholder="0.00"
+                className="w-28 rounded-md border border-input bg-background px-2 py-1 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="min-w-[200px] flex-1">
+            <p className="mb-1.5 text-xs text-muted-foreground">
+              Reason (optional, shown in the ledger)
+            </p>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. refund for gpt-5.6 pricing bug"
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
+            />
+          </div>
+
+          <Button
+            onClick={() => handleAdjust("add")}
+            disabled={!isAmountValid || saving !== null}
+          >
+            {saving === "add" ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : (
+              <Plus className="mr-1.5 size-3.5" />
+            )}
+            Add credit
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => handleAdjust("remove")}
+            disabled={!isAmountValid || saving !== null}
+          >
+            {saving === "remove" ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : (
+              <Minus className="mr-1.5 size-3.5" />
+            )}
+            Remove credit
+          </Button>
+        </div>
+
+        {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+        {lastSuccess && !saveError && (
+          <p className="text-sm text-emerald-500">{lastSuccess}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function AdminUserDetailView({ userId }: { userId: string }) {
   const [data, setData] = useState<UserDetailState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -476,6 +621,24 @@ export function AdminUserDetailView({ userId }: { userId: string }) {
                         ...prev.profile,
                         plan: update.plan,
                         creditBalanceCents: update.creditBalanceCents,
+                      },
+                    }
+                  : prev,
+              );
+            }}
+          />
+
+          <CreditAdjustmentCard
+            userId={userId}
+            creditBalanceCents={data.profile.creditBalanceCents}
+            onChanged={(creditBalanceCents) => {
+              setData((prev) =>
+                prev?.profile
+                  ? {
+                      ...prev,
+                      profile: {
+                        ...prev.profile,
+                        creditBalanceCents,
                       },
                     }
                   : prev,

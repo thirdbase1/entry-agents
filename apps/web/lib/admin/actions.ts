@@ -588,3 +588,46 @@ export async function setAdminUserPlan(
 
   return { plan: planId as PlanId, creditBalanceCents };
 }
+
+/**
+ * Manual admin credit adjustment -- the "add/remove credit" control on the
+ * admin user-detail page. Distinct from setAdminUserPlan's grant/decrease
+ * (which only fires as a side effect of a plan change): this is a
+ * standalone tool for one-off corrections, e.g. crediting a user back for
+ * a pricing bug, or clawing back credit given by mistake. Always recorded
+ * as an "admin_adjustment" ledger entry with the admin's id and an
+ * optional free-text reason baked into the description for the audit
+ * trail. Removing credit is capped at the user's current balance (see
+ * debitAccountAdmin) -- it can never push someone negative.
+ */
+export async function adjustAdminUserCredit(
+  userId: string,
+  direction: "add" | "remove",
+  amountCents: number,
+  reason?: string,
+): Promise<{ creditBalanceCents: number }> {
+  const adminUserId = await requireAdmin();
+
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    throw new Error("Enter an amount greater than $0.");
+  }
+
+  const before = await getUserBillingState(userId);
+  if (!before) {
+    throw new Error(`User ${userId} not found`);
+  }
+
+  const trimmedReason = reason?.trim();
+  const suffix = trimmedReason ? ` -- ${trimmedReason}` : "";
+
+  const creditBalanceCents =
+    direction === "add"
+      ? await creditAccount(userId, amountCents, "admin_adjustment", {
+          description: `Admin ${adminUserId} added $${(amountCents / 100).toFixed(2)} credit${suffix}`,
+        })
+      : await debitAccountAdmin(userId, amountCents, {
+          description: `Admin ${adminUserId} removed $${(amountCents / 100).toFixed(2)} credit${suffix}`,
+        });
+
+  return { creditBalanceCents };
+}

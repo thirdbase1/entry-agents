@@ -19,6 +19,19 @@ const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
 const TIMEOUT_BUFFER_MS = 30_000; // 30 seconds buffer for beforeStop hook
 const MAX_SDK_TIMEOUT_MS = 18_000_000; // Vercel API limit: 5 hours
 const MAX_PROACTIVE_TIMEOUT_MS = MAX_SDK_TIMEOUT_MS - TIMEOUT_BUFFER_MS;
+
+// Vercel's own SDK default snapshot expiration is 30 days, but every
+// connectSandbox() call in this app creates automatic snapshots on
+// suspend without ever reusing/overwriting a prior one for the same
+// session (confirmed 2026-08-18: 88 distinct sourceSessionId snapshots
+// accumulated to 73GB total / 32.6GB "created"-status in ~2.4 days of
+// normal dev use, blowing through the Hobby plan's 15GB Snapshot
+// Storage quota and returning 402 on every new sandbox creation until
+// manually cleaned up via the REST API). Defaulting to 1 day here --
+// the shortest Vercel allows -- instead of threading a new option
+// through all ~26 connectSandbox() call sites in apps/web, since every
+// one of them funnels through this single function.
+const DEFAULT_SNAPSHOT_EXPIRATION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000; // 5 minutes default timeout for reconnected sandboxes
 const DETACHED_QUICK_FAILURE_WINDOW_MS = 2_000;
 
@@ -581,7 +594,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       ports,
       baseSnapshotId,
       persistent = true,
-      snapshotExpiration,
+      snapshotExpiration = DEFAULT_SNAPSHOT_EXPIRATION_MS,
       hooks,
       skipGitWorkspaceBootstrap = false,
     } = config;

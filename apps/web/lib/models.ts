@@ -77,6 +77,14 @@ export interface AvailableModelCostTier {
 
 export interface AvailableModelCost extends AvailableModelCostTier {
   context_over_200k?: AvailableModelCostTier;
+  // Generic tiered-context keys, e.g. `context_over_272k` for
+  // gpt-5.6-sol/terra/luna (their real threshold, per opencode.ai/docs/zen,
+  // is 272K not 200K -- see resolveCostTier's fix below for why the
+  // hardcoded `context_over_200k` field above was never enough on its
+  // own). Declared as an index signature rather than adding named fields
+  // per threshold since any future model can introduce its own cutoff
+  // with zero type changes needed here.
+  [key: `context_over_${number}k`]: AvailableModelCostTier | undefined;
 }
 
 export type AvailableModel = GatewayAvailableModel & {
@@ -110,6 +118,21 @@ export function getModelContextLimit(
   return directMatch.context_window;
 }
 
+// Matches cost-object keys like "context_over_200k" or "context_over_272k".
+// FIXED 2026-08-19: this used to only ever check the single hardcoded
+// `context_over_200k` field (built for grok-4.5's threshold), so any
+// model with a *different* cutoff -- gpt-5.6-sol/terra/luna's is 272K,
+// per opencode.ai/docs/zen's own pricing table -- silently never got its
+// tiered rate applied at all, always billing (and displaying) the base
+// rate regardless of how large the request's context actually was.
+// entry-gateway's own tieredCost() in server.js already generalized this
+// exact same convention on 2026-08-18 (see that file's
+// CONTEXT_TIER_KEY_RE) -- this mirrors that fix on the app side, which
+// has its own independent copy of tier-resolution for the real debit
+// (chat-post-finish.ts) and every usage-display surface (admin pages,
+// profile page), all funneling through this one function.
+const CONTEXT_TIER_KEY_RE = /^context_over_(\d+)k$/i;
+
 function resolveCostTier(
   usage: { inputTokens: number },
   cost: AvailableModelCost | undefined,
@@ -118,20 +141,42 @@ function resolveCostTier(
     return undefined;
   }
 
-  if (
-    usage.inputTokens > 200_000 &&
-    (typeof cost.context_over_200k?.input === "number" ||
-      typeof cost.context_over_200k?.output === "number")
-  ) {
-    return {
-      input: cost.context_over_200k.input ?? cost.input,
-      output: cost.context_over_200k.output ?? cost.output,
-      cache_read: cost.context_over_200k.cache_read ?? cost.cache_read,
-      cache_write: cost.context_over_200k.cache_write ?? cost.cache_write,
-    };
+  let winningThresholdTokens = -1;
+  let winningTier: AvailableModelCostTier | undefined;
+  for (const key of Object.keys(cost)) {
+    const match = CONTEXT_TIER_KEY_RE.exec(key);
+    if (!match) {
+      continue;
+    }
+    const tier = (cost as Record<string, AvailableModelCostTier | undefined>)[
+      key
+    ];
+    if (
+      typeof tier?.input !== "number" &&
+      typeof tier?.output !== "number"
+    ) {
+      continue;
+    }
+    const thresholdTokens = Number(match[1]) * 1000;
+    if (
+      usage.inputTokens > thresholdTokens &&
+      thresholdTokens > winningThresholdTokens
+    ) {
+      winningThresholdTokens = thresholdTokens;
+      winningTier = tier;
+    }
   }
 
-  return cost;
+  if (!winningTier) {
+    return cost;
+  }
+
+  return {
+    input: winningTier.input ?? cost.input,
+    output: winningTier.output ?? cost.output,
+    cache_read: winningTier.cache_read ?? cost.cache_read,
+    cache_write: winningTier.cache_write ?? cost.cache_write,
+  };
 }
 
 export function estimateModelUsageCost(

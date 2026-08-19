@@ -46,6 +46,11 @@ interface ModelSelectorCompactProps {
   /** The one model ID Free-tier users can still pick (Luna) -- required
    * when isFreeTierLocked is true so that model doesn't render locked. */
   freePlanModelId?: string;
+  /** Additional model IDs Free-tier users may also pick without being
+   * locked -- e.g. owner-sponsored $0 models like ling-3.0-flash-free
+   * (see FREE_TIER_ALLOWED_MODEL_IDS in lib/billing/plans.ts). Merged
+   * with freePlanModelId when checking lock state; omit for no extras. */
+  freeTierUnlockedModelIds?: readonly string[];
   /** Called when a Free-tier user clicks "Upgrade" inside the locked-
    * model popup -- typically routes to /billing/plans. */
   onUpgradeRequired?: () => void;
@@ -59,8 +64,18 @@ export function ModelSelectorCompact({
   onCloseAutoFocus,
   isFreeTierLocked = false,
   freePlanModelId,
+  freeTierUnlockedModelIds,
   onUpgradeRequired,
 }: ModelSelectorCompactProps) {
+  const unlockedModelIds = useMemo(
+    () =>
+      new Set(
+        [freePlanModelId, ...(freeTierUnlockedModelIds ?? [])].filter(
+          Boolean,
+        ) as string[],
+      ),
+    [freePlanModelId, freeTierUnlockedModelIds],
+  );
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [lockedModel, setLockedModel] = useState<ModelOption | null>(null);
@@ -134,106 +149,108 @@ export function ModelSelectorCompact({
         }}
       >
         <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="Change model"
-          aria-keyshortcuts="Meta+Alt+/"
-          title="Change model (⌘⌥/)"
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60"
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="Change model"
+            aria-keyshortcuts="Meta+Alt+/"
+            title="Change model (⌘⌥/)"
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60"
+          >
+            {selectedOption && (
+              <ProviderIcon
+                provider={selectedOption.provider}
+                className="size-3.5 shrink-0"
+              />
+            )}
+            <span className="max-w-[140px] truncate">{displayText}</span>
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-64 p-0"
+          align="start"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            focusSearchInput();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            onCloseAutoFocus?.();
+          }}
         >
-          {selectedOption && (
-            <ProviderIcon
-              provider={selectedOption.provider}
-              className="size-3.5 shrink-0"
+          <Command>
+            <CommandInput
+              ref={searchInputRef}
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Search models..."
             />
-          )}
-          <span className="max-w-[140px] truncate">{displayText}</span>
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-64 p-0"
-        align="start"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          focusSearchInput();
-        }}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          onCloseAutoFocus?.();
-        }}
-      >
-        <Command>
-          <CommandInput
-            ref={searchInputRef}
-            value={search}
-            onValueChange={setSearch}
-            placeholder="Search models..."
-          />
-          <CommandList>
-            <CommandEmpty>No models found.</CommandEmpty>
-            {groups.map((group) => (
-              <CommandGroup
-                key={group.provider}
-                heading={getProviderDisplayName(group.provider)}
-              >
-                {group.options.map((option) => {
-                  const isLocked =
-                    isFreeTierLocked && option.id !== freePlanModelId;
-                  return (
-                    <CommandItem
-                      key={option.id}
-                      value={`${option.label} ${option.id}`}
-                      onSelect={() => {
-                        if (isLocked) {
-                          setOpen(false);
-                          setSearch("");
-                          setLockedModel(option);
-                          return;
-                        }
-                        handleSelect(option.id);
-                      }}
-                      className={cn(
-                        "flex items-center",
-                        isLocked && "opacity-60",
-                      )}
-                    >
-                      <ProviderIcon
-                        provider={option.provider}
-                        className="mr-1.5 size-3.5 shrink-0 opacity-70"
-                      />
-                      <span className="min-w-0 truncate">
-                        {option.shortLabel}
-                      </span>
-                      {isLocked ? (
-                        <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                          <Lock className="size-3" />
-                          Upgrade
+            <CommandList>
+              <CommandEmpty>No models found.</CommandEmpty>
+              {groups.map((group) => (
+                <CommandGroup
+                  key={group.provider}
+                  heading={getProviderDisplayName(group.provider)}
+                >
+                  {group.options.map((option) => {
+                    const isLocked =
+                      isFreeTierLocked && !unlockedModelIds.has(option.id);
+                    return (
+                      <CommandItem
+                        key={option.id}
+                        value={`${option.label} ${option.id}`}
+                        onSelect={() => {
+                          if (isLocked) {
+                            setOpen(false);
+                            setSearch("");
+                            setLockedModel(option);
+                            return;
+                          }
+                          handleSelect(option.id);
+                        }}
+                        className={cn(
+                          "flex items-center",
+                          isLocked && "opacity-60",
+                        )}
+                      >
+                        <ProviderIcon
+                          provider={option.provider}
+                          className="mr-1.5 size-3.5 shrink-0 opacity-70"
+                        />
+                        <span className="min-w-0 truncate">
+                          {option.shortLabel}
                         </span>
-                      ) : (
-                        <>
-                          {option.id === APP_DEFAULT_MODEL_ID && (
-                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                              default
-                            </span>
-                          )}
-                          <CheckIcon
-                            className={cn(
-                              "ml-auto size-4 shrink-0",
-                              value === option.id ? "opacity-100" : "opacity-0",
+                        {isLocked ? (
+                          <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                            <Lock className="size-3" />
+                            Upgrade
+                          </span>
+                        ) : (
+                          <>
+                            {option.id === APP_DEFAULT_MODEL_ID && (
+                              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                                default
+                              </span>
                             )}
-                          />
-                        </>
-                      )}
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
+                            <CheckIcon
+                              className={cn(
+                                "ml-auto size-4 shrink-0",
+                                value === option.id
+                                  ? "opacity-100"
+                                  : "opacity-0",
+                              )}
+                            />
+                          </>
+                        )}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </Command>
+        </PopoverContent>
       </Popover>
       <Dialog
         open={lockedModel !== null}
@@ -252,8 +269,8 @@ export function ModelSelectorCompact({
               {lockedModel?.shortLabel ?? "This model"} is a paid model
             </DialogTitle>
             <DialogDescription>
-              Your Free plan only includes GPT-5.6 Luna. Upgrade to Plus,
-              Pro, or Max to unlock every model, including{" "}
+              Your Free plan only includes GPT-5.6 Luna. Upgrade to Plus, Pro,
+              or Max to unlock every model, including{" "}
               {lockedModel?.shortLabel ?? "this one"}.
             </DialogDescription>
           </DialogHeader>

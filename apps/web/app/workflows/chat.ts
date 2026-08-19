@@ -276,7 +276,8 @@ function stripDanglingToolCalls(messages: ModelMessage[]): void {
         return message;
       }
       const filteredContent = message.content.filter(
-        (part) => part.type !== "tool-call" || resultedToolCallIds.has(part.toolCallId),
+        (part) =>
+          part.type !== "tool-call" || resultedToolCallIds.has(part.toolCallId),
       );
       if (filteredContent.length === message.content.length) {
         return message;
@@ -435,8 +436,11 @@ async function resolveChatModelRuntime(params: {
   if (!isAdminUser) {
     const { getUserBillingState, claimUserBillingTurn } =
       await import("@/lib/billing/credit-ledger");
-    const { getPlanDefinition, FREE_PLAN_MODEL_ID } =
-      await import("@/lib/billing/plans");
+    const {
+      getPlanDefinition,
+      FREE_PLAN_MODEL_ID,
+      FREE_TIER_ALLOWED_MODEL_IDS,
+    } = await import("@/lib/billing/plans");
 
     // Claim the per-user billing-turn lock BEFORE reading the balance
     // that this turn will spend against. Without this, two concurrent
@@ -462,7 +466,14 @@ async function resolveChatModelRuntime(params: {
     const balanceCents = billingState?.creditBalanceCents ?? 0;
     startingBalanceCents = balanceCents;
 
-    if (plan.modelAccess === "luna-only") {
+    // 2026-08-19: Free-plan users can also pick any owner-sponsored $0
+    // model in FREE_TIER_ALLOWED_MODEL_IDS (e.g. ling-3.0-flash-free)
+    // without being force-swapped to Luna -- only fall back to Luna if
+    // they haven't picked one of the allowed free models.
+    if (
+      plan.modelAccess === "luna-only" &&
+      !FREE_TIER_ALLOWED_MODEL_IDS.includes(selectedModelId ?? "")
+    ) {
       selectedModelId = FREE_PLAN_MODEL_ID;
     }
 
@@ -1214,11 +1225,7 @@ async function performAgentVercelCli(params: {
 
   await sandbox.setVercelAuthToken(token);
   try {
-    const result = await sandbox.exec(
-      command,
-      params.workingDirectory,
-      120000,
-    );
+    const result = await sandbox.exec(command, params.workingDirectory, 120000);
 
     // Defense in depth only -- the real token should never reach the
     // sandbox process or its output at all (see comment above), but this
@@ -1330,7 +1337,8 @@ async function performAgentGithubCli(params: {
   if (!sandbox.setGitHubAuthToken) {
     return {
       success: false,
-      error: "This sandbox doesn't support secure GitHub CLI credential brokering.",
+      error:
+        "This sandbox doesn't support secure GitHub CLI credential brokering.",
     };
   }
 
@@ -1351,10 +1359,8 @@ async function performAgentGithubCli(params: {
   const command = `${ENSURE_GH_CLI_INSTALLED}; export PATH="$HOME/.local/bin:$PATH"; GH_TOKEN=${GITHUB_CLI_PLACEHOLDER_TOKEN} GH_REPO=${params.repoOwner}/${params.repoName} gh ${params.args}`;
 
   try {
-    const result = await withTemporaryGitHubAuth(
-      sandbox,
-      scoped.token,
-      () => sandbox.exec(command, params.workingDirectory, 120000),
+    const result = await withTemporaryGitHubAuth(sandbox, scoped.token, () =>
+      sandbox.exec(command, params.workingDirectory, 120000),
     );
 
     // Defense in depth only -- see redact() in performAgentVercelCli.

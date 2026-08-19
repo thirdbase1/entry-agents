@@ -69,6 +69,7 @@ import { MessageAttachmentChip } from "@/components/message-attachment-chip";
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
+import { FREE_TIER_ALLOWED_MODEL_IDS } from "@/lib/billing/plans";
 import { ReasoningEffortSelector } from "@/components/reasoning-effort-selector";
 import { PermissionModeSelector } from "@/components/permission-mode-selector";
 import {
@@ -4585,6 +4586,9 @@ export function SessionChatContent({
                                     userPlan?.modelAccess === "luna-only"
                                   }
                                   freePlanModelId={freePlanModelId}
+                                  freeTierUnlockedModelIds={
+                                    FREE_TIER_ALLOWED_MODEL_IDS
+                                  }
                                   onUpgradeRequired={() =>
                                     router.push("/billing/plans")
                                   }

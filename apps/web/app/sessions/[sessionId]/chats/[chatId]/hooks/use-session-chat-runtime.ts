@@ -238,8 +238,41 @@ export function useSessionChatRuntime({
 
           // Clear the error so the chat UI becomes visible again.
           chat.clearError();
+
+          // Snapshot before resuming so we can tell whether resumeStream()
+          // actually attached to anything.
+          const messagesBeforeResume = chatInstance.messages;
+          const lastMessageIdBeforeResume =
+            messagesBeforeResume[messagesBeforeResume.length - 1]?.id;
+
           // If the server-side stream is still running, reconnect to it.
+          // GET /api/chat/:id/stream returns 204 (a cheap no-op) when the
+          // workflow already finished -- including the case where it
+          // finished by ERRORING OUT server-side (e.g. a provider/model
+          // failure). In that case there is nothing left to "resume": the
+          // turn is dead and resumeStream() will keep 204'ing forever,
+          // which is exactly what made the manual Retry button look like
+          // it does nothing no matter how many times it's clicked (2026-08-19,
+          // confirmed live via repeated 204s on /api/chat/:id/stream in
+          // Vercel runtime logs during a real failed turn). Only a manual
+          // ("hard") retry falls back to regenerate — auto/soft recovery
+          // (visibility/online events, iOS stop-glitch) must stay
+          // resume-only so it never resubmits a turn the user didn't ask
+          // to retry.
           await chat.resumeStream();
+
+          const messagesAfterResume = chatInstance.messages;
+          const lastMessageIdAfterResume =
+            messagesAfterResume[messagesAfterResume.length - 1]?.id;
+          const resumeAttachedToNothing =
+            messagesAfterResume.length === messagesBeforeResume.length &&
+            lastMessageIdAfterResume === lastMessageIdBeforeResume &&
+            chatInstance.status !== "streaming" &&
+            chatInstance.status !== "submitted";
+
+          if (strategy === "hard" && resumeAttachedToNothing) {
+            await chat.regenerate();
+          }
         } finally {
           retryInFlightRef.current = false;
         }

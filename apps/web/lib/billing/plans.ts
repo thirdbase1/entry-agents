@@ -81,7 +81,32 @@ export const PLAN_IDS = Object.keys(PLAN_CATALOG) as PlanId[];
 /** The only model a Free-plan user may select. Gateway route id (see entry-gateway EXTRA_MODEL_ROUTES_JSON_2). */
 export const FREE_PLAN_MODEL_ID = "gpt-5.6-luna";
 
-export function getPlanDefinition(planId: string | null | undefined): PlanDefinition {
+/**
+ * Owner-sponsored free models (2026-08-19): in addition to
+ * FREE_PLAN_MODEL_ID, Free-plan users may also select any model listed
+ * here WITHOUT it being forced back to Luna by the luna-only gate below.
+ * These models are $0 cost for every plan (Free AND paid) -- see
+ * entry-gateway's EXTRA_MODEL_ROUTES_JSON_4, which sets cost.input/output
+ * to 0 for these route ids -- the owner is paying for the underlying
+ * tokens directly via their own Vercel AI Gateway account balance rather
+ * than through Entry's credit ledger, so no per-plan billing logic is
+ * needed here beyond just not force-swapping the model away from a
+ * Free-plan user who picked it.
+ *
+ * ling-3.0-flash-free: routed through entry-gateway to Vercel's own AI
+ * Gateway (inclusionai/ling-3.0-flash), re-enabled 2026-08-19 after being
+ * admin-disabled since 2026-08-15 following an outage on its old
+ * OpenCode Zen upstream -- that old route is kept as an automatic
+ * lower-priority fallback candidate in the gateway config, not removed.
+ */
+export const FREE_TIER_ALLOWED_MODEL_IDS: readonly string[] = [
+  FREE_PLAN_MODEL_ID,
+  "ling-3.0-flash-free",
+];
+
+export function getPlanDefinition(
+  planId: string | null | undefined,
+): PlanDefinition {
   if (planId && planId in PLAN_CATALOG) {
     return PLAN_CATALOG[planId as PlanId];
   }

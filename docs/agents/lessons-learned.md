@@ -467,3 +467,52 @@ prefix, etc.) should get the same "does this need its own
 `providerOptions.anthropic.cacheControl`?" question asked explicitly,
 not assumed covered because *some* cache-control wrapper already
 exists in the codebase.
+
+## 2026-08-19: context_over_200k tier-key hardcode generalized to any context_over_Nk
+
+`resolveCostTier()` in `apps/web/lib/models.ts` only ever matched the
+literal key `context_over_200k` (built for grok-4.5's threshold). This
+is the app's own tier-resolution used by BOTH the UI's cost display and
+the real credit-ledger debit (`chat-post-finish.ts`) -- entry-gateway's
+`tieredCost()` in server.js already generalized the same convention on
+2026-08-18 (`CONTEXT_TIER_KEY_RE`), but the app-side copy was never
+updated to match. Result: gpt-5.6-sol/terra/luna's real 272K threshold
+(per opencode.ai/docs/zen) never matched anything, so those three models
+always billed (and displayed) at the base rate no matter how large the
+request's context actually was -- undercharging on genuinely
+large-context requests, the opposite direction from the cache-discount
+bug found in the same session.
+
+Fixed by replacing the single hardcoded check with the same
+`context_over_(\d+)k` regex match entry-gateway already uses, picking
+the highest matching threshold under the actual token count. Backward
+compatible -- grok-4.5's existing `context_over_200k` key still matches
+exactly as before. Verified via `turbo typecheck --filter=web` (clean)
+plus a standalone logic simulation (luna correctly stays on base rate
+below 272K and switches to the tier above it with tier-appropriate
+cache_read; grok's 200k key still resolves unchanged).
+
+Paired with a companion fix in entry-gateway (commit a7a84bc) so
+`/v1/models` resolves cache_read/cache_write inside each
+`context_over_Nk` tier object too, using that tier's own (higher) input
+rate for the fallback multiplier -- otherwise a large-context gpt-5.6
+request would get the right tiered input/output rate but the wrong
+(base-rate-derived) cache discount.
+
+Audited all 46 routes for the broader "missing cache discount" bug
+class per the owner's request. Cross-checked against opencode.ai/docs/
+zen's own published pricing table: Gemini's 0.1x cache-read ratio and
+Grok's existing explicit rates are both confirmed correct as-is. The
+free-tier models (MiMo-V2.5 Free, Hy3 Free, Nemotron 3 Ultra Free) show
+$0 input/output/cached-read on OpenCode Zen's own table, so a missing
+`cost.cache_read` on our side is currently harmless for them regardless
+of whether our configured (non-zero) markup rate is intentional -- not
+touched, flagged as a separate pricing-markup question if the owner
+wants it looked at. qwen3.8-27b's `anthropic-messages` route (via
+orcarouter) never actually triggers real caching today because
+`isAnthropicModel()` in cache-control.ts only sends `cache_control` when
+the model id contains "claude"/"anthropic" -- so no live risk there
+either. Left as open/unverified: whether orcarouter's `openai-chat`
+route for qwen3.8-27b does automatic/implicit caching server-side the
+way OpenAI/DeepSeek do (couldn't find published docs confirming either
+way).

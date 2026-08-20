@@ -60,7 +60,9 @@ export function AdminFreeTierGateSection() {
   async function handleToggle(nextEnabled: boolean) {
     if (!settings) return;
     setPending(true);
-    const reasonToSend = nextEnabled ? null : reasonDraft.trim() || DEFAULT_REASON;
+    const reasonToSend = nextEnabled
+      ? null
+      : reasonDraft.trim() || DEFAULT_REASON;
     const previous = settings;
 
     setSettings({
@@ -90,14 +92,19 @@ export function AdminFreeTierGateSection() {
     if (!settings || settings.freeTierEnabled) return;
     setPending(true);
     try {
-      await setAdminFreeTierGateStatus(false, reasonDraft.trim() || DEFAULT_REASON);
+      await setAdminFreeTierGateStatus(
+        false,
+        reasonDraft.trim() || DEFAULT_REASON,
+      );
       setSettings({
         ...settings,
         disabledReason: reasonDraft.trim() || DEFAULT_REASON,
       });
       toast.success("Reason updated.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update reason.");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update reason.",
+      );
     } finally {
       setPending(false);
     }
@@ -135,9 +142,9 @@ export function AdminFreeTierGateSection() {
           Free tier access
         </CardTitle>
         <CardDescription>
-          Master switch for every non-admin user's model access. Turning this
-          off blocks the model selector and every new chat turn instantly,
-          and stops any response that's already streaming, showing the
+          Master switch for every non-admin user&apos;s model access. Turning
+          this off blocks the model selector and every new chat turn instantly,
+          and stops any response that&apos;s already streaming, showing the
           reason below. You (admin) are never affected.
         </CardDescription>
       </CardHeader>
@@ -186,7 +193,10 @@ export function AdminFreeTierGateSection() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={pending || reasonDraft.trim() === (settings.disabledReason || "")}
+                disabled={
+                  pending ||
+                  reasonDraft.trim() === (settings.disabledReason || "")
+                }
                 onClick={handleSaveReason}
               >
                 Update reason

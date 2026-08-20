@@ -24,8 +24,14 @@ type FakeSession = {
 };
 
 let linkedSessions: FakeSession[];
-const updateSessionCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
-const archiveSessionCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+const updateSessionCalls: Array<{
+  id: string;
+  patch: Record<string, unknown>;
+}> = [];
+const archiveSessionCalls: Array<{
+  id: string;
+  patch: Record<string, unknown>;
+}> = [];
 
 mock.module("@/lib/db/client", () => ({
   db: {

@@ -28,7 +28,11 @@ function isFree(model: AvailableModel): boolean {
   return model.cost?.input === 0 && model.cost?.output === 0;
 }
 
-export function PricingTable({ models }: { readonly models: AvailableModel[] }) {
+export function PricingTable({
+  models,
+}: {
+  readonly models: AvailableModel[];
+}) {
   const sorted = [...models].sort((a, b) => {
     const aFree = isFree(a);
     const bFree = isFree(b);
@@ -81,9 +85,7 @@ export function PricingTable({ models }: { readonly models: AvailableModel[] }) 
             </div>
             <div className="text-right text-sm tabular-nums text-(--l-fg-2)">
               {formatPrice(model.cost?.input)}
-              {!free && (
-                <span className="text-(--l-fg-3)">/M</span>
-              )}
+              {!free && <span className="text-(--l-fg-3)">/M</span>}
             </div>
             <div className="text-right text-sm tabular-nums text-(--l-fg-2)">
               {formatPrice(model.cost?.output)}

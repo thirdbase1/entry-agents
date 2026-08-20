@@ -206,10 +206,7 @@ function estimateUsageCost(
     const rowTotalTokens = row.inputTokens + row.outputTokens;
     totalTokens += rowTotalTokens;
 
-    const cost = estimateModelUsageCost(
-      row,
-      modelsById.get(row.modelId)?.cost,
-    );
+    const cost = estimateModelUsageCost(row, modelsById.get(row.modelId)?.cost);
     if (cost === undefined) {
       continue;
     }

@@ -34,7 +34,9 @@ export function ReasoningEffortSelector({
   onChange,
   disabled = false,
 }: ReasoningEffortSelectorProps) {
-  const selected = value ? levels.find((level) => level.value === value) : undefined;
+  const selected = value
+    ? levels.find((level) => level.value === value)
+    : undefined;
   const displayLabel = selected ? selected.label : "Auto";
 
   return (
@@ -59,7 +61,10 @@ export function ReasoningEffortSelector({
           )}
         >
           <CheckIcon
-            className={cn("size-3.5 shrink-0", value ? "opacity-0" : "opacity-100")}
+            className={cn(
+              "size-3.5 shrink-0",
+              value ? "opacity-0" : "opacity-100",
+            )}
           />
           Auto
         </button>

@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, ExternalLink, GitBranch, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ExternalLink,
+  GitBranch,
+  Loader2,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -154,8 +160,8 @@ export function ConnectRepoDialog({
                 <span className="font-medium text-foreground">
                   {session.repoOwner}/{session.repoName}
                 </span>
-                . Pick a different repository you have write access to and
-                this chat will switch to it.
+                . Pick a different repository you have write access to and this
+                chat will switch to it.
               </>
             ) : (
               "Link this session to a GitHub repository you already have write access to, then push its current work as a new branch."

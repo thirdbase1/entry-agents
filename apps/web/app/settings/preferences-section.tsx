@@ -663,13 +663,10 @@ export function PreferencesSection() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="permission-mode">
-                Default permission mode
-              </Label>
+              <Label htmlFor="permission-mode">Default permission mode</Label>
               <p className="text-xs text-muted-foreground">
-                Controls which tool approval prompts new sessions skip
-                (bash, .env access, web requests). Can be overridden per
-                session.
+                Controls which tool approval prompts new sessions skip (bash,
+                .env access, web requests). Can be overridden per session.
               </p>
               <Select
                 value={preferences?.defaultPermissionMode ?? "ask"}

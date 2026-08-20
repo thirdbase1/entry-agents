@@ -114,7 +114,10 @@ describe("syncToRemotePreservingChanges", () => {
 
     await syncToRemotePreservingChanges(sandbox, "feature", remoteUrl);
 
-    expect(sandbox.commands).toEqual([getOriginUrlCommand, fetchFeatureCommand]);
+    expect(sandbox.commands).toEqual([
+      getOriginUrlCommand,
+      fetchFeatureCommand,
+    ]);
   });
 
   test("rolls back and restores local changes when stash restore conflicts after sync", async () => {

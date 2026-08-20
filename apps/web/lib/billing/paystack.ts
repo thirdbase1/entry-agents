@@ -23,7 +23,7 @@ async function paystackRequest<T>(
     headers: {
       Authorization: `Bearer ${getSecretKey()}`,
       "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
+      ...init?.headers,
     },
   });
 

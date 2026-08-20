@@ -64,6 +64,9 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     console.error("[cron/telegram-alerts] failed:", err);
-    return NextResponse.json({ ok: false, stuckSessionsRekicked }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, stuckSessionsRekicked },
+      { status: 500 },
+    );
   }
 }

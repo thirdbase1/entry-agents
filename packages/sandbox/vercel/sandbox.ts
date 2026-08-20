@@ -51,12 +51,6 @@ interface SandboxNetworkPolicy {
   allow: Record<string, SandboxNetworkRule[]>;
 }
 
-const DEFAULT_NETWORK_POLICY: SandboxNetworkPolicy = {
-  allow: {
-    "*": [],
-  },
-};
-
 // Domain-scoped credential grants currently in effect for a sandbox's
 // egress network policy. Both GitHub and Vercel CLI auth can be active
 // at once (e.g. an agent doing `vercel env pull` mid-session while a
@@ -93,7 +87,9 @@ function buildCredentialBrokeringPolicy(
       { transform: [{ headers: { Authorization: `Bearer ${token}` } }] },
     ];
     allow["github.com"] = [
-      { transform: [{ headers: { Authorization: `Basic ${basicAuthToken}` } }] },
+      {
+        transform: [{ headers: { Authorization: `Basic ${basicAuthToken}` } }],
+      },
     ];
   }
 
@@ -115,7 +111,7 @@ function buildCredentialBrokeringPolicy(
 
 /**
  * Tracks which credential grants are currently active for a given
- * @vercel/sandbox SDK instance, so setting/clearing one doesn't clobber
+ * `@vercel/sandbox` SDK instance, so setting/clearing one doesn't clobber
  * the other. Keyed by the SDK instance itself (not the VercelSandbox
  * wrapper) since sessions can be recreated/reconnected across the
  * wrapper's lifetime (see refreshStateFromCurrentSession) while the
@@ -186,16 +182,6 @@ async function syncVercelCredentialBrokering(
   token?: string,
 ): Promise<void> {
   await syncCredentialBrokering(sdk, { vercel: token });
-}
-
-async function clearVercelCredentialBrokeringBestEffort(
-  sdk: VercelSandboxSDK,
-): Promise<void> {
-  try {
-    await syncVercelCredentialBrokering(sdk, undefined);
-  } catch (error) {
-    console.warn("[VercelSandbox] failed to clear Vercel CLI auth:", error);
-  }
 }
 
 type VercelSandboxSession = ReturnType<

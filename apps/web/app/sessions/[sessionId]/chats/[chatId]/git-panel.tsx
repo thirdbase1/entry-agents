@@ -1943,9 +1943,7 @@ export function GitPanel(props: GitPanelProps) {
               disabled={isTogglingAutoCommit}
               className="scale-90"
             />
-            <span className="text-xs text-muted-foreground">
-              Auto-commit
-            </span>
+            <span className="text-xs text-muted-foreground">Auto-commit</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Switch
@@ -1960,9 +1958,7 @@ export function GitPanel(props: GitPanelProps) {
                 !autoCommitEnabled && "opacity-50",
               )}
               title={
-                !autoCommitEnabled
-                  ? "Requires auto-commit to be on"
-                  : undefined
+                !autoCommitEnabled ? "Requires auto-commit to be on" : undefined
               }
             >
               Auto-PR

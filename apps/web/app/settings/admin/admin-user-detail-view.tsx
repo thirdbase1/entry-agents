@@ -1,7 +1,14 @@
 "use client";
 
 import { formatTokens } from "@open-agents/shared";
-import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Minus, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ExternalLink,
+  Loader2,
+  Minus,
+  Plus,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -412,8 +419,8 @@ function CreditAdjustmentCard({
       <CardHeader>
         <CardTitle>Add / remove credit</CardTitle>
         <CardDescription>
-          One-off manual correction to this user&apos;s balance. Logged in
-          the ledger with your admin id and the reason below.
+          One-off manual correction to this user&apos;s balance. Logged in the
+          ledger with your admin id and the reason below.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

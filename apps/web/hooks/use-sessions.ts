@@ -464,9 +464,7 @@ export function useSessions(options?: {
             throw new Error(lastErrorMessage);
           }
 
-          await new Promise((resolve) =>
-            setTimeout(resolve, RETRY_DELAY_MS),
-          );
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
         }
 
         throw new Error(lastErrorMessage);
@@ -478,7 +476,9 @@ export function useSessions(options?: {
         }
 
         const message =
-          error instanceof Error ? error.message : "Failed to unarchive session";
+          error instanceof Error
+            ? error.message
+            : "Failed to unarchive session";
         toast.error(message);
 
         throw error;

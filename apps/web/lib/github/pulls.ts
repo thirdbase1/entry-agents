@@ -1426,7 +1426,11 @@ export async function getPullRequestComments(params: {
     const result = await getOctokit(token);
 
     if (!result.authenticated) {
-      return { success: false, comments: [], error: "GitHub account not connected" };
+      return {
+        success: false,
+        comments: [],
+        error: "GitHub account not connected",
+      };
     }
 
     const [reviewCommentsResponse, issueCommentsResponse, reviewsResponse] =
@@ -1493,7 +1497,8 @@ export async function getPullRequestComments(params: {
     }
 
     comments.sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
 
     return { success: true, comments };

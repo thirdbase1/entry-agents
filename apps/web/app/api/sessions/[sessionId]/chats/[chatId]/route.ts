@@ -152,11 +152,8 @@ export async function PATCH(req: Request, context: RouteContext) {
   }
 
   const resolvedModelId =
-    sanitizeSelectedModelIdForSession(
-      updatedChat.modelId,
-      session,
-      req.url,
-    ) ?? updatedChat.modelId;
+    sanitizeSelectedModelIdForSession(updatedChat.modelId, session, req.url) ??
+    updatedChat.modelId;
 
   return Response.json({
     chat: {

@@ -3914,12 +3914,29 @@ export function SessionChatContent({
                                       ) : (
                                         <div
                                           className="group min-w-0 w-full overflow-hidden"
+                                          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- wraps nested interactive buttons (copy/delete), can't be a real <button>
+                                          role="button"
+                                          tabIndex={0}
                                           onClick={() =>
                                             setActiveMessageActionsId(
                                               (current) =>
                                                 current === m.id ? null : m.id,
                                             )
                                           }
+                                          onKeyDown={(event) => {
+                                            if (
+                                              event.key === "Enter" ||
+                                              event.key === " "
+                                            ) {
+                                              event.preventDefault();
+                                              setActiveMessageActionsId(
+                                                (current) =>
+                                                  current === m.id
+                                                    ? null
+                                                    : m.id,
+                                              );
+                                            }
+                                          }}
                                         >
                                           <Streamdown
                                             animated={

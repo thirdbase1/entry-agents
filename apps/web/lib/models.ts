@@ -151,10 +151,7 @@ function resolveCostTier(
     const tier = (cost as Record<string, AvailableModelCostTier | undefined>)[
       key
     ];
-    if (
-      typeof tier?.input !== "number" &&
-      typeof tier?.output !== "number"
-    ) {
+    if (typeof tier?.input !== "number" && typeof tier?.output !== "number") {
       continue;
     }
     const thresholdTokens = Number(match[1]) * 1000;

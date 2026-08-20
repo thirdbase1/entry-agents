@@ -438,9 +438,8 @@ export async function recordWorkflowUsage(
     // removed on 2026-08-17. recordUsage below is unrelated to the
     // credit ledger (it's the separate usage_events analytics table) and
     // still runs for both main and subagent usage as before.
-    const { fetchAvailableLanguageModels } = await import(
-      "@/lib/models-with-context"
-    );
+    const { fetchAvailableLanguageModels } =
+      await import("@/lib/models-with-context");
     const { debitUsage } = await import("@/lib/billing/credit-ledger");
     const { estimateModelUsageCost } = await import("@/lib/models");
     const billingCatalog = await fetchAvailableLanguageModels().catch(
@@ -453,14 +452,14 @@ export async function recordWorkflowUsage(
       },
     );
 
-    async function debitForModelUsage(
+    const debitForModelUsage = async (
       billedModelId: string,
       usage: {
         inputTokens: number;
         cachedInputTokens: number;
         outputTokens: number;
       },
-    ) {
+    ) => {
       const catalogEntry = billingCatalog.find((m) => m.id === billedModelId);
       const costUsd = estimateModelUsageCost(usage, catalogEntry?.cost);
       if (costUsd === undefined || costUsd <= 0) {
@@ -474,7 +473,7 @@ export async function recordWorkflowUsage(
       } catch (error) {
         console.error("[workflow] Failed to debit credit ledger:", error);
       }
-    }
+    };
 
     // Record main agent usage (analytics only -- billing already
     // happened in real time during the stream, see comment above).

@@ -116,20 +116,6 @@ interface RouteInfo {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function formatUptime(seconds: number): string {
-  if (!seconds || seconds < 0) return "—";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0 || days > 0) parts.push(`${hours}h`);
-  if (mins > 0 || hours > 0 || days > 0) parts.push(`${mins}m`);
-  parts.push(`${secs}s`);
-  return parts.join(" ");
-}
-
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -202,11 +188,7 @@ function StatCard({
 
 // ─── Latency Chart ───────────────────────────────────────────────────────────
 
-function LatencyChart({
-  histogram,
-}: {
-  histogram?: LatencyStats;
-}) {
+function LatencyChart({ histogram }: { histogram?: LatencyStats }) {
   if (!histogram || !histogram.count) {
     return (
       <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
@@ -261,9 +243,7 @@ function StatusBreakdown({
 }) {
   if (!breakdown || Object.keys(breakdown).length === 0) {
     return (
-      <div className="text-sm text-muted-foreground">
-        No request data yet
-      </div>
+      <div className="text-sm text-muted-foreground">No request data yet</div>
     );
   }
 
@@ -329,9 +309,7 @@ function UsageBreakdownTable({
 }) {
   const names = Object.keys(buckets);
   if (names.length === 0) {
-    return (
-      <div className="text-sm text-muted-foreground">No data yet</div>
-    );
+    return <div className="text-sm text-muted-foreground">No data yet</div>;
   }
 
   return (
@@ -393,7 +371,9 @@ function UsageBreakdownTable({
               </TableCell>
               {cbKeyPrefix && (
                 <TableCell>
-                  <span className={cn("font-mono text-xs", cnStatus(cbState || ""))}>
+                  <span
+                    className={cn("font-mono text-xs", cnStatus(cbState || ""))}
+                  >
                     {cbState || "—"}
                   </span>
                 </TableCell>
@@ -417,7 +397,10 @@ function loadSavedConnection(): { url: string; key: string } | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (typeof parsed?.url === "string") {
-      return { url: parsed.url, key: typeof parsed.key === "string" ? parsed.key : "" };
+      return {
+        url: parsed.url,
+        key: typeof parsed.key === "string" ? parsed.key : "",
+      };
     }
   } catch {
     // ignore corrupt storage
@@ -439,50 +422,50 @@ export function GatewayDashboard() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchData = useCallback(
-    async (url: string, key: string) => {
-      const headers: Record<string, string> = {};
-      if (key) headers["Authorization"] = `Bearer ${key}`;
+  const fetchData = useCallback(async (url: string, key: string) => {
+    const headers: Record<string, string> = {};
+    if (key) headers["Authorization"] = `Bearer ${key}`;
 
-      try {
-        const [healthRes, metricsRes, modelsRes, routesRes] =
-          await Promise.all([
-            fetch(`${url}/health`, { headers }),
-            fetch(`${url}/metrics`, { headers }),
-            fetch(`${url}/v1/models`, { headers }),
-            fetch(`${url}/v1/debug/routes`, { headers }),
-          ]);
+    try {
+      const [healthRes, metricsRes, modelsRes, routesRes] = await Promise.all([
+        fetch(`${url}/health`, { headers }),
+        fetch(`${url}/metrics`, { headers }),
+        fetch(`${url}/v1/models`, { headers }),
+        fetch(`${url}/v1/debug/routes`, { headers }),
+      ]);
 
-        if (!healthRes.ok) {
-          throw new Error(`Gateway returned ${healthRes.status}`);
-        }
-
-        const healthData = await healthRes.json();
-        const metricsData = metricsRes.ok ? await metricsRes.json() : null;
-        const modelsData = modelsRes.ok ? await modelsRes.json() : null;
-        const routesData = routesRes.ok ? await routesRes.json() : null;
-
-        setHealth(healthData);
-        setMetrics(metricsData);
-        setModels(modelsData?.data || []);
-        setRoutes(routesData?.routes || []);
-        setError(null);
-        setLastRefresh(new Date());
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to connect to gateway";
-        setError(message);
-        setConnected(false);
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
+      if (!healthRes.ok) {
+        throw new Error(`Gateway returned ${healthRes.status}`);
       }
-    },
-    [],
-  );
 
-  const handleConnect = async (opts?: { url?: string; key?: string; persist?: boolean }) => {
+      const healthData = await healthRes.json();
+      const metricsData = metricsRes.ok ? await metricsRes.json() : null;
+      const modelsData = modelsRes.ok ? await modelsRes.json() : null;
+      const routesData = routesRes.ok ? await routesRes.json() : null;
+
+      setHealth(healthData);
+      setMetrics(metricsData);
+      setModels(modelsData?.data || []);
+      setRoutes(routesData?.routes || []);
+      setError(null);
+      setLastRefresh(new Date());
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to connect to gateway";
+      setError(message);
+      setConnected(false);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+  }, []);
+
+  const handleConnect = async (opts?: {
+    url?: string;
+    key?: string;
+    persist?: boolean;
+  }) => {
     const url = (opts?.url ?? gatewayUrl).trim().replace(/\/+$/, "");
     const key = (opts?.key ?? apiKey).trim();
     if (!url) return;
@@ -529,7 +512,12 @@ export function GatewayDashboard() {
       if (saved?.url) {
         setGatewayUrl(saved.url);
         setApiKey(saved.key);
-        if (!cancelled) await handleConnect({ url: saved.url, key: saved.key, persist: false });
+        if (!cancelled)
+          await handleConnect({
+            url: saved.url,
+            key: saved.key,
+            persist: false,
+          });
         if (!cancelled) setRestoring(false);
         return;
       }
@@ -577,10 +565,14 @@ export function GatewayDashboard() {
         <CardContent className="pt-0">
           <div className="flex flex-col gap-4 py-6 lg:flex-row lg:items-end">
             <div className="flex-1 space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="gateway-url-input"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Gateway URL
               </label>
               <Input
+                id="gateway-url-input"
                 type="url"
                 placeholder="https://your-gateway.example.com"
                 value={gatewayUrl}
@@ -589,10 +581,14 @@ export function GatewayDashboard() {
               />
             </div>
             <div className="flex-1 space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="gateway-api-key-input"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Admin API Key
               </label>
               <Input
+                id="gateway-api-key-input"
                 type="password"
                 placeholder="gw_live_..."
                 value={apiKey}
@@ -614,11 +610,7 @@ export function GatewayDashboard() {
                 {connected ? "Reconnect" : "Connect"}
               </Button>
               {connected && (
-                <Button
-                  onClick={handleRefresh}
-                  variant="outline"
-                  size="icon"
-                >
+                <Button onClick={handleRefresh} variant="outline" size="icon">
                   <RefreshCw className="size-4" />
                 </Button>
               )}
@@ -641,14 +633,14 @@ export function GatewayDashboard() {
               <span className="text-muted-foreground">·</span>
               {health.version && (
                 <>
-                  <span className="text-muted-foreground">v{health.version}</span>
+                  <span className="text-muted-foreground">
+                    v{health.version}
+                  </span>
                   <span className="text-muted-foreground">·</span>
                 </>
               )}
               <span className="font-mono text-xs text-muted-foreground">
-                {lastRefresh
-                  ? lastRefresh.toLocaleTimeString()
-                  : "—"}
+                {lastRefresh ? lastRefresh.toLocaleTimeString() : "—"}
               </span>
             </div>
           )}
@@ -679,8 +671,14 @@ export function GatewayDashboard() {
             />
             <StatCard
               label="Avg Latency"
-              value={latencyStats?.count ? formatLatency(latencyStats.p50 || 0) : "—"}
-              sublabel={latencyStats?.count ? `p95: ${formatLatency(latencyStats.p95 || 0)}` : undefined}
+              value={
+                latencyStats?.count ? formatLatency(latencyStats.p50 || 0) : "—"
+              }
+              sublabel={
+                latencyStats?.count
+                  ? `p95: ${formatLatency(latencyStats.p95 || 0)}`
+                  : undefined
+              }
               icon={Clock}
             />
             <StatCard
@@ -773,8 +771,13 @@ export function GatewayDashboard() {
                 <TrendingUp className="size-4 text-[#ff8a3d]" />
                 Model Usage
                 <span className="ml-auto rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                  {metrics?.modelCount ?? Object.keys(metrics?.byModel || {}).length} model
-                  {(metrics?.modelCount ?? Object.keys(metrics?.byModel || {}).length) !== 1 ? "s" : ""}
+                  {metrics?.modelCount ??
+                    Object.keys(metrics?.byModel || {}).length}{" "}
+                  model
+                  {(metrics?.modelCount ??
+                    Object.keys(metrics?.byModel || {}).length) !== 1
+                    ? "s"
+                    : ""}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -793,8 +796,13 @@ export function GatewayDashboard() {
                 <Server className="size-4 text-[#ff8a3d]" />
                 Provider Usage
                 <span className="ml-auto rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                  {metrics?.providerCount ?? Object.keys(metrics?.byProvider || {}).length} provider
-                  {(metrics?.providerCount ?? Object.keys(metrics?.byProvider || {}).length) !== 1 ? "s" : ""}
+                  {metrics?.providerCount ??
+                    Object.keys(metrics?.byProvider || {}).length}{" "}
+                  provider
+                  {(metrics?.providerCount ??
+                    Object.keys(metrics?.byProvider || {}).length) !== 1
+                    ? "s"
+                    : ""}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -808,7 +816,7 @@ export function GatewayDashboard() {
             </CardContent>
           </Card>
 
-                    {/* ─── Routes Table ─── */}
+          {/* ─── Routes Table ─── */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">

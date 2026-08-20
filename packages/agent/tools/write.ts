@@ -41,7 +41,13 @@ const editInputSchema = z.object({
 export const writeFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      if ((experimental_context as { permissionMode?: "ask" | "autoAccept" | "fullAccess" } | undefined)?.permissionMode === "fullAccess") {
+      if (
+        (
+          experimental_context as
+            | { permissionMode?: "ask" | "autoAccept" | "fullAccess" }
+            | undefined
+        )?.permissionMode === "fullAccess"
+      ) {
         return false;
       }
 
@@ -149,7 +155,13 @@ EXAMPLES:
 export const editFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      if ((experimental_context as { permissionMode?: "ask" | "autoAccept" | "fullAccess" } | undefined)?.permissionMode === "fullAccess") {
+      if (
+        (
+          experimental_context as
+            | { permissionMode?: "ask" | "autoAccept" | "fullAccess" }
+            | undefined
+        )?.permissionMode === "fullAccess"
+      ) {
         return false;
       }
 

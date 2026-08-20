@@ -77,7 +77,9 @@ async function runProbe(
     return {
       label: variant.label,
       httpStatus: res.status,
-      hasReasoningContent: Boolean(reasoningContent && reasoningContent.length > 0),
+      hasReasoningContent: Boolean(
+        reasoningContent && reasoningContent.length > 0,
+      ),
       reasoningContentPreview: reasoningContent?.slice(0, 120),
       reasoningContentLength: reasoningContent?.length ?? 0,
       finishReason: choice?.finish_reason,

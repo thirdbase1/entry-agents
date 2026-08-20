@@ -166,10 +166,7 @@ export async function releaseUserBillingTurn(
     .update(users)
     .set({ activeBillingRunId: null, activeBillingRunClaimedAt: null })
     .where(
-      and(
-        eq(users.id, userId),
-        eq(users.activeBillingRunId, workflowRunId),
-      ),
+      and(eq(users.id, userId), eq(users.activeBillingRunId, workflowRunId)),
     );
 }
 

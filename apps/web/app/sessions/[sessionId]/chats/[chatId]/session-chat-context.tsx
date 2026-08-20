@@ -126,12 +126,12 @@ type SessionChatContextValue = {
   updatePermissionMode: (
     permissionModeOverride: "ask" | "autoAccept" | "fullAccess" | null,
   ) => Promise<void>;
-  updateAutoCommitPush: (autoCommitPushOverride: boolean | null) => Promise<void>;
+  updateAutoCommitPush: (
+    autoCommitPushOverride: boolean | null,
+  ) => Promise<void>;
   updateAutoCreatePr: (autoCreatePrOverride: boolean | null) => Promise<void>;
   updateChatModel: (modelId: string) => Promise<void>;
-  updateChatReasoningEffort: (
-    reasoningEffort: string | null,
-  ) => Promise<void>;
+  updateChatReasoningEffort: (reasoningEffort: string | null) => Promise<void>;
   /** Whether the chat had persisted messages when it was loaded */
   hadInitialMessages: boolean;
   /** The initial message snapshot used for SSR hydration */
@@ -1143,9 +1143,7 @@ export function SessionChatProvider({
 
       const data = (await res.json()) as { chat?: Chat; error?: string };
       if (!res.ok || !data.chat) {
-        throw new Error(
-          data.error ?? "Failed to update chat reasoning effort",
-        );
+        throw new Error(data.error ?? "Failed to update chat reasoning effort");
       }
 
       setChatInfo(data.chat);

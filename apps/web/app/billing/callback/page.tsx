@@ -8,7 +8,11 @@ type VerifyResult =
   | { phase: "loading" }
   | { phase: "error"; message: string }
   | { phase: "pending"; status: string }
-  | { phase: "success"; creditBalanceCents: number | null; plan: string | null };
+  | {
+      phase: "success";
+      creditBalanceCents: number | null;
+      plan: string | null;
+    };
 
 function BillingCallbackInner() {
   const searchParams = useSearchParams();
@@ -57,7 +61,7 @@ function BillingCallbackInner() {
               Confirming your payment...
             </h1>
             <p className="mt-3 text-(--l-fg-2)">
-              Give us a second, we're checking with Paystack.
+              Give us a second, we&apos;re checking with Paystack.
             </p>
           </>
         )}
@@ -94,7 +98,7 @@ function BillingCallbackInner() {
               Payment {result.status}
             </h1>
             <p className="mt-3 text-(--l-fg-2)">
-              We couldn't confirm a successful charge yet. If you completed
+              We couldn&apos;t confirm a successful charge yet. If you completed
               payment, this usually resolves within a minute -- refresh, or
               check your email for a Paystack receipt.
             </p>

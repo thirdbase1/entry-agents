@@ -20,21 +20,24 @@ const SYSTEM_PROMPT = `You are a terse test assistant. Reply with exactly one wo
 
 async function callOnce(baseURL: string, apiKey: string, model: string) {
   const started = Date.now();
-  const response = await fetch(`${baseURL.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
+  const response = await fetch(
+    `${baseURL.replace(/\/$/, "")}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: "Reply with one word." },
+        ],
+      }),
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: "Reply with one word." },
-      ],
-    }),
-  });
+  );
   const latencyMs = Date.now() - started;
   let body: unknown;
   try {
@@ -76,7 +79,10 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  const models = modelsParam.split(",").map((m) => m.trim()).filter(Boolean);
+  const models = modelsParam
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
 
   const results: Record<string, unknown> = {};
   for (const model of models) {

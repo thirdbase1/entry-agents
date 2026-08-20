@@ -547,13 +547,18 @@ export const creditTransactions = pgTable(
 );
 
 // --- Billing: idempotency + audit log for inbound Paystack webhooks ---
-export const paystackWebhookEvents = pgTable("paystack_webhook_events", {
-  id: text("id").primaryKey(),
-  paystackEventId: text("paystack_event_id").notNull(),
-  eventType: text("event_type").notNull(),
-  payload: jsonb("payload"),
-  processedAt: timestamp("processed_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("paystack_webhook_events_event_id_idx").on(table.paystackEventId),
-]);
-
+export const paystackWebhookEvents = pgTable(
+  "paystack_webhook_events",
+  {
+    id: text("id").primaryKey(),
+    paystackEventId: text("paystack_event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload"),
+    processedAt: timestamp("processed_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("paystack_webhook_events_event_id_idx").on(
+      table.paystackEventId,
+    ),
+  ],
+);

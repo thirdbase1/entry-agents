@@ -171,7 +171,8 @@ export async function updateUserPreferences(
         updates.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
       autoCreatePr: updates.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,
       defaultPermissionMode:
-        updates.defaultPermissionMode ?? DEFAULT_PREFERENCES.defaultPermissionMode,
+        updates.defaultPermissionMode ??
+        DEFAULT_PREFERENCES.defaultPermissionMode,
       alertsEnabled: updates.alertsEnabled ?? DEFAULT_PREFERENCES.alertsEnabled,
       alertSoundEnabled:
         updates.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,

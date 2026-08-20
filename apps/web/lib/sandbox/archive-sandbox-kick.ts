@@ -30,9 +30,8 @@ export function kickArchiveSandboxStopWorkflow(
         `${logPrefix} Failed to start archive-sandbox-stop workflow for session ${sessionId}; falling back to inline stop:`,
         error,
       );
-      const { finalizeArchivedSessionSandboxInline } = await import(
-        "./archive-session"
-      );
+      const { finalizeArchivedSessionSandboxInline } =
+        await import("./archive-session");
       await finalizeArchivedSessionSandboxInline(sessionId, logPrefix);
     }
   })();

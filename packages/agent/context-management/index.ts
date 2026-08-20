@@ -5,4 +5,7 @@ export {
   AUTO_COMPACT_THRESHOLD,
   PROTECTED_RECENT_MESSAGES,
 } from "./auto-compact";
-export { getContextWindowForModel, DEFAULT_CONTEXT_WINDOW } from "./context-windows";
+export {
+  getContextWindowForModel,
+  DEFAULT_CONTEXT_WINDOW,
+} from "./context-windows";

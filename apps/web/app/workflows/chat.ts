@@ -1323,8 +1323,12 @@ const ENSURE_GH_CLI_INSTALLED = [
   "  GH_VER=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest",
   '    | grep -m1 tag_name | grep -oE "[0-9]+\\.[0-9]+\\.[0-9]+");',
   '  mkdir -p "$HOME/.local/bin";',
+  // literal bash syntax for the shell to expand ($GH_VER), not JS
+  // oxlint-disable-next-line no-template-curly-in-string
   '  curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh-cli.tar.gz &&',
   "    tar -xzf /tmp/gh-cli.tar.gz -C /tmp &&",
+  // literal bash syntax for the shell to expand ($GH_VER), not JS
+  // oxlint-disable-next-line no-template-curly-in-string
   '    cp "/tmp/gh_${GH_VER}_linux_amd64/bin/gh" "$HOME/.local/bin/gh" &&',
   '    chmod +x "$HOME/.local/bin/gh";',
   "}",

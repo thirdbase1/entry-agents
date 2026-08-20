@@ -347,7 +347,9 @@ export function toReasoningProviderOptions(
       anthropic: {
         thinking: {
           type: "enabled",
-          budgetTokens: ANTHROPIC_THINKING_BUDGETS[effort] ?? ANTHROPIC_THINKING_BUDGETS.medium,
+          budgetTokens:
+            ANTHROPIC_THINKING_BUDGETS[effort] ??
+            ANTHROPIC_THINKING_BUDGETS.medium,
         },
       },
     };

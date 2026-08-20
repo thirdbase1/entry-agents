@@ -9,7 +9,6 @@ import {
   getChatSummariesBySessionId,
 } from "@/lib/db/sessions";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
-import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   buildSessionChatModelOptions,
   withMissingModelOption,
@@ -17,7 +16,6 @@ import {
 import {
   filterModelsForSession,
   sanitizeSelectedModelIdForSession,
-  sanitizeUserPreferencesForSession,
 } from "@/lib/model-access";
 import {
   isManagedTemplateTrialUser,
@@ -115,15 +113,13 @@ export default async function SessionChatPage({
 
   const requestHost = (await headers()).get("host") ?? "";
 
-  // Fetch chat, messages, models, and preferences in parallel
-  const [chat, dbMessages, initialModels, rawPreferences, sessionChats] =
-    await Promise.all([
-      getChatByIdWithRetry(chatId, sessionId),
-      getChatMessages(chatId),
-      getInitialModels(),
-      getUserPreferences(session.user.id),
-      getChatSummariesBySessionId(sessionId, session.user.id),
-    ]);
+  // Fetch chat, messages, models, and session chats in parallel
+  const [chat, dbMessages, initialModels, sessionChats] = await Promise.all([
+    getChatByIdWithRetry(chatId, sessionId),
+    getChatMessages(chatId),
+    getInitialModels(),
+    getChatSummariesBySessionId(sessionId, session.user.id),
+  ]);
 
   if (!chat) {
     if (isOptimisticChatId(chatId)) {
@@ -168,22 +164,14 @@ export default async function SessionChatPage({
   )
     ? MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR
     : null;
-  const preferences = sanitizeUserPreferencesForSession(
-    rawPreferences,
-    session,
-    requestHost,
-  );
   const filteredModels = filterModelsForSession(
     initialModels,
     session,
     requestHost,
   );
   const chatModelId =
-    sanitizeSelectedModelIdForSession(
-      chat.modelId,
-      session,
-      requestHost,
-    ) ?? chat.modelId;
+    sanitizeSelectedModelIdForSession(chat.modelId, session, requestHost) ??
+    chat.modelId;
   const initialModelOptions = withMissingModelOption(
     buildSessionChatModelOptions(filteredModels),
     chatModelId,

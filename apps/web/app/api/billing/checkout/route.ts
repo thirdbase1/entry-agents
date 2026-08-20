@@ -40,9 +40,7 @@ export async function POST(req: Request) {
       // amount is stashed in metadata so the webhook credits the exact
       // USD value the user saw at checkout, immune to any FX drift
       // between initialize and the customer completing payment.
-      const { ngnKobo, rate } = await usdCentsToNgnKobo(
-        body.topupAmountCents,
-      );
+      const { ngnKobo, rate } = await usdCentsToNgnKobo(body.topupAmountCents);
       const result = await initializeTransaction({
         email: session.user.email,
         amountCents: ngnKobo,
@@ -110,8 +108,7 @@ export async function POST(req: Request) {
     console.error("[billing] checkout initialization failed:", error);
     return Response.json(
       {
-        error:
-          error instanceof Error ? error.message : "Checkout failed",
+        error: error instanceof Error ? error.message : "Checkout failed",
       },
       { status: 500 },
     );

@@ -602,3 +602,25 @@ errors on the touched files) + close pattern-matching against this
 file's existing passing tests, not an actual local green test run.
 Open follow-up: get `bun test` for this file working locally, or verify
 via the next real GitHub Actions CI run once one triggers on this repo.
+
+### Correction (same day): repeat-failure check broke the workflow/step bundling boundary
+
+First cut of the fix above statically imported `countRecentFailuresWithCategory`
+from `@/lib/db/workflow-runs` at the top of `chat.ts`. That's a Node-module
+("postgres" via `lib/db/client.ts`) reachable through a static import, and
+`chat.ts` is compiled as a restricted Vercel Workflow SDK `"use workflow"`
+bundle -- the deploy failed immediately with `workflow-node-module-error:
+You are attempting to use "postgres" which depends on Node.js modules`.
+This is the exact pattern already documented inline throughout this file
+(resolveChatModelRuntime, checkVercelConnectedStep, etc.): any DB-touching
+code must be reached via a dynamic `import()` from inside a function
+carrying `"use step"` as its first statement, never a static top-of-file
+import, even if that static import is only type-only-adjacent (a plain
+named value import, in this case). Fixed by extracting the check into its
+own `checkIsRepeatFailureStep()` function with `"use step"` + a dynamic
+`import("@/lib/db/workflow-runs")` inside it, called with a plain `await`
+from the catch block -- matches the file's existing convention exactly.
+Lesson: any new code added to `chat.ts` that touches `@/lib/db/*` must be
+checked against this rule before it's ever pushed; a clean `tsc --noEmit`
+does NOT catch this (bundler-level restriction only enforced at build/deploy
+time, not by the type checker).

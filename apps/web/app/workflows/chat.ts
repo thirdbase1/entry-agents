@@ -50,6 +50,7 @@ import {
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
+  type ChatErrorCategory,
   classifyChatError,
   serializeErrorForDiagnostics,
   toFriendlyChatErrorText,
@@ -67,7 +68,6 @@ import type {
   WorkflowRunStatus,
   WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
-import { countRecentFailuresWithCategory } from "@/lib/db/workflow-runs";
 import {
   type PendingImageAttachment,
   persistImageAttachmentsToSandbox,
@@ -685,6 +685,46 @@ function getSetupErrorMessage(error: unknown, isRepeatFailure = false): string {
   // exceptions) goes through the same sanitizer used for in-stream errors
   // -- never surface the raw error text here either.
   return toFriendlyChatErrorText(error, isRepeatFailure);
+}
+
+/**
+ * Checks whether this chat has recently failed with the same error
+ * category before -- feeds isRepeatFailure into getSetupErrorMessage /
+ * toFriendlyChatErrorText so a deterministic, repeating failure reads
+ * differently to the user than a one-off transient blip. Never throws;
+ * a lookup failure just means we fall back to the generic message.
+ */
+async function checkIsRepeatFailureStep(
+  chatId: string,
+  errorCategory: ChatErrorCategory,
+  excludeRunId: string,
+): Promise<boolean> {
+  "use step";
+
+  // Dynamic import (not a static top-of-file import) is required here:
+  // countRecentFailuresWithCategory transitively touches the drizzle db
+  // client ("postgres", a Node built-in) via lib/db/client.ts, and the
+  // Workflow SDK's bundler pulls in a statically-imported function's
+  // *entire* module graph into the restricted "use workflow" bundle even
+  // from within this "use step" function -- same reasoning as
+  // resolveChatModelRuntime/checkVercelConnectedStep/etc. above.
+  const { countRecentFailuresWithCategory } =
+    await import("@/lib/db/workflow-runs");
+
+  try {
+    const priorFailureCount = await countRecentFailuresWithCategory(
+      chatId,
+      errorCategory,
+      excludeRunId,
+    );
+    return priorFailureCount > 0;
+  } catch (lookupError) {
+    console.error(
+      "[workflow] Failed to check for repeat failure:",
+      lookupError,
+    );
+    return false;
+  }
 }
 
 function isStepTimingError(
@@ -1982,19 +2022,11 @@ export async function runAgentWorkflow(options: Options) {
     // than a one-off, instead of the generic "please try again."
     const errorCategory = classifyChatError(error);
     if (errorCategory !== "aborted") {
-      try {
-        const priorFailureCount = await countRecentFailuresWithCategory(
-          options.chatId,
-          errorCategory,
-          workflowRunId,
-        );
-        isRepeatFailure = priorFailureCount > 0;
-      } catch (lookupError) {
-        console.error(
-          "[workflow] Failed to check for repeat failure:",
-          lookupError,
-        );
-      }
+      isRepeatFailure = await checkIsRepeatFailureStep(
+        options.chatId,
+        errorCategory,
+        workflowRunId,
+      );
     }
 
     if (pendingAssistantResponse.parts.length === 0 && !streamClosed) {

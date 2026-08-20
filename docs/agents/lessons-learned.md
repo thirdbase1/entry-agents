@@ -624,3 +624,27 @@ Lesson: any new code added to `chat.ts` that touches `@/lib/db/*` must be
 checked against this rule before it's ever pushed; a clean `tsc --noEmit`
 does NOT catch this (bundler-level restriction only enforced at build/deploy
 time, not by the type checker).
+
+## 2026-08-20: direct `vercel deploy --prod` silently created/used a throwaway project
+
+While deploying the repeat-failure fix above, the auto-deploy webhook
+stalled again (same pre-existing issue noted 2026-08-17), so I fell back
+to `vercel deploy --prod --token $TOKEN --yes` from a working clone at
+`/tmp/entry_agents_ro`. That failed with "No Output Directory named
+public found" -- turned out `.vercel/project.json` in that clone was
+linked to a project called `entry_agents_ro` (id
+`prj_8zdTXyh43RP5XulgQns1ZRnzJRSD`), not the real `entry-agents` project
+(id `prj_x4oE037UsFSA2fowlgHpHk9IdyQE`) -- the Vercel CLI auto-creates a
+new project named after the local directory the first time you run
+`vercel deploy` in an unlinked folder, and that phantom project obviously
+has none of the real project's settings (root directory = apps/web,
+etc.), hence the build succeeding but the deploy step looking in the
+wrong place. Fixed by overwriting `.vercel/project.json` with the real
+project's id/orgId directly (same team/org, just wrong projectId) --
+`vercel link` would also work but requires interactive confirmation.
+Deleted the throwaway `entry_agents_ro` project afterward via `DELETE
+/v9/projects/entry_agents_ro`. Lesson: any time you clone this repo fresh
+into a new working directory, check `.vercel/project.json` (or run
+`vercel link --yes --project entry-agents`) BEFORE running a direct
+`vercel deploy --prod` fallback -- don't assume an unlinked/differently-
+linked directory will just target the right project.

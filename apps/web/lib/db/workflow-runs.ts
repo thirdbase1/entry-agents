@@ -24,6 +24,7 @@ export async function recordWorkflowRun(data: {
   finishedAt: string;
   totalDurationMs: number;
   stepTimings: WorkflowRunStepTiming[];
+  errorMessage?: string;
 }) {
   await db.transaction(async (tx) => {
     await tx
@@ -38,6 +39,7 @@ export async function recordWorkflowRun(data: {
         startedAt: new Date(data.startedAt),
         finishedAt: new Date(data.finishedAt),
         totalDurationMs: data.totalDurationMs,
+        errorMessage: data.errorMessage ?? null,
       })
       .onConflictDoNothing({ target: workflowRuns.id });
 

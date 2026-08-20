@@ -401,6 +401,7 @@ export async function recordWorkflowUsage(
     finishedAt: string;
     totalDurationMs: number;
     stepTimings: WorkflowRunStepTiming[];
+    errorMessage?: string;
   },
 ): Promise<void> {
   "use step";
@@ -422,6 +423,7 @@ export async function recordWorkflowUsage(
           finishedAt: workflowRun.finishedAt,
           totalDurationMs: workflowRun.totalDurationMs,
           stepTimings: workflowRun.stepTimings,
+          errorMessage: workflowRun.errorMessage,
         });
       } catch (error) {
         console.error("[workflow] Failed to record workflow run:", error);

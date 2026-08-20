@@ -50,6 +50,7 @@ import {
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
+  serializeErrorForDiagnostics,
   toFriendlyChatErrorText,
   toSafeChatError,
 } from "@/lib/chat/friendly-error";
@@ -2007,6 +2008,9 @@ export async function runAgentWorkflow(options: Options) {
           finishedAt: runFinishedAt.toISOString(),
           totalDurationMs: runFinishedAt.getTime() - runStartedAt.getTime(),
           stepTimings,
+          errorMessage: caughtError
+            ? serializeErrorForDiagnostics(caughtError)
+            : undefined,
         },
       );
     }

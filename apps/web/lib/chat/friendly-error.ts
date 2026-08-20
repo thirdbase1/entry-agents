@@ -169,3 +169,40 @@ function readNumericField(value: unknown, keys: string[]): string {
 function matchesAny(haystack: string, needles: string[]): boolean {
   return needles.some((needle) => haystack.includes(needle));
 }
+
+/**
+ * Raw, unsanitized error text for SERVER-SIDE-ONLY diagnostic storage
+ * (currently: workflowRuns.errorMessage). NEVER pass this to a client or
+ * chat UI -- it deliberately includes the same info toFriendlyChatErrorText
+ * strips out (vendor message + first stack line) specifically so admins
+ * can root-cause a failure after Vercel's runtime-log retention window
+ * (as short as ~1hr on Hobby) has expired. Added 2026-08-20 after a real
+ * incident where a repeatedly-failing turn's actual cause was permanently
+ * unrecoverable once the log window passed, even though the failure was
+ * clearly deterministic (same error on every retry).
+ */
+export function serializeErrorForDiagnostics(
+  error: unknown,
+  maxLen = 4000,
+): string {
+  let text: string;
+  if (error instanceof Error) {
+    const firstStackLine = error.stack?.split("\n")[1]?.trim();
+    text = [
+      `${error.name}: ${error.message}`,
+      error.cause instanceof Error
+        ? `cause: ${error.cause.name}: ${error.cause.message}`
+        : undefined,
+      firstStackLine,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  } else {
+    try {
+      text = JSON.stringify(error);
+    } catch {
+      text = String(error);
+    }
+  }
+  return text.slice(0, maxLen);
+}

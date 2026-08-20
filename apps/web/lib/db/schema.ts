@@ -332,6 +332,16 @@ export const workflowRuns = pgTable(
     startedAt: timestamp("started_at").notNull(),
     finishedAt: timestamp("finished_at").notNull(),
     totalDurationMs: integer("total_duration_ms").notNull(),
+    // Raw error text (message + first stack line, capped) captured when
+    // status is "failed" -- admin-only diagnostic field. Added 2026-08-20
+    // after a real incident where the underlying provider/tool error was
+    // unrecoverable once Vercel's Hobby-plan runtime log retention (~1hr)
+    // expired, making a repeatedly-failing turn (retry hits the same
+    // deterministic error every time) impossible to root-cause after the
+    // fact. This is a server-side-only field -- never surfaced to the
+    // chat UI (see friendly-error.ts for why raw errors must never reach
+    // end users); only read by admin tooling.
+    errorMessage: text("error_message"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

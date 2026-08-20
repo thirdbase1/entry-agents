@@ -1599,3 +1599,7 @@ describe("runAgentWorkflow", () => {
     expect(spies.clearActiveStream).toHaveBeenCalled();
   });
 });
+// diag: trivial no-op comment to trigger a real CI run and confirm
+// whether the local "export not found" bun-test failure for this file
+// is sandbox-specific or a genuine issue. Safe to remove/close without
+// merging once confirmed either way.

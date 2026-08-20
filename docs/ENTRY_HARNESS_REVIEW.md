@@ -579,3 +579,109 @@ The strongest path is to turn the existing pieces into explicit, durable contrac
 The key product distinction should be:
 
 > **Entry should be the system that reliably executes AI work — not merely the SDK that lets developers call models.**
+
+---
+
+# Addendum: review findings against the current codebase (2026-08-20)
+
+The test plan above asked for a review of this document's accuracy against
+the real code. Rather than a paper review, the sections below cite exact,
+verified evidence from `entry-agents` and `entry-gateway` as they exist
+today, so the roadmap items aren't purely theoretical.
+
+## Section 9 (gateway fallback state-awareness) — CONFIRMED, still an open gap
+
+`entry-gateway/server.js`'s `handle()` retries the next candidate route on
+*any* throw from `proxy()`, with no check for whether the previous
+candidate already started streaming to the real client:
+
+```js
+for (let i = 0; i < available.length; i++) {
+  const r = available[i];
+  ...
+  try {
+    await proxy(req, res, r, p, model, action, id, i > 0);
+    return;
+  } catch (e) {
+    failures.push(`${provider}: ${e.message}`);
+    ...
+  }
+}
+if (!res.headersSent) res.status(502).json({ ... });
+```
+
+`res.headersSent` is only checked once, on the final failure response —
+never before attempting the *next* candidate. `proxy()` calls
+`res.status(response.status).set("x-gateway-request-id", id)` and then
+copies upstream headers via `res.setHeader(k, v)` before it starts
+streaming the body. If candidate #1 fails partway through an SSE stream
+(headers already sent, some `res.write()` calls already flushed to the
+real client) and `handle()` falls through to candidate #2, that second
+`proxy()` call hits `res.setHeader()` on an already-sent response —
+Node throws `ERR_HTTP_HEADERS_SENT` synchronously. That throw is caught by
+`handle()`'s own try/catch (recorded as just another failure) and the loop
+keeps trying remaining candidates, each hitting the identical error, until
+candidates are exhausted — at which point `res.headersSent` is now `true`,
+so the 502 branch is correctly skipped, but `res.end()` is never called
+either. Net effect: the real end user's connection is left half-written
+and never cleanly closed.
+
+This is exactly the class of bug Section 9 describes in the abstract
+(`REQUEST_STARTED_NO_OUTPUT` / `STREAMING` states retried as if they were
+`REQUEST_NOT_STARTED`) — it is not hypothetical, it reproduces from the
+current fallback loop as written. P0/P1 work on this should start with a
+`res.headersSent` guard before attempting the next candidate at all (fail
+closed with a clean stream termination instead of a corrupted retry).
+
+## Section 1 (Gateway capabilities) — circuit breakers CONFIRMED real
+
+`isCircuitOpen` / `recordBreakerFailure` / `recordBreakerSuccess` /
+`getAllCircuitBreakers` are implemented and wired into `proxy()` (checked
+before every upstream call, tripped on 5xx/429/network failure, exposed
+per-route on `/health`). The "provider health/metrics" and "circuit
+breakers" bullets in Section 1 are accurate, not aspirational.
+
+## Section 12 (canonical pricing) — the "recent caching/pricing issue" is a real, dated incident
+
+This isn't a hypothetical cautionary tale — it already happened:
+`entry-gateway`'s `/v1/models` returned `route.cost` raw for `gpt-5.6-*` /
+`gemini-*` / `gemma-*` routes using the fallback discount multiplier
+instead of resolving the actual per-tier cache-read rate, and
+`entry-agents`' cost estimator uses that endpoint as its *only* pricing
+source for both UI display and the real credit-ledger debit — meaning
+real user accounts were billed full input rate on cached tokens (no
+discount) on every affected request from 2026-08-17 until the fix
+(`resolvedCostFor()`) shipped 2026-08-19. A second, related bug in the
+same area: `entry-agents`' `resolveCostTier` hardcoded the tier key
+`context_over_200k` (grok-4.5's specific threshold) instead of matching
+any `context_over_Nk`, so gpt-5.6's real 272k threshold silently never
+applied (undercharge direction that time). Both are now fixed at the
+point level, but neither fix moved pricing into one canonical
+registry — Section 12's core recommendation (single source of truth
+across `/v1/models`, costing, and analytics) is still the right call and
+is still outstanding. Treat P2 item #11 as validated by a real incident,
+not a speculative risk.
+
+## Section 11 (observability) — one concrete step already taken toward the target shape
+
+`workflow_runs.error_message` (migration 0047) plus
+`serializeErrorForDiagnostics()` now persist the raw, server-side-only
+error for a chat run, added specifically because Vercel Hobby's ~1hr log
+retention made a real, repeating Luna failure unrecoverable to
+root-cause after the fact. This is a small piece of the
+`run_id -> step_id -> ...` execution graph Section 11 asks for (durable,
+queryable, survives log rotation) — worth citing as evidence the
+direction is already underway, not just recommended.
+
+## Net effect on the priority roadmap
+
+No section needs walking back. Section 9 and Section 12 both move from
+"recommended because this class of bug is plausible" to "recommended
+because this exact class of bug already happened in production" — if
+anything, that raises their priority rather than lowering it. Suggest
+tagging P0 item "audit permission enforcement at the actual execution
+boundary" with a sibling item: **audit the gateway fallback loop for
+`res.headersSent` before any retry** — same category of bug (untrusted
+assumption about execution state), same fix shape (check real state
+before acting), and now backed by a concrete reproduction path instead of
+a hypothetical one.

@@ -1,4 +1,9 @@
+import { and, desc, eq, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import {
+  classifyChatError,
+  type ChatErrorCategory,
+} from "@/lib/chat/friendly-error";
 import { db } from "./client";
 import { workflowRuns, workflowRunSteps } from "./schema";
 
@@ -65,4 +70,43 @@ export async function recordWorkflowRun(data: {
         target: [workflowRunSteps.workflowRunId, workflowRunSteps.stepNumber],
       });
   });
+}
+
+/**
+ * Counts how many of a chat's recent FAILED runs (excluding the current
+ * one) classify into the same error category. Used to decide whether to
+ * append the "this looks like a repeating issue" note (see
+ * toFriendlyChatErrorText's isRepeatFailure param) instead of the plain
+ * "please try again" text -- added 2026-08-20 alongside the
+ * errorMessage column, so a deterministic failure (same category every
+ * retry) reads differently to the user than a one-off transient blip.
+ *
+ * Deliberately re-classifies the stored raw errorMessage text on every
+ * call rather than storing a separate category column: classifyChatError
+ * is a pure substring match and works fine against a plain string (see
+ * extractErrorSignal), so there's nothing to keep in sync.
+ */
+export async function countRecentFailuresWithCategory(
+  chatId: string,
+  category: ChatErrorCategory,
+  excludeRunId: string,
+  lookbackLimit = 20,
+): Promise<number> {
+  const rows = await db
+    .select({ errorMessage: workflowRuns.errorMessage })
+    .from(workflowRuns)
+    .where(
+      and(
+        eq(workflowRuns.chatId, chatId),
+        eq(workflowRuns.status, "failed"),
+        ne(workflowRuns.id, excludeRunId),
+      ),
+    )
+    .orderBy(desc(workflowRuns.startedAt))
+    .limit(lookbackLimit);
+
+  return rows.filter(
+    (row) =>
+      row.errorMessage && classifyChatError(row.errorMessage) === category,
+  ).length;
 }

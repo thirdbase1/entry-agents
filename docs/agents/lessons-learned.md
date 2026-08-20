@@ -560,3 +560,45 @@ to be a genuinely deterministic bug (not a transient provider blip),
 consider surfacing a distinct client-facing message for it instead of the
 generic "try again" text, since retrying something deterministic wastes
 the user's time.
+
+## 2026-08-20: "repeating issue" note for chats that keep failing the same way
+
+Follow-up to the workflow_runs.error_message fix above. Added a small
+classifier refactor so the same error-category logic that picks a
+friendly message can also answer "has this chat failed with this same
+category of error recently?" -- `classifyChatError()` in
+`friendly-error.ts` now returns a stable bucket (`rate_limit`, `quota`,
+`auth`, `timeout`, `network`, `provider_unavailable`, `unknown`,
+`aborted`), and `countRecentFailuresWithCategory()` in
+`lib/db/workflow-runs.ts` re-classifies a chat's last 20 failed runs'
+stored `errorMessage` text against that same bucket -- no new column
+needed, `classifyChatError` works fine against a plain string. When a
+match is found, `toFriendlyChatErrorText(error, isRepeatFailure)` appends
+a distinct note instead of the generic "please try again," across both
+user-facing error surfaces in `chat.ts` (`getSetupErrorMessage` for
+before-any-streaming failures, and the final re-thrown error for
+mid-run failures). Deliberately excluded aborts (`errorCategory !==
+"aborted"`) -- a user-initiated stop is never a "repeating issue."
+
+Test note: added two new tests to `chat.test.ts` (repeat note shown /
+not shown for aborts) following the file's existing mock pattern, and
+they typecheck clean, but I could not get `bun test
+apps/web/app/workflows/chat.test.ts` to actually run locally in this
+sandbox -- it fails with `SyntaxError: Export named
+'releaseUserBillingTurnStep' not found in module chat-post-finish.ts`,
+even on a clean, completely unmodified checkout using the exact
+CI-pinned bun version (1.2.14). Root cause traced to chat-post-finish.ts
+transitively importing a `server-only`-guarded module (lib/db/usage.ts
+-> ... -> lib/db/model-overrides.ts or platform-settings.ts); `mock.module`
+should intercept before that's ever reached (the file already correctly
+uses `await import("./chat")` after the mock.module calls, not a static
+top-level import), but something in this specific file's load order
+still exercises the real module in this sandbox. Other test files in the
+same repo run fine. Same symptom class as the already-documented
+pre-existing generate-title/route.test.ts failure -- likely a sandbox
+environment quirk rather than a real bug, but unconfirmed. Deployed on
+the strength of a clean full typecheck + `ultracite fix`/`check` (0
+errors on the touched files) + close pattern-matching against this
+file's existing passing tests, not an actual local green test run.
+Open follow-up: get `bun test` for this file working locally, or verify
+via the next real GitHub Actions CI run once one triggers on this repo.

@@ -50,6 +50,7 @@ import {
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
+  classifyChatError,
   serializeErrorForDiagnostics,
   toFriendlyChatErrorText,
   toSafeChatError,
@@ -66,6 +67,7 @@ import type {
   WorkflowRunStatus,
   WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
+import { countRecentFailuresWithCategory } from "@/lib/db/workflow-runs";
 import {
   type PendingImageAttachment,
   persistImageAttachmentsToSandbox,
@@ -668,7 +670,7 @@ function markProviderQuotaExhausted(
   };
 }
 
-function getSetupErrorMessage(error: unknown): string {
+function getSetupErrorMessage(error: unknown, isRepeatFailure = false): string {
   if (error instanceof Error) {
     if (error.message.includes("Connect GitHub")) {
       return "Connect GitHub to access this repository, then try again.";
@@ -682,7 +684,7 @@ function getSetupErrorMessage(error: unknown): string {
   // Anything else (gateway/provider failures, transport errors, unexpected
   // exceptions) goes through the same sanitizer used for in-stream errors
   // -- never surface the raw error text here either.
-  return toFriendlyChatErrorText(error);
+  return toFriendlyChatErrorText(error, isRepeatFailure);
 }
 
 function isStepTimingError(
@@ -1615,6 +1617,7 @@ export async function runAgentWorkflow(options: Options) {
   let streamClosed = false;
   let workflowStatus: WorkflowRunStatus = "completed";
   let caughtError: unknown;
+  let isRepeatFailure = false;
   let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
 
@@ -1971,8 +1974,31 @@ export async function runAgentWorkflow(options: Options) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
 
+    // Aborts are user-initiated, never a "repeating issue." For anything
+    // else, check whether this chat has already failed with the same
+    // error category recently -- lets both the setup-error text below
+    // and the final thrown error (see the `if (caughtError)` block after
+    // the try/finally) tell the user this looks deterministic rather
+    // than a one-off, instead of the generic "please try again."
+    const errorCategory = classifyChatError(error);
+    if (errorCategory !== "aborted") {
+      try {
+        const priorFailureCount = await countRecentFailuresWithCategory(
+          options.chatId,
+          errorCategory,
+          workflowRunId,
+        );
+        isRepeatFailure = priorFailureCount > 0;
+      } catch (lookupError) {
+        console.error(
+          "[workflow] Failed to check for repeat failure:",
+          lookupError,
+        );
+      }
+    }
+
     if (pendingAssistantResponse.parts.length === 0 && !streamClosed) {
-      const errorText = getSetupErrorMessage(error);
+      const errorText = getSetupErrorMessage(error, isRepeatFailure);
       pendingAssistantResponse = {
         ...pendingAssistantResponse,
         parts: [{ type: "text", text: errorText }],
@@ -2023,7 +2049,7 @@ export async function runAgentWorkflow(options: Options) {
     // observes this run's failure -- the Workflow SDK's stream, a client
     // reconnect, etc. -- only ever sees the sanitized message.
     console.error("[workflow] agent run failed:", caughtError);
-    throw new Error(toFriendlyChatErrorText(caughtError), {
+    throw new Error(toFriendlyChatErrorText(caughtError, isRepeatFailure), {
       cause: caughtError,
     });
   }

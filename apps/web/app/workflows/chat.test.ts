@@ -105,6 +105,9 @@ const spies = {
       prUrl: "https://github.com/acme/repo/pull/42",
     }),
   ),
+  // Defaults to "no prior failures" -- most tests don't care about the
+  // repeat-failure note, only the dedicated test below overrides this.
+  countRecentFailuresWithCategory: mock(() => Promise.resolve(0)),
 };
 
 let testSessionRecord: {
@@ -215,6 +218,10 @@ mock.module("workflow/api", () => ({
 }));
 
 mock.module("./chat-post-finish", () => spies);
+
+mock.module("@/lib/db/workflow-runs", () => ({
+  countRecentFailuresWithCategory: spies.countRecentFailuresWithCategory,
+}));
 
 mock.module("@/app/config", () => ({
   webAgent: {
@@ -561,6 +568,53 @@ describe("runAgentWorkflow", () => {
         },
       ]),
     );
+  });
+
+  test("appends a repeat-failure note when this chat already failed with the same error category", async () => {
+    spies.countRecentFailuresWithCategory.mockImplementationOnce(() =>
+      Promise.resolve(2),
+    );
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(async () => {
+      throw new Error("boom");
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow();
+
+    expect(writtenChunks).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text-delta",
+          id: "setup-error",
+          delta:
+            "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models. This looks like a repeating issue rather than a one-off, so retrying probably won't help -- try switching models, or let us know if it keeps happening.",
+        },
+      ]),
+    );
+    expect(spies.countRecentFailuresWithCategory).toHaveBeenCalledWith(
+      "chat-1",
+      "unknown",
+      "wrun_test-123",
+    );
+  });
+
+  test("does not append a repeat-failure note for a user-initiated abort", async () => {
+    spies.countRecentFailuresWithCategory.mockImplementationOnce(() =>
+      Promise.resolve(5),
+    );
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(async () => {
+      throw new Error("The operation was aborted");
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow();
+
+    expect(spies.countRecentFailuresWithCategory).not.toHaveBeenCalled();
+    expect(
+      writtenChunks.some(
+        (chunk) =>
+          chunk.type === "text-delta" &&
+          (chunk as { delta?: string }).delta?.includes("repeating issue"),
+      ),
+    ).toBe(false);
   });
 
   test("persists assistant message after run", async () => {

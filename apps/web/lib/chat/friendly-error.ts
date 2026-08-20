@@ -42,15 +42,50 @@ export function toSafeChatError(message: string): Error {
   return new Error(`${SAFE_CHAT_ERROR_PREFIX}${message}`);
 }
 
-export function toFriendlyChatErrorText(error: unknown): string {
-  if (error instanceof Error && error.message.startsWith(SAFE_CHAT_ERROR_PREFIX)) {
-    return error.message.slice(SAFE_CHAT_ERROR_PREFIX.length);
-  }
+/**
+ * Stable classification bucket for an error. Extracted out of
+ * toFriendlyChatErrorText (2026-08-20) so the same classification can
+ * also be used to detect REPEAT failures -- i.e. "this chat has hit this
+ * same category of error before" -- without needing a second, separately
+ * maintained copy of the substring rules. "aborted" is deliberately
+ * excluded from repeat-failure treatment by callers: a user-initiated
+ * stop is not a failure pattern worth flagging.
+ */
+export type ChatErrorCategory =
+  | "aborted"
+  | "rate_limit"
+  | "quota"
+  | "auth"
+  | "timeout"
+  | "network"
+  | "provider_unavailable"
+  | "unknown";
 
+const CATEGORY_MESSAGES: Record<ChatErrorCategory, string> = {
+  aborted: "The request was stopped.",
+  rate_limit:
+    "The AI provider is receiving too many requests right now. Please wait a moment and try again.",
+  quota:
+    "This model has hit its usage limit and can't respond right now. Try switching to a different model.",
+  auth: "There's a temporary problem connecting to the AI provider. Please try again shortly.",
+  timeout: "The request took too long and timed out. Please try again.",
+  network:
+    "Connection issue reaching the AI provider. Please check your connection and try again.",
+  provider_unavailable:
+    "The AI provider is temporarily unavailable. Please try again in a moment.",
+  unknown:
+    "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models.",
+};
+
+/** Classifies a raw error (or a raw error-message string pulled back out
+ * of workflowRuns.errorMessage for repeat-failure comparison) into one of
+ * a small fixed set of buckets, via the same substring signal used to
+ * pick the user-facing text. */
+export function classifyChatError(error: unknown): ChatErrorCategory {
   const signal = extractErrorSignal(error);
 
   if (matchesAny(signal, ["abort", "cancelled", "canceled", "stopped"])) {
-    return "The request was stopped.";
+    return "aborted";
   }
 
   if (
@@ -62,7 +97,7 @@ export function toFriendlyChatErrorText(error: unknown): string {
       "too many requests",
     ])
   ) {
-    return "The AI provider is receiving too many requests right now. Please wait a moment and try again.";
+    return "rate_limit";
   }
 
   if (
@@ -75,7 +110,7 @@ export function toFriendlyChatErrorText(error: unknown): string {
       "credit",
     ])
   ) {
-    return "This model has hit its usage limit and can't respond right now. Try switching to a different model.";
+    return "quota";
   }
 
   if (
@@ -90,11 +125,11 @@ export function toFriendlyChatErrorText(error: unknown): string {
       "permission denied",
     ])
   ) {
-    return "There's a temporary problem connecting to the AI provider. Please try again shortly.";
+    return "auth";
   }
 
   if (matchesAny(signal, ["timeout", "timed out", "etimedout"])) {
-    return "The request took too long and timed out. Please try again.";
+    return "timeout";
   }
 
   if (
@@ -108,7 +143,7 @@ export function toFriendlyChatErrorText(error: unknown): string {
       "network",
     ])
   ) {
-    return "Connection issue reaching the AI provider. Please check your connection and try again.";
+    return "network";
   }
 
   if (
@@ -122,10 +157,41 @@ export function toFriendlyChatErrorText(error: unknown): string {
       "internal server error",
     ])
   ) {
-    return "The AI provider is temporarily unavailable. Please try again in a moment.";
+    return "provider_unavailable";
   }
 
-  return "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models.";
+  return "unknown";
+}
+
+const REPEAT_FAILURE_SUFFIX =
+  " This looks like a repeating issue rather than a one-off, so retrying probably won't help -- try switching models, or let us know if it keeps happening.";
+
+/**
+ * @param isRepeatFailure When true, appends a note that this chat has hit
+ * the same error category before (see countRecentFailuresWithCategory in
+ * lib/db/workflow-runs.ts). Never set for "aborted" -- callers should
+ * check the category first, a user-initiated stop is never a "repeating
+ * issue."
+ */
+export function toFriendlyChatErrorText(
+  error: unknown,
+  isRepeatFailure = false,
+): string {
+  if (
+    error instanceof Error &&
+    error.message.startsWith(SAFE_CHAT_ERROR_PREFIX)
+  ) {
+    return error.message.slice(SAFE_CHAT_ERROR_PREFIX.length);
+  }
+
+  const category = classifyChatError(error);
+  const base = CATEGORY_MESSAGES[category];
+
+  if (isRepeatFailure && category !== "aborted") {
+    return `${base}${REPEAT_FAILURE_SUFFIX}`;
+  }
+
+  return base;
 }
 
 /** Reduces any thrown value to a lowercased classification signal. Never

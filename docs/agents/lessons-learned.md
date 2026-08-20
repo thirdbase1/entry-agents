@@ -516,3 +516,47 @@ either. Left as open/unverified: whether orcarouter's `openai-chat`
 route for qwen3.8-27b does automatic/implicit caching server-side the
 way OpenAI/DeepSeek do (couldn't find published docs confirming either
 way).
+
+## 2026-08-20: workflowRuns had no error column -- Vercel Hobby's ~1hr log retention made a deterministic failure unrecoverable
+
+Investigating a report that retrying a failed turn "still fails no matter
+how many times." Confirmed via the DB (`workflow_runs`/`workflow_run_steps`)
+that gpt-5.6-luna repeatedly fails across many different chats/sessions: a
+run does several tool-call-only steps successfully, then dies with
+`status='failed'` and zero graceful finish reason -- no `maxSteps`/spend-cap
+path involved (those set metadata flags and break cleanly, they don't
+throw). The actual error is only ever `console.error`'d in
+`apps/web/app/workflows/chat.ts`'s catch block
+(`"[workflow] agent run failed:"`) and then deliberately sanitized before
+being shown to the user (`toFriendlyChatErrorText`, by design -- see
+`friendly-error.ts`'s own comment block on why raw errors must never reach
+a client).
+
+Tried to pull the raw error from Vercel's Runtime Logs for the specific
+incident (~8hrs earlier). Every attempt -- REST `/v1/projects/.../runtime-logs`
+with `since`/`until`, and `vercel logs --since=... --until=...` -- failed,
+the CLI's `--debug` output revealing the real cause:
+`ExceedsBillingLimitError` from Vercel's own `request-logs` endpoint. This
+project is on the Hobby plan, whose Runtime Log retention is short (~1hr);
+querying an 8hr-old window is rejected outright, not just truncated. This
+makes root-causing anything but the most recent failures structurally
+impossible today, even for a clearly deterministic bug hitting real users
+repeatedly.
+
+Fix: added `workflow_runs.error_message` (migration 0047, additive-only,
+no backfill) and a new `serializeErrorForDiagnostics()` in
+`friendly-error.ts` (raw message + cause + first stack line, capped at
+4000 chars) -- deliberately kept separate from `toFriendlyChatErrorText`,
+which exists specifically to guarantee raw error text never reaches a
+client; the new function is server-side-only, threaded through
+`recordWorkflowRun` only when `caughtError` is set. Deployed commit
+8ecee0c, live, column confirmed present via direct Neon query.
+
+Follow-up (not done): still don't have the actual root cause for *this*
+specific Luna incident (that window has already expired). Next time a
+user reports "keeps failing on retry," check `workflow_runs.error_message`
+directly instead of racing Vercel's log retention window. If it turns out
+to be a genuinely deterministic bug (not a transient provider blip),
+consider surfacing a distinct client-facing message for it instead of the
+generic "try again" text, since retrying something deterministic wastes
+the user's time.

@@ -73,6 +73,11 @@ mock.module("@open-agents/sandbox", () => ({
     _token: string | undefined,
     operation: () => Promise<unknown>,
   ) => operation(),
+  // Used by @/lib/github/commit-intent (real, unmocked) to inline
+  // symlink targets into the commit -- added after this mock was
+  // written, so any changed-file path is assumed to be a regular file
+  // in these tests, not a symlink.
+  getSymlinkTarget: async () => "",
 }));
 
 mock.module("@/lib/db/sessions", () => ({

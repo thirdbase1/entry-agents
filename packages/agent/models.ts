@@ -14,7 +14,7 @@ import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 /**
  * Shared AI provider (owner decision, 2026-08-10): all model calls in this
  * app go through Entry's own self-hosted gateway (OpenAI-compatible,
- * source in the separate `entry-gateway` service, deployed on Pxxl) --
+ * source in the separate `entry-gateway` service, deployed on Vercel) --
  * NOT Vercel's AI Gateway, and not a direct call to any upstream model
  * provider. The gateway owns upstream routing (Opencode Zen today, more
  * later) behind a single API key, so adding/removing models is a config
@@ -22,7 +22,7 @@ import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
  * redeploy to pick up a new model.
  *
  * Env vars (set in Vercel, values come from the entry-gateway deployment):
- *   GATEWAY_BASE_URL - the entry-gateway's base URL, e.g. https://entry-gateway.pxxl.run/v1
+ *   GATEWAY_BASE_URL - the entry-gateway's base URL, e.g. https://entry-gateway-six.vercel.app/v1
  *   GATEWAY_API_KEY  - one of entry-gateway's GATEWAY_API_KEYS
  *
  * Model IDs are whatever entry-gateway routes (currently Opencode Zen's

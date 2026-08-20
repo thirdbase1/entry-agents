@@ -253,9 +253,7 @@ const gatewayModelsResponseSchema = z.object({
 
 /**
  * Fetches the live model list from Entry's self-hosted gateway
- * (entry-gateway, deployed on Vercel -- see the entry-gateway project,
- * migrated off Pxxl; this comment used to say Pxxl, which is retired for
- * hosting entirely). This is intentionally a live network call, not a
+ * (entry-gateway, deployed on Vercel). This is intentionally a live network call, not a
  * hardcoded catalog -- adding/removing a model is a config change on the
  * gateway (GATEWAY env vars in its own dashboard), and this app picks it
  * up automatically on the next fetch, no redeploy needed.

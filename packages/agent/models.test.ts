@@ -2,6 +2,12 @@ import { describe, expect, mock, test } from "bun:test";
 import type { ProviderOptionsByProvider } from "./models";
 
 const createGatewayCalls: Array<Record<string, unknown>> = [];
+// Real per-provider client factories the shared provider actually calls
+// (see sharedProvider()'s isClaudeModelId/isGeminiModelId branches in
+// models.ts) -- "createGateway" above is a relic of the old Vercel AI
+// Gateway SDK and isn't called anywhere in the current implementation,
+// so the attribution-header tests below exercise these instead.
+const createOpenAICompatibleCalls: Array<Record<string, unknown>> = [];
 
 mock.module("ai", () => {
   const gateway = (modelId: string) => ({ modelId });
@@ -18,6 +24,13 @@ mock.module("ai", () => {
     wrapLanguageModel: ({ model }: { model: unknown }) => model,
   };
 });
+
+mock.module("@ai-sdk/openai-compatible", () => ({
+  createOpenAICompatible: (settings?: Record<string, unknown>) => {
+    createOpenAICompatibleCalls.push(settings ?? {});
+    return { chatModel: (modelId: string) => ({ modelId }) };
+  },
+}));
 
 mock.module("@ai-sdk/devtools", () => ({
   devToolsMiddleware: () => ({ kind: "devtools-middleware" }),
@@ -46,24 +59,30 @@ describe("shouldApplyOpenAIReasoningDefaults", () => {
 });
 
 describe("getProviderOptionsForModel", () => {
-  test("applies adaptive thinking defaults to Anthropic 4.6 models", () => {
+  // Renamed + updated 2026-08-20: these described a future adaptive/
+  // effort-based thinking mode this file was written in anticipation
+  // of. getAnthropicSettings() in models.ts documents a live probe
+  // (2026-08-16) that found the gateway's Claude passthrough silently
+  // no-ops thinking:{type:"adaptive"} (0 thinking tokens either way),
+  // so it was deliberately reverted to legacy budget-based thinking for
+  // every claude-* id, not just older ones -- there's no per-version
+  // carve-out in the real code, so 4.6/4.7 behave identically to 4.5.
+  test("applies legacy budget-based thinking defaults to Anthropic 4.6 models", () => {
     const result = getProviderOptionsForModel("anthropic/claude-sonnet-4.6");
 
     expect(result).toEqual({
       anthropic: {
-        effort: "medium",
-        thinking: { type: "adaptive" },
+        thinking: { type: "enabled", budgetTokens: 8000 },
       },
     });
   });
 
-  test("applies adaptive thinking defaults to Anthropic 4.7 models", () => {
+  test("applies legacy budget-based thinking defaults to Anthropic 4.7 models", () => {
     const result = getProviderOptionsForModel("anthropic/claude-opus-4.7");
 
     expect(result).toEqual({
       anthropic: {
-        effort: "medium",
-        thinking: { type: "adaptive" },
+        thinking: { type: "enabled", budgetTokens: 8000 },
       },
     });
   });
@@ -241,50 +260,89 @@ describe("mergeProviderOptions", () => {
 });
 
 describe("gateway attribution headers", () => {
-  test("sends default attribution headers", () => {
-    createGatewayCalls.length = 0;
-    gateway("anthropic/claude-sonnet-4.6" as never);
+  // Rewritten 2026-08-20: these tests used a Claude model id and
+  // asserted against createGatewayCalls, but createGateway (the old
+  // Vercel AI Gateway SDK entry point) isn't called anywhere in the
+  // current sharedProvider() -- Claude models go through
+  // @ai-sdk/anthropic's createAnthropic (a real, unmocked client) on its
+  // own native-Anthropic-Messages branch, so this always silently hit
+  // the real network client instead of the mock. Switched to a generic
+  // model id (openai/gpt-5.3 -- matches neither isClaudeModelId nor
+  // isGeminiModelId) so this exercises the actual default branch
+  // (createOpenAICompatible), and asserts against that mock instead.
+  // GATEWAY_BASE_URL/GATEWAY_API_KEY are also required now (added by the
+  // entry-gateway migration's getSharedProviderConfig()) when no custom
+  // `config` override is passed.
+  const originalGatewayBaseUrl = process.env.GATEWAY_BASE_URL;
+  const originalGatewayApiKey = process.env.GATEWAY_API_KEY;
 
-    expect(createGatewayCalls).toEqual([
-      {
-        headers: {
-          "http-referer": "https://open-agents.dev",
-          "x-title": "Open Agents",
+  test("sends default attribution headers", () => {
+    process.env.GATEWAY_BASE_URL = "https://entry-gateway.test/v1";
+    process.env.GATEWAY_API_KEY = "test-gateway-key";
+    createOpenAICompatibleCalls.length = 0;
+
+    try {
+      gateway("openai/gpt-5.3" as never);
+
+      expect(createOpenAICompatibleCalls).toEqual([
+        {
+          name: "openai",
+          baseURL: "https://entry-gateway.test/v1",
+          apiKey: "test-gateway-key",
+          headers: {
+            "http-referer": "https://open-agents.dev",
+            "x-title": "Entry Agent",
+          },
         },
-      },
-    ]);
+      ]);
+    } finally {
+      process.env.GATEWAY_BASE_URL = originalGatewayBaseUrl;
+      process.env.GATEWAY_API_KEY = originalGatewayApiKey;
+    }
   });
 
   test("allows overriding attribution via appName and appUrl", () => {
-    createGatewayCalls.length = 0;
-    gateway("anthropic/claude-sonnet-4.6" as never, {
-      appName: "My App",
-      appUrl: "https://myapp.com",
-    });
+    process.env.GATEWAY_BASE_URL = "https://entry-gateway.test/v1";
+    process.env.GATEWAY_API_KEY = "test-gateway-key";
+    createOpenAICompatibleCalls.length = 0;
 
-    expect(createGatewayCalls).toEqual([
-      {
-        headers: {
-          "http-referer": "https://myapp.com",
-          "x-title": "My App",
+    try {
+      gateway("openai/gpt-5.3" as never, {
+        appName: "My App",
+        appUrl: "https://myapp.com",
+      });
+
+      expect(createOpenAICompatibleCalls).toEqual([
+        {
+          name: "openai",
+          baseURL: "https://entry-gateway.test/v1",
+          apiKey: "test-gateway-key",
+          headers: {
+            "http-referer": "https://myapp.com",
+            "x-title": "My App",
+          },
         },
-      },
-    ]);
+      ]);
+    } finally {
+      process.env.GATEWAY_BASE_URL = originalGatewayBaseUrl;
+      process.env.GATEWAY_API_KEY = originalGatewayApiKey;
+    }
   });
 
   test("passes attribution headers with custom gateway config", () => {
-    createGatewayCalls.length = 0;
-    gateway("anthropic/claude-sonnet-4.6" as never, {
+    createOpenAICompatibleCalls.length = 0;
+    gateway("openai/gpt-5.3" as never, {
       config: { baseURL: "https://custom.api", apiKey: "sk-test" },
     });
 
-    expect(createGatewayCalls).toEqual([
+    expect(createOpenAICompatibleCalls).toEqual([
       {
+        name: "openai",
         baseURL: "https://custom.api",
         apiKey: "sk-test",
         headers: {
           "http-referer": "https://open-agents.dev",
-          "x-title": "Open Agents",
+          "x-title": "Entry Agent",
         },
       },
     ]);

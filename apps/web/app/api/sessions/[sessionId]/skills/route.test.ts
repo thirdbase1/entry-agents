@@ -151,6 +151,12 @@ function registerRouteMocks() {
       discoverCalls.push({ skillDirs });
       return discoveredSkills;
     },
+    // Added later (built-in skill library seeding, called from
+    // lib/skills/directories.ts's getSandboxSkillDirectories) -- this
+    // mock predated that feature and was missing the export entirely,
+    // breaking the whole module resolution for anything importing
+    // "@open-agents/agent" during this test.
+    seedBuiltinSkills: async () => undefined,
   }));
 }
 

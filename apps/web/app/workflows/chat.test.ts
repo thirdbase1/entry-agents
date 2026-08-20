@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { UIMessageChunk } from "ai";
+// Import the real module first so the mock below can spread its other
+// exports through untouched -- chat.ts (and other modules it loads)
+// import additional named exports (e.g. APICallError,
+// defaultSettingsMiddleware, wrapLanguageModel) from "ai" beyond the
+// few this test intentionally stubs, and mock.module replaces the
+// whole module namespace for every consumer, not just this file's own
+// import.
+import * as realAiModule from "ai";
+import * as realWorkflowModule from "workflow";
+import * as realWorkflowApiModule from "workflow/api";
 
 // ── Spy state ──────────────────────────────────────────────────────
 
@@ -78,6 +88,9 @@ const spies = {
   ),
   clearActiveStream: mock((_chatId?: unknown, _workflowRunId?: unknown) =>
     Promise.resolve(),
+  ),
+  releaseUserBillingTurnStep: mock(
+    (_userId?: unknown, _workflowRunId?: unknown) => Promise.resolve(),
   ),
   sendFinish: mock(async (writable: WritableStream<UIMessageChunk>) => {
     const writer = writable.getWriter();
@@ -198,6 +211,7 @@ function buildAgentSteps() {
 // ── Module mocks ───────────────────────────────────────────────────
 
 mock.module("workflow", () => ({
+  ...realWorkflowModule,
   getWorkflowMetadata: () => ({ workflowRunId: "wrun_test-123" }),
   getWritable: () => {
     const writable = new WritableStream<UIMessageChunk>({
@@ -210,6 +224,7 @@ mock.module("workflow", () => ({
 }));
 
 mock.module("workflow/api", () => ({
+  ...realWorkflowApiModule,
   getRun: () => ({
     get status() {
       return Promise.resolve(runStatus);
@@ -298,6 +313,7 @@ mock.module("@/app/config", () => ({
 }));
 
 mock.module("ai", () => ({
+  ...realAiModule,
   convertToModelMessages: async (
     msgs: Array<Record<string, unknown>>,
     options?: { convertDataPart?: (part: Record<string, unknown>) => unknown },
@@ -353,8 +369,70 @@ mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => testPreferences,
 }));
 
+// The billing feature (credit ledger, per-plan model gating, admin
+// kill-switch) added several more dynamic-import DB touchpoints inside
+// resolveChatModelRuntime/startStopMonitor (see those functions' own
+// comments in chat.ts) that predate -- and were never added to -- this
+// test file's mocks. Defaults below: a regular (non-admin), paid-plan
+// user with plenty of balance, so none of the gating branches
+// (free-tier block, credit-exhausted block, admin bypass) fire and every
+// existing test's plain modelId pass-through assertions keep working
+// unchanged. Tests that specifically want to exercise a gating branch
+// override these via mock.module again, scoped locally with
+// beforeEach/afterEach around that test (see below).
+mock.module("@/lib/db/users", () => ({
+  isUserAdmin: mock(() => Promise.resolve(false)),
+}));
+
+mock.module("@/lib/db/platform-settings", () => ({
+  getFreeTierGateStatus: mock(() =>
+    Promise.resolve({ enabled: true, reason: null }),
+  ),
+}));
+
+mock.module("@/lib/billing/credit-ledger", () => ({
+  getUserBillingState: mock(() =>
+    Promise.resolve({
+      plan: "pro",
+      creditBalanceCents: 100_000,
+      billingCycleAnchor: null,
+      paystackCustomerCode: null,
+      paystackSubscriptionCode: null,
+    }),
+  ),
+  claimUserBillingTurn: mock(() => Promise.resolve(true)),
+}));
+
+// lib/billing/plans.ts is pure (no DB import) -- no mock needed, the
+// real getPlanDefinition/FREE_PLAN_MODEL_ID/FREE_TIER_ALLOWED_MODEL_IDS
+// run as-is.
+
+mock.module("@/lib/vercel/token", () => ({
+  hasVercelAccountLinked: mock(() => Promise.resolve(false)),
+}));
+
+// fetchModelCostCatalogStep's dynamic import -- real implementation makes
+// a live HTTP call to entry-gateway (GATEWAY_BASE_URL/GATEWAY_API_KEY),
+// which isn't configured in tests. Already caught/defaulted to [] on
+// failure so this was harmless, just noisy; mocked cleanly instead.
+mock.module("@/lib/models-with-context", () => ({
+  fetchAvailableLanguageModels: mock(() => Promise.resolve([])),
+}));
+
+mock.module("@/lib/model-availability", () => ({
+  isModelDisabled: mock(() => Promise.resolve(false)),
+  // fetchModelCostCatalogStep's fetchAvailableLanguageModels() also pulls
+  // this in to filter the pricing catalog -- caught/defaulted to [] on
+  // failure either way, but mocked properly here so that path doesn't
+  // spam a SyntaxError into every test's console output.
+  filterDisabledModels: mock(<T extends { id: string }>(models: T[]) =>
+    Promise.resolve(models),
+  ),
+}));
+
 mock.module("./chat-sandbox-runtime", () => ({
   resolveChatSandboxRuntime: spies.resolveChatSandboxRuntime,
+  persistImageAttachmentsToSandbox: mock(() => Promise.resolve([])),
 }));
 
 const { runAgentWorkflow } = await import("./chat");
@@ -519,9 +597,13 @@ describe("runAgentWorkflow", () => {
       throw new Error("Connect GitHub to access repositories");
     });
 
-    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
-      "Connect GitHub to access repositories",
-    );
+    // The rejection itself is deliberately sanitized to the generic
+    // message (see toFriendlyChatErrorText's docstring in
+    // lib/chat/friendly-error.ts -- raw setup-error text never escapes
+    // the workflow this way). The *streamed* text and persisted message
+    // below are where the real, specific "Connect GitHub..." copy is
+    // asserted.
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow();
 
     expect(writtenChunks).toEqual(
       expect.arrayContaining([
@@ -555,9 +637,10 @@ describe("runAgentWorkflow", () => {
       throw new Error("Session is archived");
     });
 
-    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
-      "Session is archived",
-    );
+    // Same sanitization note as the test above -- the rejection is
+    // generic; the streamed "This session is archived..." text below is
+    // the real assertion.
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow();
 
     expect(writtenChunks).toEqual(
       expect.arrayContaining([

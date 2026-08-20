@@ -92,6 +92,15 @@ mock.module("@/lib/chat/auto-pr-direct", () => ({
   performAutoCreatePr: spies.performAutoCreatePr,
 }));
 
+// chat-post-finish.ts statically imports releaseUserBillingTurn (added
+// by the per-user billing-turn lock feature) at module top-level, so
+// merely importing the module under test pulls in the real,
+// "server-only"-guarded DB client unless this is mocked -- even though
+// none of the exports tested in this file touch billing.
+mock.module("@/lib/billing/credit-ledger", () => ({
+  releaseUserBillingTurn: mock(() => Promise.resolve()),
+}));
+
 const {
   persistUserMessage,
   persistAssistantMessage,

@@ -4,7 +4,7 @@ import { estimateModelUsageCost, type AvailableModelCost } from "@/lib/models";
 /**
  * Shape of the (legacy) Vercel AI Gateway entry in `providerMetadata`.
  * Kept only for backward compatibility -- our current shared provider is
- * Entry's own entry-gateway (self-hosted on Pxxl), which does not emit
+ * Entry's own entry-gateway (self-hosted on Vercel), which does not emit
  * this shape. Real cost accounting now comes from `estimateStepCost`
  * below, using the static per-model pricing table fetched live from
  * entry-gateway's /v1/models.

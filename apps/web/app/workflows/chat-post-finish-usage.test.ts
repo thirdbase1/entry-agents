@@ -75,6 +75,30 @@ mock.module("@open-agents/agent", () => ({
   sumLanguageModelUsage: spies.sumLanguageModelUsage,
 }));
 
+// Added later (per-user billing-turn lock, released at end of every
+// turn) -- chat-post-finish.ts imports this for real now but this test
+// file predated that and never mocked it, so any import of the module
+// under test dragged in the real "server-only"-guarded DB client.
+mock.module("@/lib/billing/credit-ledger", () => ({
+  releaseUserBillingTurn: mock(() => Promise.resolve()),
+  // debitUsage prices SUBAGENT usage against the billing catalog (see
+  // recordWorkflowUsage's own comment on why main-turn usage bills
+  // elsewhere) -- left out of the earlier mock and only surfaced once
+  // that call path executed, silently swallowing the *rest* of the
+  // same try block including the unrelated main-agent recordUsage call
+  // below it.
+  debitUsage: mock(() => Promise.resolve(0)),
+}));
+
+// fetchAvailableLanguageModels() is already wrapped in a .catch(() =>
+// []) at the call site in chat-post-finish.ts, so leaving this real
+// would just be harmless-but-noisy (same GATEWAY_BASE_URL/API_KEY gap
+// as models-with-context.ts elsewhere) -- mocked directly for a clean
+// test run.
+mock.module("@/lib/models-with-context", () => ({
+  fetchAvailableLanguageModels: mock(() => Promise.resolve([])),
+}));
+
 const { recordWorkflowUsage } = await import("./chat-post-finish");
 
 beforeEach(() => {

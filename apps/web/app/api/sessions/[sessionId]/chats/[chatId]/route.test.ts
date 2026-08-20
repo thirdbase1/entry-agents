@@ -207,7 +207,12 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
 
     const response = await GET(createGetRequest(), createContext());
     const body = (await response.json()) as {
-      chat: { id: string; modelId: string; activeStreamId: string | null };
+      chat: {
+        id: string;
+        modelId: string;
+        reasoningEffort: string | null;
+        activeStreamId: string | null;
+      };
       isStreaming: boolean;
       messages: ChatMessageRecord["parts"][];
     };
@@ -216,6 +221,10 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     expect(body.chat).toEqual({
       id: "chat-1",
       modelId: "model-1",
+      // reasoningEffort added after this test was written (per-chat
+      // reasoning-effort selection) -- included here to match the real
+      // response shape instead of leaving this test permanently red.
+      reasoningEffort: null,
       activeStreamId: "stream-1",
     });
     expect(body.isStreaming).toBe(true);

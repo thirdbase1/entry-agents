@@ -1,4 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+// Import the real modules first so the mocks below can spread their
+// other exports through untouched -- other code loaded transitively
+// via route.ts (e.g. packages/agent/models.ts) imports additional
+// named exports like defaultSettingsMiddleware/wrapLanguageModel from
+// "ai", and mock.module replaces the whole module namespace for every
+// consumer in this test file, not just this file's own import.
+import * as realAiModule from "ai";
+import * as realAgentModule from "@open-agents/agent";
 
 const generateTextCalls: Array<{ prompt: string }> = [];
 
@@ -11,7 +19,7 @@ let generateTextResult: { text: string } | Error = {
 };
 
 mock.module("ai", () => ({
-  gateway: (modelId: string) => modelId,
+  ...realAiModule,
   generateText: async (input: { prompt: string }) => {
     generateTextCalls.push(input);
 
@@ -21,6 +29,16 @@ mock.module("ai", () => ({
 
     return generateTextResult;
   },
+}));
+
+// route.ts's `gateway` comes from "@open-agents/agent" (it's
+// packages/agent/models.ts's sharedProvider re-export), not from "ai"
+// -- mocking "ai".gateway alone never touches the function route.ts
+// actually calls, and the real one needs GATEWAY_BASE_URL/GATEWAY_API_KEY
+// env vars this test doesn't set.
+mock.module("@open-agents/agent", () => ({
+  ...realAgentModule,
+  gateway: (modelId: string) => modelId,
 }));
 
 mock.module("@/lib/session/get-server-session", () => ({

@@ -40,14 +40,25 @@ const { computeAndCacheDiff, DiffComputationError } =
 function createSandbox(overrides?: {
   exec?: ExecHandler;
   readFile?: typeof readFileHandler;
+  // Real code now reads untracked files as raw bytes via
+  // readFileBuffer() (added for binary-file detection -- see
+  // isBinaryBuffer in diff-utils.ts) instead of readFile(), so this
+  // needs its own mock hook. Defaults to wrapping whichever readFile
+  // handler is in play, so existing string-content tests keep working
+  // without every call site needing to know about the buffer layer.
+  readFileBuffer?: (path: string) => Promise<Buffer>;
 }) {
+  const readFile = overrides?.readFile ?? readFileHandler;
   return {
     workingDirectory: "/vercel/sandbox",
     exec:
       overrides?.exec ??
       execHandler ??
       (async () => ({ success: true, stdout: "", stderr: "" })),
-    readFile: overrides?.readFile ?? readFileHandler,
+    readFile,
+    readFileBuffer:
+      overrides?.readFileBuffer ??
+      (async (path: string) => Buffer.from(await readFile(path, "utf-8"))),
   };
 }
 
@@ -151,7 +162,15 @@ describe("computeAndCacheDiff", () => {
       }
     });
 
-    test("skips unreadable files in no-commit path", async () => {
+    // Rewritten 2026-08-20: this test predated the readFileBuffer +
+    // isBinaryBuffer detection added to the no-commit path (compute-
+    // diff.ts now reads raw bytes and checks for null bytes instead of
+    // just letting readFile() throw on binary content). A genuinely
+    // unreadable file (e.g. a real I/O error) is still skipped, but a
+    // binary file is now included as a proper `binary: true` entry
+    // instead of being dropped -- so the old "binary.png throws ->
+    // gets skipped" premise no longer matches real behavior.
+    test("skips genuinely unreadable files but includes binary files as binary entries in no-commit path", async () => {
       execHandler = makeExecHandler({
         "git symbolic-ref refs/remotes/origin/HEAD": {
           success: false,
@@ -160,22 +179,30 @@ describe("computeAndCacheDiff", () => {
         "git rev-parse HEAD": { success: false, stdout: "" },
         "git ls-files --others": {
           success: true,
-          stdout: "good.ts\nbinary.png\n",
+          stdout: "good.ts\nbinary.png\nunreadable.ts\n",
         },
       });
 
       const result = await computeAndCacheDiff({
         sandbox: createSandbox({
-          readFile: async (path: string) => {
-            if (path.includes("binary.png")) throw new Error("Binary file");
-            return "content\n";
+          readFileBuffer: async (path: string) => {
+            if (path.includes("unreadable.ts")) {
+              throw new Error("EACCES: permission denied");
+            }
+            if (path.includes("binary.png")) {
+              return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02]);
+            }
+            return Buffer.from("content\n", "utf-8");
           },
         }) as never,
         sessionId: "session-1",
       });
 
-      expect(result.files).toHaveLength(1);
-      expect(result.files[0].path).toBe("good.ts");
+      expect(result.files).toHaveLength(2);
+      const byPath = new Map(result.files.map((f) => [f.path, f]));
+      expect(byPath.get("good.ts")).toBeTruthy();
+      expect(byPath.get("binary.png")?.binary).toBe(true);
+      expect(byPath.has("unreadable.ts")).toBe(false);
     });
   });
 

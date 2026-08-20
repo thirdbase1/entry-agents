@@ -24,6 +24,14 @@ mock.module("ai", () => {
     gateway,
     stepCountIs: (count: number) => ({ count }),
     ToolLoopAgent: MockToolLoopAgent,
+    // Needed because some tool modules transitively import
+    // ../models (sharedProvider), which destructures these from "ai"
+    // at module top-level -- missing here fails the whole import even
+    // though this test never exercises that code path directly.
+    defaultSettingsMiddleware: (_settings: unknown) => ({
+      kind: "default-settings-middleware",
+    }),
+    wrapLanguageModel: ({ model }: { model: unknown }) => model,
     getToolName: (part: { toolName?: string; type?: string }) => {
       if (part.toolName) {
         return part.toolName;

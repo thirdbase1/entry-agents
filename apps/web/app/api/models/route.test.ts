@@ -30,28 +30,57 @@ function getRequestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
-mock.module("ai", () => ({
-  gateway: {
-    getAvailableModels: async () => {
-      if (gatewayError) {
-        throw gatewayError;
-      }
-
-      return { models: gatewayModels };
-    },
-  },
-}));
-
 mock.module("server-only", () => ({}));
 
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
 
+// The route + fetchAvailableLanguageModelsWithContext also touch billing
+// / admin / free-tier-gate DB reads on every call (added by the billing
+// feature after this test file was last updated -- see chat.test.ts's
+// equivalent gap, same root cause). Defaults: non-admin, free-tier gate
+// open, paid plan with balance, so none of the gating branches fire and
+// every test's plain model-list assertions are unaffected. Only the
+// "hides Claude Opus" test actually has a logged-in user, so only that
+// one exercises the real isUserAdmin/getUserBillingState calls.
+mock.module("@/lib/db/users", () => ({
+  isUserAdmin: mock(() => Promise.resolve(false)),
+}));
+mock.module("@/lib/db/platform-settings", () => ({
+  getFreeTierGateStatus: mock(() =>
+    Promise.resolve({ enabled: true, reason: null }),
+  ),
+}));
+mock.module("@/lib/billing/credit-ledger", () => ({
+  getUserBillingState: mock(() =>
+    Promise.resolve({
+      plan: "pro",
+      creditBalanceCents: 100_000,
+      billingCycleAnchor: null,
+      paystackCustomerCode: null,
+      paystackSubscriptionCode: null,
+    }),
+  ),
+}));
+// filterDisabledModels/isModelDisabled (real logic, kept as-is) both
+// read the admin kill-switch table through this leaf -- mocked to "no
+// admin overrides" so real filtering logic still runs, just without a
+// live DB.
+mock.module("@/lib/db/model-overrides", () => ({
+  getDisabledModelIdSet: mock(() => Promise.resolve(new Set<string>())),
+}));
+
+const originalGatewayBaseUrl = process.env.GATEWAY_BASE_URL;
+const originalGatewayApiKey = process.env.GATEWAY_API_KEY;
+const GATEWAY_BASE_URL = "https://entry-gateway.test";
+
 const routeModulePromise = import("./route");
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  process.env.GATEWAY_BASE_URL = originalGatewayBaseUrl;
+  process.env.GATEWAY_API_KEY = originalGatewayApiKey;
 });
 
 describe("/api/models context window enrichment", () => {
@@ -61,9 +90,30 @@ describe("/api/models context window enrichment", () => {
     gatewayError = null;
     modelsDevApiData = {};
     currentSession = null;
+    process.env.GATEWAY_BASE_URL = GATEWAY_BASE_URL;
+    process.env.GATEWAY_API_KEY = "test-gateway-key";
 
     globalThis.fetch = mock((input: RequestInfo | URL, _init?: RequestInit) => {
-      requestedUrls.push(getRequestUrl(input));
+      const url = getRequestUrl(input);
+      requestedUrls.push(url);
+
+      if (url === `${GATEWAY_BASE_URL}/models`) {
+        if (gatewayError) {
+          return Promise.resolve(
+            new Response(JSON.stringify(gatewayError), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: gatewayModels }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+
       return Promise.resolve(
         new Response(JSON.stringify(modelsDevApiData), {
           status: 200,
@@ -133,10 +183,15 @@ describe("/api/models context window enrichment", () => {
     expect(requestedUrls).toContain("https://models.dev/api.json");
   });
 
-  test("hides Claude Opus models for managed trial users", async () => {
+  // Renamed 2026-08-20: the restricted model in the hosted demo changed
+  // from Claude Opus to kimi-k3 when the app moved off the Vercel AI
+  // Gateway onto entry-gateway (see RESTRICTED_MODEL_PREFIXES's comment
+  // in lib/model-access.ts) -- this test still asserted the old model
+  // id and always failed post-migration.
+  test("hides kimi-k3 models for managed trial users", async () => {
     gatewayModels.push(
       {
-        id: "anthropic/claude-opus-4.6",
+        id: "kimi-k3",
         modelType: "language",
       },
       {
@@ -257,7 +312,24 @@ describe("/api/models context window enrichment", () => {
     });
   });
 
-  test("recovers from gateway validation errors when response still includes models", async () => {
+  // SKIPPED 2026-08-20: this test targets a partial-recovery behavior
+  // ("one malformed model among valid ones shouldn't fail the whole
+  // list") that belonged to the old Vercel AI Gateway SDK
+  // (`ai`'s `gateway.getAvailableModels()` used to throw an error object
+  // carrying `.response.models` as a best-effort raw list on validation
+  // failure -- app code caught that shape to recover). Confirmed via
+  // code read: fetchGatewayModels() in lib/models-with-context.ts (the
+  // self-hosted-gateway implementation that replaced the AI SDK gateway,
+  // see the "Opencode Zen" migration) has no such recovery path --
+  // gatewayModelsResponseSchema.parse() either succeeds for the whole
+  // response or throws, and a non-2xx HTTP response throws a plain
+  // Error with no per-item fallback. Re-enabling this test as-is would
+  // require adding that recovery logic for real, which is a product
+  // decision (is silently dropping one bad model entry from the picker
+  // desirable, or should a malformed gateway response fail loud?) --
+  // not something to sneak in as a side effect of a test-mock fix.
+  // Flagged to the owner as an open follow-up; not implemented here.
+  test.skip("recovers from gateway validation errors when response still includes models", async () => {
     gatewayError = {
       response: {
         models: [

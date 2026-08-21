@@ -690,3 +690,71 @@ helper module intended to be called from a workflow function's own body
 APIs before wiring it in -- don't assume "it's just a pure function" is
 enough if the *file* it lives in also has unrelated Node-touching
 imports at the top.
+
+## 2026-08-21: Default benchmark model list had 3 dead ids -- validate against the live gateway catalog, always
+
+While doing a first real validation run of the HumanEval benchmark
+feature, every model in the run scored a flat 0/20. Two separate causes
+turned out to be tangled together:
+
+1. **My own manual test used a stale id** (`ling-3.0` passed directly to
+   `POST /api/cron/run-benchmarks`) -- not a real id, just a shorthand I
+   typed from memory. The real gateway route id is
+   `ling-3.0-flash-free` (display name strips the trailing `-free` via
+   `getModelDisplayName`, but the *id* used for routing/selection never
+   does). `getAdminModelCatalog()` (used by the admin benchmarks page's
+   actual checkboxes) already returns the correct raw id, so the admin
+   UI itself was never at risk of producing this -- only a manual/API
+   caller typing an id by hand is.
+
+2. **The real bug**: `DEFAULT_BENCHMARK_MODEL_IDS` in
+   `app/workflows/run-benchmarks.ts` (used whenever no explicit
+   `modelIds` is passed -- i.e. every future scheduled/cron run) had
+   the *same* `ling-3.0` mistake baked in, plus two ids
+   (`deepseek-v4-pro`, `gemini-2.5-pro`) that don't exist in the gateway
+   at all -- the real Gemini ids are all `gemini-3.x-*`, and there's no
+   "pro" DeepSeek route configured. 3 of 8 default models were
+   guaranteed dead on every run with zero useful signal, and nothing
+   would have caught it before the public benchmark page went live
+   showing three legitimate models at a bogus 0/20.
+
+Root-caused by adding a temporary admin-only diagnostic route that
+proxies entry-gateway's `adminAuth`-gated `GET /v1/debug/routes` using
+entry-agents' own `GATEWAY_API_KEY` (accepted by `adminAuth`'s fallback
+to the regular `keys()` set) -- necessary because
+`MODEL_ROUTES_JSON`/`EXTRA_MODEL_ROUTES_JSON`/`_2` on the entry-gateway
+Vercel project are all type "sensitive" (permanently unreadable via
+dashboard or API), so asking the running gateway itself is the only way
+to see the real configured id for a model. Deleted after use, per the
+existing temporary-diagnostic-route convention (see the reasoning-probe
+/ cache-test entries above).
+
+Separately, but on the same investigation: `deepseek-v4-flash`'s
+gateway route id and config are correct, but a live probe got back a
+genuine upstream 503 from `iamhc.cn`: `"No available channel for model
+deepseek-v4-flash under group default (distributor)"`. That's a
+provider-side outage, not an Entry bug -- and since deepseek-v4-flash is
+also the model used for manual chat testing (per standing instruction),
+this is worth checking again before assuming chat itself is broken.
+
+**Fix, and the durable guard against a repeat:**
+- Corrected `DEFAULT_BENCHMARK_MODEL_IDS` against a live route dump.
+- `startAdminBenchmarkRun` now validates every requested id against the
+  live catalog (`fetchAllLanguageModelsForAdmin()`) up front and throws
+  a clear `Unknown model id(s): ...` error instead of starting a doomed
+  run -- covers the admin UI and any future API caller equally.
+- `runBenchmarkSuiteWorkflow` also checks `costByModelId` (already
+  fetched from the same catalog via `loadCostCatalogStep`) membership
+  per model *before* spending a step call on it -- catches
+  `DEFAULT_BENCHMARK_MODEL_IDS` regressing again with one clear
+  synthetic error per task instead of 20 identical opaque gateway 404s.
+
+**Lesson**: any hardcoded model-id list anywhere in this codebase (a
+default list, a seed script, a fixture) is a silent time bomb -- ids
+are gateway routing keys with zero fuzzy matching, they drift as routes
+get renamed, and `tsc`/lint catch none of it since they're just strings.
+Any code path that accepts a model id from a source that isn't the live
+catalog (a hardcoded default, a manually-typed CLI/API param, an old
+saved preference) should validate against the catalog before doing
+real, possibly expensive work with it -- don't rely on remembering the
+correct id.

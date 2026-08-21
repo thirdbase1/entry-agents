@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ThemeToggle } from "./theme-toggle";
 
 export function LandingFooter() {
@@ -16,11 +17,29 @@ export function LandingFooter() {
             </div>
           </div>
 
-          <div className="hidden lg:block" />
-
           <div className="px-6 pt-14 md:px-10 md:py-18">
             <div className="font-mono text-xs uppercase tracking-widest text-(--l-fg-3)">
               Product
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              <Link
+                href="/pricing"
+                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
+              >
+                Pricing
+              </Link>
+              <Link
+                href="/benchmarks"
+                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
+              >
+                Benchmarks
+              </Link>
+            </div>
+          </div>
+
+          <div className="px-6 pt-14 md:px-10 md:py-18">
+            <div className="font-mono text-xs uppercase tracking-widest text-(--l-fg-3)">
+              Built with
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <a

@@ -6,21 +6,20 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { LanguageModelUsage, ModelMessage } from "ai";
 import { addLanguageModelUsage } from "@/app/workflows/usage-utils";
-import humanEvalSubset from "./data/humaneval-subset.json";
+import {
+  HUMANEVAL_SUITE_VERSION,
+  type HumanEvalTask,
+  loadHumanEvalSubset,
+} from "./humaneval-tasks";
 
-export interface HumanEvalTask {
-  task_id: string;
-  prompt: string;
-  entry_point: string;
-  canonical_solution: string;
-  test: string;
-}
-
-export function loadHumanEvalSubset(): HumanEvalTask[] {
-  return humanEvalSubset as HumanEvalTask[];
-}
-
-export const HUMANEVAL_SUITE_VERSION = "humaneval-subset-20-v1";
+// Re-exported for backwards compatibility with existing importers (this
+// file used to define these itself). New code that only needs the task
+// list/version -- especially anything reachable from a `"use workflow"`
+// function body -- should import from "./humaneval-tasks" directly
+// instead, since importing *this* file pulls in Node-only modules
+// (child_process/fs/os/path/@open-agents/sandbox) that the Workflow SDK
+// bundler will reject outside a `"use step"` function.
+export { HUMANEVAL_SUITE_VERSION, type HumanEvalTask, loadHumanEvalSubset };
 
 // Hard cap on outer-loop steps per task. openAgent.generate() executes
 // exactly one model turn per call (see packages/agent/open-agent.ts's

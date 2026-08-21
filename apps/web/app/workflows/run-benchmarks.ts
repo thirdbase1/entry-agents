@@ -7,11 +7,15 @@ import {
 import type { AvailableModelCost } from "@/lib/models";
 import { estimateModelUsageCost } from "@/lib/models";
 import { fetchModelCostCatalog } from "@/lib/models-with-context";
+// Node-free -- safe to import statically even though this whole file's
+// top-level workflow function body runs in the Workflow SDK's restricted
+// bundle. `runHumanEvalTask` (which touches fs/child_process/sandbox) is
+// intentionally NOT imported here -- see runTaskStep below, which loads
+// it via a dynamic import() inside its own `"use step"` function instead.
 import {
   HUMANEVAL_SUITE_VERSION,
   loadHumanEvalSubset,
-  runHumanEvalTask,
-} from "@/lib/benchmarks/humaneval-runner";
+} from "@/lib/benchmarks/humaneval-tasks";
 
 /**
  * Default set of models benchmarked when no explicit list is given.
@@ -86,6 +90,14 @@ async function runTaskStep(
     };
   }
 
+  // Dynamic import: humaneval-runner.ts touches Node-only modules
+  // (fs/child_process/os/path + @open-agents/sandbox's connectLocal),
+  // which the Workflow SDK bundler forbids anywhere reachable via a
+  // static import from a `"use workflow"` file. Deferring the import to
+  // runtime, inside this `"use step"` function, keeps that code out of
+  // the restricted workflow bundle entirely.
+  const { runHumanEvalTask } =
+    await import("@/lib/benchmarks/humaneval-runner");
   const result = await runHumanEvalTask(modelId, task);
 
   let costCents: number | undefined;

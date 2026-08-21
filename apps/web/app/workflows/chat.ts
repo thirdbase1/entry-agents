@@ -49,6 +49,7 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import { canonicalizeMessageParts } from "@/lib/chat/canonicalize-key-order";
 import {
   type ChatErrorCategory,
   classifyChatError,
@@ -210,7 +211,9 @@ const convertMessages = async (
 ): Promise<ModelMessage[]> => {
   "use step";
   const { webAgent } = await import("@/app/config");
-  const dedupedMessages = messages.map(dedupeMessageReasoning);
+  const dedupedMessages = messages
+    .map(dedupeMessageReasoning)
+    .map(canonicalizeMessageParts);
   const modelMessages = await convertToModelMessages<WebAgentUIMessage>(
     dedupedMessages,
     {

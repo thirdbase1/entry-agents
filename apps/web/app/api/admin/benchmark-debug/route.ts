@@ -3,6 +3,8 @@ import {
   getBenchmarkRunResults,
   listRecentBenchmarkRuns,
 } from "@/lib/db/benchmarks";
+import { getDisabledModelIdSet } from "@/lib/db/model-overrides";
+import { isModelHardBlocked } from "@/lib/model-availability";
 
 export const maxDuration = 60;
 
@@ -27,5 +29,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No runs found" }, { status: 404 });
   }
   const results = await getBenchmarkRunResults(latest.id);
-  return NextResponse.json({ run: latest, results });
+  const disabledIds = await getDisabledModelIdSet();
+  const modelAvailability = Object.fromEntries(
+    (latest.modelIds as string[]).map((id: string) => [
+      id,
+      {
+        hardBlocked: isModelHardBlocked(id),
+        adminDisabled: disabledIds.has(id),
+      },
+    ]),
+  );
+  return NextResponse.json({ run: latest, results, modelAvailability });
 }

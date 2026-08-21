@@ -648,3 +648,45 @@ into a new working directory, check `.vercel/project.json` (or run
 `vercel link --yes --project entry-agents`) BEFORE running a direct
 `vercel deploy --prod` fallback -- don't assume an unlinked/differently-
 linked directory will just target the right project.
+
+## 2026-08-21: benchmark harness workflow file hit the same Node-module-in-workflow bug, different Node API surface
+
+Adding the HumanEval benchmark runner (`app/workflows/run-benchmarks.ts`,
+a `"use workflow"` file) hit the exact same class of bug as the
+`chat.ts` repeat-failure correction above, just via a different Node API
+surface: it statically imported `loadHumanEvalSubset`,
+`HUMANEVAL_SUITE_VERSION`, and `runHumanEvalTask` from
+`lib/benchmarks/humaneval-runner.ts`, which touches `node:child_process`
+(spawns `python3` to grade candidate solutions), `node:fs/promises`,
+`node:os`, `node:path`, and `@open-agents/sandbox`'s `connectLocal`
+(itself pulling in `@vercel/sandbox` transitively via the package's
+barrel `index.ts`). Deploy failed with six separate
+`workflow-node-module-error` diagnostics pointing at that one file.
+
+Fix: split the Node-free parts (`HumanEvalTask` type,
+`loadHumanEvalSubset()`, `HUMANEVAL_SUITE_VERSION`) into a new
+`lib/benchmarks/humaneval-tasks.ts` with zero Node imports (just a JSON
+import) -- safe to import statically even from the workflow function's
+own top-level body, which itself calls `loadHumanEvalSubset()` directly
+(not from inside a step). `humaneval-runner.ts` now imports+re-exports
+those from the new module instead of defining them itself, so its
+existing importer (`humaneval-runner.test.ts`) needed zero changes.
+`runTaskStep` (a `"use step"` function) now does
+`const { runHumanEvalTask } = await import("@/lib/benchmarks/humaneval-runner")`
+at call time instead of importing it statically at the top of the file.
+
+Lesson (generalizing beyond just DB access, which is how this rule was
+first written up): **any** Node-only API -- `fs`, `path`, `os`,
+`child_process`, or a package that transitively depends on one of
+those (like `@vercel/sandbox` via `@open-agents/sandbox`) -- must never
+be reachable via a static top-of-file import anywhere in a
+`"use workflow"` file's module graph, including inside files it imports
+that *look* pure but aren't. `tsc --noEmit` does not catch this at all;
+only a real `next build` (or the Workflow SDK's bundler specifically)
+surfaces it, and it reports the exact file/line of the offending import
+so it's fast to fix once you know to look for it. When adding a new
+helper module intended to be called from a workflow function's own body
+(not just from inside a step), audit its entire import chain for Node
+APIs before wiring it in -- don't assume "it's just a pure function" is
+enough if the *file* it lives in also has unrelated Node-touching
+imports at the top.

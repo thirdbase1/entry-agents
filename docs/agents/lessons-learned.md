@@ -758,3 +758,56 @@ catalog (a hardcoded default, a manually-typed CLI/API param, an old
 saved preference) should validate against the catalog before doing
 real, possibly expensive work with it -- don't rely on remembering the
 correct id.
+
+## 2026-08-21: Two live production outages found while chasing "all benchmarks fail 0/N" -- Free tier's only model is down, and the owner's default chat model is permanently gone upstream
+
+Following the dead-model-id benchmark fix above, a broader run across
+several models still showed 0/N passed for *everything except*
+gpt-5.6-sol/terra. Root-caused with two temporary diagnostic routes
+(`benchmark-debug` -- dumps raw `benchmark_results` rows across the
+last 10 runs with per-model `errorMessage` and hard-block/admin-disabled
+status; `live-probe` -- fires one live `/chat/completions` call per
+model straight at entry-gateway using the server's own
+`GATEWAY_API_KEY`, to see the real upstream error instead of the
+summarized "All compatible upstream routes failed" string benchmarks
+store). Both deleted immediately after use, per the existing
+temporary-diagnostic-route convention.
+
+**Finding 1 -- gpt-5.6-luna (Free tier's only model) is down right now.**
+Live probe: FreeModel's backend returns a genuine 503, `"No available
+channel for model gpt-5.6-luna under group Codex 专用分组-Pro号池
+(distributor)"`. gpt-5.6-sol and gpt-5.6-terra -- same provider, same
+`vip-sg.freemodel.dev` base URL -- both returned clean 200s in the same
+probe, so this is scoped to Luna's specific backend pool, not a
+FreeModel-wide outage. This is a pure upstream capacity issue, nothing
+in Entry's config to fix. Since Free tier has no other model to fall
+back to, every Free tier chat is dead until FreeModel's pool recovers.
+Not yet resolved -- flagged to the owner, no code change possible on
+our side.
+
+**Finding 2 -- ling-3.0-flash-free (the owner's standing "use ling 3.0
+for chat" default) is permanently gone, not just misconfigured.** Its
+gateway route's `upstreamModel` is `ling-3.0-tiny-free` (this mapping
+pre-dates today's investigation -- unclear when or why "flash" got
+pointed at "tiny", but it doesn't matter now). Live probe against that
+id got `"Model ling-3.0-tiny-free is not supported"` straight from
+OpenCode Zen. Checked Zen's own public docs
+(https://opencode.ai/docs/zen) -- the current Endpoints table lists
+zero "Ling" branded models of any kind. Third-party deprecation
+trackers (coolhandlabs.com/inference-apis) confirm
+`ling-3.0-flash-free` was deprecated by Zen on 2026-08-12; whatever
+`ling-3.0-tiny-free` was standing in for it has since been removed too.
+**There is no Ling model left on OpenCode Zen to route to at any tier.**
+This can't be fixed with a route-config change -- it needs the owner to
+choose a new default chat model. gpt-5.6-terra and gpt-5.6-sol are both
+confirmed live and working right now as candidates.
+
+**Lesson**: a model being present and `enabled: true` in the gateway's
+route config says nothing about whether the *provider* still serves
+it -- upstream deprecations happen silently from Entry's point of view
+(no error, no alert, just a route that quietly starts 401/503ing). The
+benchmark suite, once its own model-id list is correct, is actually a
+decent tripwire for this class of drift precisely because it exercises
+every configured model on a schedule -- worth keeping that scheduled
+run active specifically to catch future silent upstream deprecations
+like this one, not just to fill out the public page.

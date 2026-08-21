@@ -837,3 +837,65 @@ resolves and the workflow doesn't need to exist anymore, the
 `/api/public/luna-status` route can stay -- it's cheap, harmless, and
 useful for the *next* time any model needs this kind of external
 watch, not just Luna.
+
+## 2026-08-21: gpt-5.6/FreeModel cache-hit ratio stuck at 16-47% -- Postgres jsonb silently reorders object keys, breaking OpenAI's byte-exact prefix caching
+
+Investigating why FreeModel (gpt-5.6-sol/terra/luna) cache-hit ratio was
+nowhere near a >70% target: 30-day production `usage_events` data showed
+16-47% token-weighted hit rates with wild, unexplained turn-to-turn
+swings -- 0% right next to 70-90% within the *same* chat session, with no
+correlation to elapsed time between turns (ruling out simple TTL
+expiry as the main driver).
+
+**Root cause, confirmed directly against the real production DB** (temp
+diagnostic route, since removed): Postgres `jsonb` does NOT preserve
+object key insertion order on round-trip. Inserting
+`{"zebra":1,"apple":2,"mango":3,"banana":4,"tool_call_id":"x","type":"y","input":{...}}`
+and reading it straight back reordered the top-level keys entirely --
+to an internal storage order, unrelated to insertion order *or*
+alphabetical order. `chat_messages.parts` is a `jsonb` column, and any
+tool-call `input` / tool-result `output` object nested in a message's
+`parts` is exactly this shape.
+
+Every chat turn resends the *entire* prior message history to the
+model (see `convertMessages` in `app/workflows/chat.ts`). OpenAI-style
+implicit/automatic prompt caching for gpt-5.6-* is a byte-exact PREFIX
+match against a previously-seen request. Once any message in that
+history had been hydrated from the `jsonb` column (e.g. after a page
+load/resume, rather than staying in the same in-memory JS object that
+originally produced the tool call) with a different key order than
+when it was first serialized to the model, the prompt text differs
+from that point on -- and every token after it misses cache, even
+though the *content* is byte-for-byte identical.
+
+**Fix**: new `apps/web/lib/chat/canonicalize-key-order.ts` -- deep,
+alphabetical key-sort of every message's `parts` value (arrays keep
+their original order; only object *key* order changes, which JSON
+semantics never assign meaning to). Wired into `convertMessages()` in
+`app/workflows/chat.ts`, applied right after the existing
+`dedupeMessageReasoning` step, on every message regardless of whether
+it just came fresh from the model or was reloaded from Postgres. As
+long as the same canonicalization runs every time, the serialized
+bytes are deterministic across storage round-trips, so the prefix
+matches request after request. 5 new unit tests, all passing; full
+repo typecheck clean. Deployed commit 136165e, live on
+entry-agents.vercel.app.
+
+**Lesson**: any `jsonb` column that gets round-tripped back into a
+byte-exact-matching consumer (prompt caches, hash-based dedup, digital
+signatures, etc.) needs its own canonicalization step on the way back
+out -- never assume `jsonb` preserves what you put in beyond logical
+JSON equality. This class of bug is invisible in every functional test
+(the data is *correct*, just differently ordered) and only shows up as
+a silent efficiency/cost regression, which is exactly why it survived
+undetected until someone went looking at aggregate cache-hit metrics
+specifically.
+
+**Not yet verified**: real production cache-hit ratio after this fix
+(needs a few days of real traffic + another look at `usage_events` to
+confirm the ratio actually climbs toward the >70% target). If it
+doesn't fully close the gap, the next suspect is whether FreeModel's
+backend pool actually honors `prompt_cache_key` for session affinity
+at all (added 2026-08-19, commit 9c17c91) -- that fix was never
+smoke-tested against a real paid call since `FREEMODEL_API_KEY` is a
+Vercel Sensitive var, write-only even to the owner.

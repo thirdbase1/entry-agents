@@ -68,6 +68,12 @@ import {
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getProviderFromModelId } from "@/components/provider-icons";
 import type { AvailableModelCost } from "@/lib/models";
+import { start } from "workflow/api";
+import { runBenchmarkSuiteWorkflow } from "@/app/workflows/run-benchmarks";
+import {
+  listRecentBenchmarkRunsWithProgress,
+  type BenchmarkRunWithProgress,
+} from "@/lib/db/benchmarks";
 
 async function requireAdmin(): Promise<string> {
   const session = await getServerSession();
@@ -630,4 +636,48 @@ export async function adjustAdminUserCredit(
         });
 
   return { creditBalanceCents };
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarks admin: manual trigger + live progress polling
+// ---------------------------------------------------------------------------
+
+/**
+ * Kicks off a real HumanEval benchmark run against the given models via
+ * the same durable Workflow SDK run used by the cron/manual-curl path
+ * (app/api/cron/run-benchmarks/route.ts) -- this is just a second,
+ * session-authenticated entry point into the identical
+ * runBenchmarkSuiteWorkflow, so admins can trigger runs from the admin
+ * UI without needing the CRON_SECRET bearer token at all. Returns as
+ * soon as the workflow is scheduled; the run itself continues in the
+ * background and is tracked via listAdminBenchmarkRuns below.
+ */
+export async function startAdminBenchmarkRun(
+  modelIds: string[],
+): Promise<{ runId: string }> {
+  await requireAdmin();
+
+  if (!Array.isArray(modelIds) || modelIds.length === 0) {
+    throw new Error("Select at least one model to benchmark.");
+  }
+  const cleaned = [...new Set(modelIds.map((id) => id.trim()).filter(Boolean))];
+  if (cleaned.length === 0) {
+    throw new Error("Select at least one model to benchmark.");
+  }
+
+  const run = await start(runBenchmarkSuiteWorkflow, [cleaned, "manual-admin"]);
+  return { runId: run.runId };
+}
+
+/**
+ * Recent benchmark runs (any status) with live per-model task counts,
+ * for the admin benchmarks page to poll every few seconds while a run
+ * is in progress. Admin-only -- unlike the public /benchmarks page,
+ * this also surfaces failed/errored runs and their error_message.
+ */
+export async function listAdminBenchmarkRuns(
+  limit = 10,
+): Promise<BenchmarkRunWithProgress[]> {
+  await requireAdmin();
+  return listRecentBenchmarkRunsWithProgress(limit);
 }

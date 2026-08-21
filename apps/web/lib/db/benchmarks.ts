@@ -140,9 +140,10 @@ export function summarizeBenchmarkResultRows(
 
 /**
  * Reads the most recently *completed* run and aggregates its results
- * per model. This is the only query the public /benchmarks page calls
- * -- it never touches a "running" run (avoids showing partial/in-flight
- * numbers) and never triggers computation itself.
+ * per model. Kept around for callers that specifically want to ignore
+ * in-flight runs; the public /benchmarks page itself now calls
+ * getLatestBenchmarkRunSummary (below) so live progress shows up
+ * immediately instead of waiting for the whole suite to finish.
  */
 export async function getLatestCompletedBenchmarkSummary(): Promise<LatestBenchmarkSummary | null> {
   const [run] = await db
@@ -167,6 +168,52 @@ export async function getLatestCompletedBenchmarkSummary(): Promise<LatestBenchm
   };
 }
 
+export type LatestBenchmarkRunSummary = {
+  runId: string;
+  status: "running" | "completed" | "failed";
+  startedAt: Date;
+  finishedAt: Date | null;
+  suiteVersion: string;
+  /** Every model this run covers, in run order -- includes models with
+   * zero results recorded yet (haven't started their first task). */
+  modelIds: string[];
+  models: ModelBenchmarkSummary[];
+};
+
+/**
+ * Reads the single most recent run *regardless of status* and
+ * aggregates whatever results have landed so far. This is what powers
+ * "instant" visibility on the public page and the admin live-progress
+ * view -- a run in progress shows up immediately with partial numbers
+ * instead of only appearing once every task across every model is
+ * done. `models` only contains entries for models with at least one
+ * recorded result; merge against `modelIds` for models still at 0/N.
+ */
+export async function getLatestBenchmarkRunSummary(): Promise<LatestBenchmarkRunSummary | null> {
+  const [run] = await db
+    .select()
+    .from(benchmarkRuns)
+    .orderBy(desc(benchmarkRuns.startedAt))
+    .limit(1);
+
+  if (!run) return null;
+
+  const rows = await db
+    .select()
+    .from(benchmarkResults)
+    .where(eq(benchmarkResults.runId, run.id));
+
+  return {
+    runId: run.id,
+    status: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    suiteVersion: run.suiteVersion,
+    modelIds: run.modelIds as string[],
+    models: summarizeBenchmarkResultRows(rows),
+  };
+}
+
 /** Admin-only: list recent runs (including in-flight/failed) for the admin dashboard. */
 export async function listRecentBenchmarkRuns(limit = 20) {
   return db
@@ -181,4 +228,51 @@ export async function getBenchmarkRunResults(runId: string) {
     .select()
     .from(benchmarkResults)
     .where(and(eq(benchmarkResults.runId, runId)));
+}
+
+export type BenchmarkRunWithProgress = {
+  id: string;
+  status: "running" | "completed" | "failed";
+  suiteVersion: string;
+  modelIds: string[];
+  startedAt: Date;
+  finishedAt: Date | null;
+  triggeredBy: string | null;
+  errorMessage: string | null;
+  /** modelId -> tasks passed/total recorded so far this run. */
+  progress: Record<string, { passed: number; total: number }>;
+};
+
+/**
+ * Admin-only: recent runs (any status) each paired with live per-model
+ * task counts, for the admin benchmarks page's polling progress view.
+ */
+export async function listRecentBenchmarkRunsWithProgress(
+  limit = 10,
+): Promise<BenchmarkRunWithProgress[]> {
+  const runs = await listRecentBenchmarkRuns(limit);
+
+  return Promise.all(
+    runs.map(async (run) => {
+      const rows = await getBenchmarkRunResults(run.id);
+      const progress: Record<string, { passed: number; total: number }> = {};
+      for (const row of rows) {
+        const bucket = progress[row.modelId] ?? { passed: 0, total: 0 };
+        bucket.total += 1;
+        if (row.passed) bucket.passed += 1;
+        progress[row.modelId] = bucket;
+      }
+      return {
+        id: run.id,
+        status: run.status,
+        suiteVersion: run.suiteVersion,
+        modelIds: run.modelIds as string[],
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        triggeredBy: run.triggeredBy,
+        errorMessage: run.errorMessage,
+        progress,
+      };
+    }),
+  );
 }

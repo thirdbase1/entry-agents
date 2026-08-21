@@ -1,6 +1,6 @@
 "use client";
 
-import { Cpu, ShieldAlert, TriangleAlert, Users } from "lucide-react";
+import { Cpu, Gauge, ShieldAlert, TriangleAlert, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,12 @@ const ADMIN_TABS = [
     label: "Models",
     href: "/settings/admin/models",
     icon: Cpu,
+  },
+  {
+    id: "benchmarks",
+    label: "Benchmarks",
+    href: "/settings/admin/benchmarks",
+    icon: Gauge,
   },
   {
     id: "danger",

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { getLatestCompletedBenchmarkSummary } from "@/lib/db/benchmarks";
+import { getLatestBenchmarkRunSummary } from "@/lib/db/benchmarks";
 import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
-import { BenchmarkTable } from "./benchmark-table";
+import { BenchmarkLive, type BenchmarkLiveSummary } from "./benchmark-live";
 
 export const metadata: Metadata = {
   title: "Benchmarks",
@@ -13,7 +13,19 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function BenchmarksPage() {
-  const summary = await getLatestCompletedBenchmarkSummary();
+  const run = await getLatestBenchmarkRunSummary();
+
+  const initialSummary: BenchmarkLiveSummary | null = run
+    ? {
+        runId: run.runId,
+        status: run.status,
+        startedAt: run.startedAt.toISOString(),
+        finishedAt: run.finishedAt ? run.finishedAt.toISOString() : null,
+        suiteVersion: run.suiteVersion,
+        modelIds: run.modelIds,
+        models: run.models,
+      }
+    : null;
 
   return (
     <div className="landing relative isolate min-h-screen bg-(--l-bg) text-(--l-fg) selection:bg-(--l-fg)/20">
@@ -39,24 +51,8 @@ export default async function BenchmarksPage() {
             </div>
 
             <div className="mt-12 md:mt-16">
-              {summary ? (
-                <BenchmarkTable models={summary.models} />
-              ) : (
-                <div className="border border-(--l-border) px-6 py-16 text-center text-(--l-fg-3)">
-                  No completed benchmark run yet.
-                </div>
-              )}
+              <BenchmarkLive initialSummary={initialSummary} />
             </div>
-
-            {summary ? (
-              <p className="mt-8 text-sm text-(--l-fg-3)">
-                HumanEval subset ({summary.suiteVersion}), 20 fixed tasks from
-                the canonical OpenAI HumanEval dataset. Last run completed{" "}
-                {summary.finishedAt.toISOString().slice(0, 10)}. Cost shown is
-                the real gateway-metered spend for running this subset, not a
-                per-token rate.
-              </p>
-            ) : null}
           </div>
         </section>
       </div>

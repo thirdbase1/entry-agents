@@ -5,7 +5,7 @@ import { db } from "@/lib/db/client";
 // TEMPORARY diagnostic route -- see docs/agents/lessons-learned.md
 // 2026-08-21 "achieve >70% caching on FreeModel gpt models" entry.
 // Reads real usage_events rows (no user content, only per-turn token
-// counts) to compute actual production cache-hit ratio per model.
+// counts + timestamps) to compute actual production cache-hit ratio.
 export async function GET(request: Request) {
   const expected = process.env.AUDIT_ROUTE_SECRET;
   const expectedLive = process.env.AUDIT_ROUTE_SECRET_LIVE;
@@ -14,7 +14,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const hours = Number(new URL(request.url).searchParams.get("hours") ?? 24);
+  const url = new URL(request.url);
+  const hours = Number(url.searchParams.get("hours") ?? 24);
+  const raw = url.searchParams.get("raw") === "1";
+
+  if (raw) {
+    const rawRows = await db.execute(sql`
+      select
+        user_id,
+        model_id,
+        agent_type,
+        input_tokens,
+        cached_input_tokens,
+        output_tokens,
+        created_at
+      from usage_events
+      where created_at > now() - interval '1 hour' * ${hours}
+        and model_id like 'gpt-5.6-%'
+      order by user_id, created_at asc
+      limit 300
+    `);
+    return NextResponse.json({ hours, rawRows });
+  }
 
   const rows = await db.execute(sql`
     select
@@ -31,5 +52,5 @@ export async function GET(request: Request) {
     order by model_id, agent_type
   `);
 
-  return NextResponse.json({ hours, rows: rows });
+  return NextResponse.json({ hours, rows });
 }

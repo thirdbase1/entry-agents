@@ -811,3 +811,29 @@ decent tripwire for this class of drift precisely because it exercises
 every configured model on a schedule -- worth keeping that scheduled
 run active specifically to catch future silent upstream deprecations
 like this one, not just to fill out the public page.
+
+## 2026-08-21: Automated recovery monitor for the gpt-5.6-luna outage instead of manual re-checks
+
+Once the ling-3.0-flash-free route fix shipped and the owner asked me
+not to add a Luna fallback route, the remaining open item was purely
+"FreeModel's Luna pool is down, nothing to do but wait." Rather than
+leaving that as a manual "ask me later" item, wired up a small
+self-contained monitor on the Superagent side:
+
+- `GET /api/public/luna-status` on entry-agents -- unauthenticated,
+  deliberately minimal (`{available: bool, checkedAt: iso}` only, no
+  upstream error text) since it's public. Does one tiny real
+  completion call (`max_tokens: 5`) through the gateway per request.
+- Superagent backend function `checkLunaStatus` polls that endpoint.
+- Superagent scheduled workflow "Entry Luna Recovery Monitor" (every 30
+  min) calls it, and only acts when `available == true`: sends the
+  owner a WhatsApp ping via `broadcast_message` and deactivates itself
+  via `manage_workflow` so it doesn't keep firing after recovery.
+
+No entry-agents/entry-gateway code changes needed beyond the one public
+route -- everything else (polling cadence, notification, self-cleanup)
+lives in the Superagent workflow layer, not this repo. If Luna's outage
+resolves and the workflow doesn't need to exist anymore, the
+`/api/public/luna-status` route can stay -- it's cheap, harmless, and
+useful for the *next* time any model needs this kind of external
+watch, not just Luna.

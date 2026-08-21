@@ -562,3 +562,69 @@ export const paystackWebhookEvents = pgTable(
     ),
   ],
 );
+
+// --- Public benchmark page: precomputed harness-based eval results ---
+// One row per benchmark execution batch (e.g. "run the suite against
+// every current model"). The public /benchmarks page only ever reads
+// the most recent row with status "completed" -- never triggers a live
+// run itself (real harness runs are slow/costly: repo clone + real
+// sandbox + real tool calls per task). Runs are kicked off by an
+// admin-only action (see lib/benchmarks/run-suite.ts) or a scheduled
+// job, never by public traffic.
+export const benchmarkRuns = pgTable(
+  "benchmark_runs",
+  {
+    id: text("id").primaryKey(),
+    status: text("status", {
+      enum: ["running", "completed", "failed"],
+    })
+      .notNull()
+      .default("running"),
+    // Which suite definition this run used -- lets us change the task
+    // set over time without invalidating history (each run records the
+    // shape it was actually run against).
+    suiteVersion: text("suite_version").notNull(),
+    // Free-text list of model IDs this run covers, for quick display
+    // without joining benchmark_results.
+    modelIds: jsonb("model_ids").notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+    // Only ever set by the admin trigger -- never client-supplied.
+    triggeredBy: text("triggered_by"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("benchmark_runs_status_idx").on(table.status)],
+);
+
+// One row per (run, model, benchmark, task). Graded pass/fail is stored
+// per-task so the page can aggregate however it wants (per-benchmark %,
+// overall %, cost, latency) without re-grading. transcriptUrl points at
+// a stored transcript (private file upload) for the "show real
+// transcripts, not just a number" credibility requirement -- never
+// inlines full transcripts in this table to keep rows small.
+export const benchmarkResults = pgTable(
+  "benchmark_results",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => benchmarkRuns.id, { onDelete: "cascade" }),
+    modelId: text("model_id").notNull(),
+    benchmark: text("benchmark", {
+      enum: ["humaneval", "swebench_verified", "entry_tasks"],
+    }).notNull(),
+    taskId: text("task_id").notNull(),
+    passed: boolean("passed").notNull(),
+    latencyMs: integer("latency_ms"),
+    costCents: integer("cost_cents"),
+    errorMessage: text("error_message"),
+    transcriptUrl: text("transcript_url"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("benchmark_results_run_id_idx").on(table.runId),
+    index("benchmark_results_model_id_idx").on(table.modelId),
+    index("benchmark_results_benchmark_idx").on(table.benchmark),
+  ],
+);

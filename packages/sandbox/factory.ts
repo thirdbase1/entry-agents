@@ -2,15 +2,27 @@ import type { Sandbox, SandboxHooks } from "./interface.ts";
 import type { SandboxStatus } from "./types.ts";
 import { connectVercel } from "./vercel/connect.ts";
 import type { VercelState } from "./vercel/state.ts";
+import { connectLocal } from "./local/sandbox.ts";
+import type { LocalState } from "./local/state.ts";
 
 // Re-export SandboxStatus from types for convenience
 export type { SandboxStatus };
 
 /**
- * Unified sandbox state type.
- * Use `type` discriminator to determine which sandbox implementation to use.
+ * Unified sandbox state type. Use the `type` discriminator to determine
+ * which sandbox implementation to use.
+ *
+ * "vercel" -- real remote Vercel Sandbox container. Used for every real
+ * user chat session (see apps/web/app/workflows/chat.ts).
+ *
+ * "local" -- plain local directory + child_process, no remote
+ * provisioning. Only used by local dev/test tooling and the harness
+ * benchmark runner (apps/web/scripts/run-benchmarks.ts) -- never for
+ * real user sessions. See local/state.ts.
  */
-export type SandboxState = { type: "vercel" } & VercelState;
+export type SandboxState =
+  | ({ type: "vercel" } & VercelState)
+  | ({ type: "local" } & LocalState);
 
 /**
  * Base connect options for all sandbox types.
@@ -50,9 +62,15 @@ export interface ConnectOptions {
  * Configuration for connecting to a sandbox.
  */
 export type SandboxConnectConfig = {
-  state: { type: "vercel" } & VercelState;
+  state: SandboxState;
   options?: ConnectOptions;
 };
+
+function isLocalState(
+  state: SandboxState,
+): state is { type: "local" } & LocalState {
+  return state.type === "local";
+}
 
 /**
  * Connect to a sandbox based on the provided configuration.
@@ -67,11 +85,16 @@ export async function connectSandbox(
     typeof configOrState.state === "object" &&
     "type" in configOrState.state;
 
-  if (isNewApi) {
-    const config = configOrState as SandboxConnectConfig;
-    return connectVercel(config.state, config.options);
+  const state = isNewApi
+    ? (configOrState as SandboxConnectConfig).state
+    : (configOrState as SandboxState);
+  const options = isNewApi
+    ? (configOrState as SandboxConnectConfig).options
+    : legacyOptions;
+
+  if (isLocalState(state)) {
+    return connectLocal(state, options);
   }
 
-  const state = configOrState as SandboxState;
-  return connectVercel(state, legacyOptions);
+  return connectVercel(state, options);
 }

@@ -1,0 +1,184 @@
+import { and, desc, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { db } from "./client";
+import { benchmarkResults, benchmarkRuns } from "./schema";
+
+export type BenchmarkName = "humaneval" | "swebench_verified" | "entry_tasks";
+
+/**
+ * Creates a new "running" benchmark run row. Only ever called from the
+ * admin-triggered runner script (scripts/run-benchmarks.ts) or a
+ * scheduled job -- never from a public request path. See schema.ts's
+ * comment on benchmarkRuns for why the public page never triggers a
+ * live run itself.
+ */
+export async function createBenchmarkRun(data: {
+  suiteVersion: string;
+  modelIds: string[];
+  triggeredBy?: string;
+}): Promise<string> {
+  const id = nanoid();
+  await db.insert(benchmarkRuns).values({
+    id,
+    status: "running",
+    suiteVersion: data.suiteVersion,
+    modelIds: data.modelIds,
+    triggeredBy: data.triggeredBy ?? null,
+  });
+  return id;
+}
+
+export async function recordBenchmarkResult(data: {
+  runId: string;
+  modelId: string;
+  benchmark: BenchmarkName;
+  taskId: string;
+  passed: boolean;
+  latencyMs?: number;
+  costCents?: number;
+  errorMessage?: string;
+  transcriptUrl?: string;
+}): Promise<void> {
+  await db.insert(benchmarkResults).values({
+    id: nanoid(),
+    runId: data.runId,
+    modelId: data.modelId,
+    benchmark: data.benchmark,
+    taskId: data.taskId,
+    passed: data.passed,
+    latencyMs: data.latencyMs ?? null,
+    costCents: data.costCents ?? null,
+    errorMessage: data.errorMessage ?? null,
+    transcriptUrl: data.transcriptUrl ?? null,
+  });
+}
+
+export async function completeBenchmarkRun(
+  runId: string,
+  status: "completed" | "failed",
+  errorMessage?: string,
+): Promise<void> {
+  await db
+    .update(benchmarkRuns)
+    .set({ status, finishedAt: new Date(), errorMessage: errorMessage ?? null })
+    .where(eq(benchmarkRuns.id, runId));
+}
+
+export type ModelBenchmarkSummary = {
+  modelId: string;
+  results: Record<BenchmarkName, { passed: number; total: number } | undefined>;
+  avgLatencyMs: number | null;
+  totalCostCents: number;
+};
+
+export type LatestBenchmarkSummary = {
+  runId: string;
+  finishedAt: Date;
+  suiteVersion: string;
+  models: ModelBenchmarkSummary[];
+};
+
+export type BenchmarkResultRow = {
+  modelId: string;
+  benchmark: BenchmarkName;
+  passed: boolean;
+  latencyMs: number | null;
+  costCents: number | null;
+};
+
+/**
+ * Pure aggregation over already-fetched result rows for a single run --
+ * split out from getLatestCompletedBenchmarkSummary so it's testable
+ * without a real DB connection (see benchmarks.test.ts).
+ */
+export function summarizeBenchmarkResultRows(
+  rows: BenchmarkResultRow[],
+): ModelBenchmarkSummary[] {
+  const byModel = new Map<string, ModelBenchmarkSummary>();
+
+  for (const row of rows) {
+    let entry = byModel.get(row.modelId);
+    if (!entry) {
+      entry = {
+        modelId: row.modelId,
+        results: {
+          humaneval: undefined,
+          swebench_verified: undefined,
+          entry_tasks: undefined,
+        },
+        avgLatencyMs: null,
+        totalCostCents: 0,
+      };
+      byModel.set(row.modelId, entry);
+    }
+
+    const bucket = entry.results[row.benchmark] ?? {
+      passed: 0,
+      total: 0,
+    };
+    bucket.total += 1;
+    if (row.passed) bucket.passed += 1;
+    entry.results[row.benchmark] = bucket;
+    entry.totalCostCents += row.costCents ?? 0;
+  }
+
+  // second pass for avg latency per model
+  for (const [modelId, entry] of byModel) {
+    const modelRows = rows.filter(
+      (r) => r.modelId === modelId && r.latencyMs != null,
+    );
+    entry.avgLatencyMs = modelRows.length
+      ? Math.round(
+          modelRows.reduce((sum, r) => sum + (r.latencyMs ?? 0), 0) /
+            modelRows.length,
+        )
+      : null;
+  }
+
+  return [...byModel.values()];
+}
+
+/**
+ * Reads the most recently *completed* run and aggregates its results
+ * per model. This is the only query the public /benchmarks page calls
+ * -- it never touches a "running" run (avoids showing partial/in-flight
+ * numbers) and never triggers computation itself.
+ */
+export async function getLatestCompletedBenchmarkSummary(): Promise<LatestBenchmarkSummary | null> {
+  const [run] = await db
+    .select()
+    .from(benchmarkRuns)
+    .where(eq(benchmarkRuns.status, "completed"))
+    .orderBy(desc(benchmarkRuns.finishedAt))
+    .limit(1);
+
+  if (!run || !run.finishedAt) return null;
+
+  const rows = await db
+    .select()
+    .from(benchmarkResults)
+    .where(eq(benchmarkResults.runId, run.id));
+
+  return {
+    runId: run.id,
+    finishedAt: run.finishedAt,
+    suiteVersion: run.suiteVersion,
+    models: summarizeBenchmarkResultRows(rows),
+  };
+}
+
+/** Admin-only: list recent runs (including in-flight/failed) for the admin dashboard. */
+export async function listRecentBenchmarkRuns(limit = 20) {
+  return db
+    .select()
+    .from(benchmarkRuns)
+    .orderBy(desc(benchmarkRuns.startedAt))
+    .limit(limit);
+}
+
+export async function getBenchmarkRunResults(runId: string) {
+  return db
+    .select()
+    .from(benchmarkResults)
+    .where(and(eq(benchmarkResults.runId, runId)));
+}

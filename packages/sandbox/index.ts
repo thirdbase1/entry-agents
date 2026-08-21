@@ -48,3 +48,7 @@ export {
   type VercelSandboxConnectConfig,
   type VercelState,
 } from "./vercel/index.ts";
+
+// local
+export { LocalSandbox, connectLocal } from "./local/sandbox.ts";
+export type { LocalState } from "./local/state.ts";

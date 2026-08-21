@@ -4,6 +4,8 @@ import {
   connectSandbox,
   type Sandbox,
   type SandboxState,
+  type Source,
+  type VercelState,
 } from "@open-agents/sandbox";
 import {
   getSessionById,
@@ -64,7 +66,9 @@ export class SessionArchivedDuringProvisioningError extends Error {
   }
 }
 
-function isSandboxState(value: unknown): value is SandboxState {
+type VercelSandboxState = { type: "vercel" } & VercelState;
+
+function isSandboxState(value: unknown): value is VercelSandboxState {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -88,7 +92,7 @@ async function getUserById(userId: string): Promise<UserRecord | null> {
   return user ?? null;
 }
 
-function buildSandboxSource(session: SessionRecord): SandboxState["source"] {
+function buildSandboxSource(session: SessionRecord): Source | undefined {
   if (!session.cloneUrl) {
     return undefined;
   }
@@ -104,7 +108,7 @@ function buildSandboxSource(session: SessionRecord): SandboxState["source"] {
   };
 }
 
-function buildSandboxState(session: SessionRecord): SandboxState {
+function buildSandboxState(session: SessionRecord): VercelSandboxState {
   const existingState = session.sandboxState;
   const sandboxName =
     getResumableSandboxName(existingState) ?? getSessionSandboxName(session.id);

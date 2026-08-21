@@ -25,15 +25,26 @@ import {
  * (isModelHardBlocked in lib/model-availability.ts) -- a public
  * benchmark page shouldn't showcase a route Entry itself won't fully
  * stand behind.
+ *
+ * IDs must exactly match the gateway's route id (GET /v1/debug/routes /
+ * /v1/models), NOT a display name or a guessed/legacy id -- entry-gateway
+ * has no fuzzy matching, an unknown id 404s instantly with "No
+ * openai-chat route is configured for <id>." Found 2026-08-21: this list
+ * previously had THREE dead ids -- "ling-3.0" (real id is
+ * "ling-3.0-flash-free"), "deepseek-v4-pro" and "gemini-2.5-pro" (neither
+ * exists in the gateway at all, real Gemini ids are all "gemini-3.x-*")
+ * -- silently producing a deterministic 0/20 for those three models on
+ * every default/scheduled run with zero useful signal. Verified this
+ * exact list against a live GET /v1/debug/routes dump before committing.
  */
 const DEFAULT_BENCHMARK_MODEL_IDS = [
   "gpt-5.6-luna",
   "gpt-5.6-terra",
   "gpt-5.6-sol",
   "deepseek-v4-flash",
-  "deepseek-v4-pro",
-  "gemini-2.5-pro",
-  "ling-3.0",
+  "gemini-3.5-flash",
+  "ling-3.0-flash-free",
+  "qwen3.7-max",
   "qwen3.8-max-free",
 ];
 
@@ -183,7 +194,26 @@ export async function runBenchmarkSuiteWorkflow(
   let hadFailure = false;
 
   for (const modelId of modelIds) {
+    // costByModelId's keys ARE the live gateway catalog (populated 1:1
+    // from fetchModelCostCatalog() in loadCostCatalogStep) -- checking
+    // membership here, not just a truthy cost value (a real model can
+    // legitimately have no cost data), catches a typo'd/stale/nonexistent
+    // model id in one place instead of burning 20 identical per-task
+    // "No openai-chat route is configured for <id>" failures. Added
+    // 2026-08-21 after DEFAULT_BENCHMARK_MODEL_IDS itself shipped with
+    // three dead ids that silently 0/20'd on every run -- see that
+    // constant's comment for the full story.
+    const isKnownModel = Object.hasOwn(costByModelId, modelId);
     for (const taskId of taskIds) {
+      if (!isKnownModel) {
+        hadFailure = true;
+        await recordResultStep(runId, modelId, "humaneval", taskId, {
+          passed: false,
+          latencyMs: 0,
+          errorMessage: `Unknown model id "${modelId}" -- not present in the live gateway catalog (GET /v1/models). Check for a typo or a stale/legacy id.`,
+        });
+        continue;
+      }
       try {
         const result = await runTaskStep(
           modelId,

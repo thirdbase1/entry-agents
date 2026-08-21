@@ -665,6 +665,23 @@ export async function startAdminBenchmarkRun(
     throw new Error("Select at least one model to benchmark.");
   }
 
+  // Validate against the live gateway catalog before spending a full
+  // 20-task run per model finding out the hard way -- caught during the
+  // 2026-08-21 investigation where a stale/typo'd id ("ling-3.0" instead
+  // of the real gateway route id "ling-3.0-flash-free") produced a
+  // deterministic 0/20 for that model with no useful signal, burning a
+  // full run cycle before the mistake was visible. Every real caller
+  // (checkboxes here, any future API caller) gets a clear error up front
+  // instead.
+  const catalog = await fetchAllLanguageModelsForAdmin();
+  const knownIds = new Set(catalog.map((m) => m.id));
+  const unknown = cleaned.filter((id) => !knownIds.has(id));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown model id(s): ${unknown.join(", ")}. Not present in the live gateway catalog.`,
+    );
+  }
+
   const run = await start(runBenchmarkSuiteWorkflow, [cleaned, "manual-admin"]);
   return { runId: run.runId };
 }

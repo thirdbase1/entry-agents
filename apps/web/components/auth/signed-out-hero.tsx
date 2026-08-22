@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { SignInButton } from "@/components/auth/sign-in-button";
 import { AppMockup } from "@/components/landing/app-mockup";
-import { GitHubLink } from "@/components/landing/github-link";
 import { LandingBento } from "@/components/landing/bento";
 import { LandingFeatures } from "@/components/landing/features";
 import { LandingFooter } from "@/components/landing/footer";
@@ -51,7 +50,6 @@ export function SignedOutHero() {
               className="mt-6 flex items-center gap-2 sm:mt-8"
             >
               <SignInButton size="lg" callbackUrl="/sessions" />
-              <GitHubLink>Open Source</GitHubLink>
             </div>
           </div>
 

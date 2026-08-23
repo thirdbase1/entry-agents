@@ -50,9 +50,27 @@ function toErrorMessage(error: unknown): string {
   return String(error);
 }
 
-function isSandboxNotFoundError(error: unknown): boolean {
+// Treats the sandbox as permanently gone -- triggers the createIfMissing
+// fresh-recreate fallback in connectNamedSandbox below. Must stay aligned
+// with apps/web/lib/sandbox/utils.ts's isSandboxUnavailableError (the
+// broader app-level check used for state-clearing decisions elsewhere).
+// Found 2026-08-23: a named sandbox whose underlying resume snapshot had
+// expired/been cleaned up surfaces as "Status code 410 is not ok" from the
+// Vercel Sandbox SDK, NOT 404 -- this previously fell through the
+// createIfMissing check entirely (only matched 404/"not found"), so the
+// error was rethrown instead of triggering a fresh git-clone recreate,
+// hard-crashing the provisioning workflow (3 real runs failed this way in
+// production before the fix).
+export function isSandboxNotFoundError(error: unknown): boolean {
   const message = toErrorMessage(error).toLowerCase();
-  return message.includes("status code 404") || message.includes("not found");
+  return (
+    message.includes("status code 404") ||
+    message.includes("status code 410") ||
+    message.includes("not found") ||
+    message.includes("sandbox is stopped") ||
+    message.includes("sandbox probe failed") ||
+    message.includes("expected a stream of command data")
+  );
 }
 
 function buildCreateConfig(

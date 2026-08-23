@@ -73,6 +73,26 @@ export function isSandboxNotFoundError(error: unknown): boolean {
   );
 }
 
+// Vercel Hobby's Snapshot Storage quota (15GB) is billed per cycle: once
+// exceeded once within a cycle, creating a PERSISTENT (auto-snapshotting)
+// sandbox is blocked with HTTP 402 until the next monthly reset --
+// deleting existing snapshots afterward does NOT clear this, confirmed
+// 2026-08-23 by reproducing the real error body directly against
+// Vercel's API: {"code":"payment_required","message":"Hobby plan usage
+// limit exceeded for Snapshots Storage. Limit will be reset on
+// <next-month>. Please upgrade to a Pro plan to continue using Vercel
+// Sandbox, or delete unused snapshots."}. Non-persistent sandbox creation
+// is unaffected. Gates the persistent -> non-persistent degrade-and-retry
+// fallback below so chat keeps working (without cross-session resume)
+// instead of hard-failing provisioning for the rest of the billing cycle.
+export function isSnapshotStorageQuotaExceededError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  return (
+    message.includes("snapshots storage") ||
+    (message.includes("status code 402") && message.includes("snapshot"))
+  );
+}
+
 function buildCreateConfig(
   state: VercelState,
   options?: ConnectOptions,
@@ -113,6 +133,26 @@ function buildCreateConfig(
   };
 }
 
+async function createSandboxWithQuotaFallback(
+  config: VercelSandboxConfig,
+): Promise<Sandbox> {
+  try {
+    return await VercelSandbox.create(config);
+  } catch (error) {
+    if (config.persistent === false || !isSnapshotStorageQuotaExceededError(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "[sandbox] Hobby plan Snapshot Storage quota exceeded -- creating a " +
+        "non-persistent sandbox instead (no cross-session resume until " +
+        "the billing cycle resets or the plan is upgraded).",
+      error,
+    );
+    return await VercelSandbox.create({ ...config, persistent: false });
+  }
+}
+
 async function connectNamedSandbox(
   state: VercelState,
   options?: ConnectOptions,
@@ -139,7 +179,7 @@ async function connectNamedSandbox(
     }
   }
 
-  return VercelSandbox.create(buildCreateConfig(state, options));
+  return createSandboxWithQuotaFallback(buildCreateConfig(state, options));
 }
 
 /**
@@ -160,5 +200,5 @@ export async function connectVercel(
     return connectNamedSandbox(state, options);
   }
 
-  return VercelSandbox.create(buildCreateConfig(state, options));
+  return createSandboxWithQuotaFallback(buildCreateConfig(state, options));
 }

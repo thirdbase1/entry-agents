@@ -959,3 +959,16 @@ just the one that seemed most relevant at the time.
 workflow) that lists snapshots via this same API and deletes anything
 past a sane age, as a second line of defense in case the expiration
 plumbing regresses again silently.
+
+
+**Follow-up shipped 2026-08-23**: added the periodic cleanup mentioned
+above as a real safety net -- a daily scheduled agent workflow ("Entry
+Sandbox Snapshot Cleanup", 3am Africa/Lagos) that lists sandbox
+snapshots via the same Vercel REST API, deletes any `created`-status
+snapshot older than 2 days (a safety margin above the intended 1-day
+expiration, so it only ever catches genuine leaks/regressions), skips
+anything matching `VERCEL_SANDBOX_BASE_SNAPSHOT_ID` if that's set, and
+only pings the owner on WhatsApp if it actually deleted something or
+total remaining storage is still >10GB after cleanup -- otherwise runs
+silently. Second line of defense in case the snapshot() expiration fix
+above ever regresses again.

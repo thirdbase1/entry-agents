@@ -12,9 +12,16 @@ const VERCEL_SANDBOX_TIMEOUT_BUFFER_MS = 30 * 1000;
 const STANDARD_SANDBOX_TIMEOUT_MS =
   5 * 60 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
 
-/** Hobby-compatible timeout for new cloud sandboxes (40 minutes minus hook buffer) */
+/**
+ * Hobby-compatible timeout for new cloud sandboxes -- Hobby's documented
+ * max session duration is 45 minutes (confirmed 2026-08-23 via Vercel's
+ * Sandbox pricing/quotas doc: "Max Session Duration: Hobby 45 minutes").
+ * Use the full 45 minutes minus the hook buffer instead of the previous
+ * more conservative 40, since every extra minute matters while the team
+ * is stuck on Hobby.
+ */
 const HOBBY_SANDBOX_TIMEOUT_MS =
-  40 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
+  45 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
 
 /** Default timeout for new cloud sandboxes */
 export const DEFAULT_SANDBOX_TIMEOUT_MS = isHobbyResourceProfile()

@@ -899,3 +899,63 @@ backend pool actually honors `prompt_cache_key` for session affinity
 at all (added 2026-08-19, commit 9c17c91) -- that fix was never
 smoke-tested against a real paid call since `FREEMODEL_API_KEY` is a
 Vercel Sensitive var, write-only even to the owner.
+
+## 2026-08-23: Sandbox snapshot storage silently blew past the Hobby 15GB quota, 402'd every new sandbox
+
+Real production incident: for roughly an hour, every chat that needed
+a fresh Vercel Sandbox failed at the `runProvisioning` workflow step
+with `Status code 402 is not ok`. Confirmed via runtime logs (~16
+failed workflow runs in the window) and directly against Vercel's
+sandbox-snapshots API (`GET /v2/sandboxes/snapshots`): the project had
+accumulated ~90GB across `created`+`deleted`-status snapshots, ~12.8GB
+of it in live `created` status -- right up against the Hobby plan's
+15GB Snapshot Storage cap, so any new snapshot attempt tipped it over
+into a hard 402 block on the whole project (not just snapshotting; new
+sandbox creation too).
+
+**Root cause**: `VercelSandbox.snapshot()` in
+`packages/sandbox/vercel/sandbox.ts` called `this.session.snapshot()`
+with **no arguments**. The underlying `@vercel/sandbox` SDK's
+`Session.snapshot(opts)` needs `opts.expiration` passed on *every
+call* -- it does **not** inherit the `snapshotExpiration` configured
+at sandbox-creation time (that value is only exposed for inspection
+via a read-only getter, never auto-applied to later snapshot calls).
+Omitting it falls back to the SDK/API's own default of **30 days**.
+
+This means the 2026-08-18 fix (`DEFAULT_SNAPSHOT_EXPIRATION_MS = 24h`,
+threaded into `VercelSandboxSDK.create()`'s `snapshotExpiration`
+field) never actually took effect for real hibernate-on-suspend
+snapshots -- it only set a value nothing downstream reads. Every real
+snapshot since then kept expiring 30 days out instead of 1 day,
+explaining the slow-motion reaccumulation back to quota-breaking
+levels after the same class of cleanup was already done once before
+(see the 2026-08-18 entry in this file / `sandbox.ts`'s own comment
+about the prior 73GB/32.6GB incident).
+
+**Fix**: `snapshot()` now explicitly passes
+`{ expiration: DEFAULT_SNAPSHOT_EXPIRATION_MS }` on every call. Added
+a regression test (`sandbox.test.ts`, "passes a 1-day expiration when
+creating a native snapshot") that fails against the old code and
+passes against the fix. Typecheck clean, 25/25 + 3/3 relevant test
+files pass.
+
+**Immediate remediation**: deleted all 7 live `created`-status
+snapshots via `DELETE /v2/sandboxes/snapshots/{id}` (Vercel REST API,
+`https://vercel.com/api/v2/sandboxes/snapshots/<id>?teamId=...`) --
+none of them were a pinned base image (`VERCEL_SANDBOX_BASE_SNAPSHOT_ID`
+is unset in this project, confirmed via env var list before deleting
+anything), just old per-session hibernate snapshots from Aug 18-21.
+Freed ~12.8GB, quota back to 0/15GB used.
+
+**Lesson**: a "default value" only does something if the code path
+that matters actually reads it. Threading a config default through
+creation-time options doesn't help if the *separate* API call that
+creates the actual storage-consuming artifact (the snapshot itself)
+has its own, unrelated default. When fixing a resource-leak class of
+bug, grep for *every* call site that creates the leaking resource, not
+just the one that seemed most relevant at the time.
+
+**Follow-up worth doing**: consider a periodic cleanup job (cron
+workflow) that lists snapshots via this same API and deletes anything
+past a sane age, as a second line of defense in case the expiration
+plumbing regresses again silently.

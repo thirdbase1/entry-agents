@@ -1121,10 +1121,23 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
   /**
    * Create a native Vercel snapshot of the sandbox filesystem.
    * IMPORTANT: This automatically stops the sandbox after snapshot creation.
+   *
+   * Explicitly passes `expiration` on every call. `Session.snapshot()` does
+   * NOT inherit the `snapshotExpiration` set at sandbox creation time (that
+   * value is only stored for inspection via the SDK's `snapshotExpiration`
+   * getter) -- omitting it here falls back to the Vercel API's own default
+   * of 30 days per snapshot. Every real hibernate-on-suspend snapshot in
+   * production was silently using that 30-day default instead of our
+   * intended 1-day retention, which let per-session snapshot storage build
+   * up far past the Hobby plan's 15GB quota and return 402 on all new
+   * sandbox creation (confirmed 2026-08-23: ~90GB accumulated). See
+   * DEFAULT_SNAPSHOT_EXPIRATION_MS above for the original (incomplete) fix.
    */
   async snapshot(): Promise<SnapshotResult> {
     // Use the current session snapshot method to avoid implicitly resuming stopped sandboxes.
-    const snapshot = await this.session.snapshot();
+    const snapshot = await this.session.snapshot({
+      expiration: DEFAULT_SNAPSHOT_EXPIRATION_MS,
+    });
 
     // Mark sandbox as stopped since native snapshot stops it automatically
     this.isStopped = true;

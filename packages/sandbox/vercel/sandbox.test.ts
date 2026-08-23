@@ -40,6 +40,7 @@ const getCalls: Array<Record<string, unknown>> = [];
 const updateNetworkPolicyCalls: Array<Record<string, unknown>> = [];
 const runCommandCalls: MockRunCommandParams[] = [];
 const writeFilesCalls: Array<{ path: string; content: Buffer }[]> = [];
+const snapshotCalls: Array<{ expiration?: number } | undefined> = [];
 let readFileToBufferResult: Buffer | null = Buffer.from("");
 
 let runCommandMock = async (
@@ -94,7 +95,10 @@ function buildMockSession(name: string, state: MockSessionState = {}) {
     readFileToBuffer: async (_opts: { path: string }) => {
       return readFileToBufferResult;
     },
-    snapshot: async () => ({ snapshotId: "snap-created" }),
+    snapshot: async (opts?: { expiration?: number }) => {
+      snapshotCalls.push(opts);
+      return { snapshotId: "snap-created" };
+    },
     stop: async () => {},
     extendTimeout: async () => {},
   };
@@ -160,6 +164,7 @@ beforeEach(() => {
   updateNetworkPolicyCalls.length = 0;
   runCommandCalls.length = 0;
   writeFilesCalls.length = 0;
+  snapshotCalls.length = 0;
   readFileToBufferResult = Buffer.from("");
   portDomains.clear();
   missingPorts.clear();
@@ -282,6 +287,21 @@ describe("VercelSandbox.exec", () => {
 });
 
 describe("VercelSandbox persistence", () => {
+  test("passes a 1-day expiration when creating a native snapshot", async () => {
+    const sandbox = await sandboxModule.VercelSandbox.connect("session_123", {
+      remainingTimeout: 0,
+    });
+
+    await sandbox.snapshot();
+
+    expect(snapshotCalls.length).toBe(1);
+    // 24 hours, matches DEFAULT_SNAPSHOT_EXPIRATION_MS. Regression guard for
+    // the 2026-08-23 incident where omitting this let every hibernate
+    // snapshot fall back to Vercel's 30-day default and blow through the
+    // Hobby plan's 15GB snapshot storage quota.
+    expect(snapshotCalls[0]?.expiration).toBe(24 * 60 * 60 * 1000);
+  });
+
   test("connects by persistent sandbox name without auto-resume by default", async () => {
     const sandbox = await sandboxModule.VercelSandbox.connect("session_123", {
       remainingTimeout: 0,

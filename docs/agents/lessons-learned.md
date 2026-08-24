@@ -972,3 +972,40 @@ only pings the owner on WhatsApp if it actually deleted something or
 total remaining storage is still >10GB after cleanup -- otherwise runs
 silently. Second line of defense in case the snapshot() expiration fix
 above ever regresses again.
+## 2026-08-24: `@vercel/sandbox` upgrade attempted, reverted -- SDK 3.x breaks two real call sites (open follow-up)
+
+While root-causing the still-failing 402 quota fallback (see the
+`toErrorMessage`/`.text`/`.json` entry below), confirmed `packages/sandbox`
+pins `@vercel/sandbox` at `2.0.0-beta.11` -- Vercel Sandbox and
+persistence are both GA now, current stable is `3.1.0`. Notably,
+`@vercel/sandbox@3.0.1`'s changelog fixes the *exact* bug found in
+production: "Surface the server's error message in `APIError.message`
+... previously reported only `Status code 400 is not ok`, hiding the
+actionable detail ... in `error.json`." Upgrading would make our
+`toErrorMessage` workaround unnecessary (though harmless to keep).
+
+Attempted the bump to `3.1.0` and ran `tsc --noEmit` on
+`packages/sandbox` -- surfaced two real breaking changes beyond the
+documented `runtime`→`image` deprecation (which does keep backward
+compat):
+
+1. `VercelSandboxSDK.create({ source: { type: "snapshot", ... } })` no
+   longer type-checks -- `source.type` is now only `"git" | "tarball"`.
+   Used in `packages/sandbox/vercel/sandbox.ts` for both
+   `restoreSnapshotId` and `baseSnapshotId` creation paths. Need to find
+   the 3.x-native way to create/restore from a snapshot (likely a
+   different param entirely, maybe under `image`, or a dedicated
+   fork/restore method) before this can ship.
+2. `networkPolicy.allow` shape changed: our
+   `SandboxNetworkPolicy`/`SandboxNetworkRule[]` (used by the GitHub/
+   Vercel credential-brokering network policy in
+   `buildCredentialBrokeringPolicy`) no longer matches the SDK's new
+   `NetworkPolicyRule[]` type. This is the security boundary that scopes
+   GitHub push tokens to specific domains -- a shape mismatch here needs
+   very careful review, not a quick type-cast.
+
+Reverted the bump (`packages/sandbox/package.json` + `pnpm-lock.yaml`
+back to `2.0.0-beta.11`) rather than rush it mid-incident. Open
+follow-up: dedicate a separate pass to (a) find the 3.x snapshot-create
+API, (b) map `SandboxNetworkRule[]` to `NetworkPolicyRule[]` correctly,
+(c) re-run the full test suite, before attempting this again.

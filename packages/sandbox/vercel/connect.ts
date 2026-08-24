@@ -42,12 +42,37 @@ function getSandboxName(state: VercelState): string | undefined {
   return undefined;
 }
 
+// The @vercel/sandbox SDK's APIError deliberately keeps `.message` generic
+// ("Status code 402 is not ok") and puts the actual response body on
+// separate `.text` / `.json` properties instead (see
+// api-client/api-error.js in the SDK). Found 2026-08-24: this meant
+// isSnapshotStorageQuotaExceededError below NEVER matched in production
+// -- it only ever looked at `.message`, so real quota-exceeded 402s
+// bubbled up as a bare "Status code 402 is not ok" with no "snapshot"
+// substring anywhere, silently skipping the non-persistent fallback and
+// hard-failing every chat sandbox provision instead. Now folds in
+// `.text`/`.json` (duck-typed, not an SDK import) so detection sees the
+// real body content too.
 function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
+  if (!(error instanceof Error)) {
+    return String(error);
   }
 
-  return String(error);
+  const parts = [error.message];
+
+  const withBody = error as Error & { text?: unknown; json?: unknown };
+  if (typeof withBody.text === "string") {
+    parts.push(withBody.text);
+  }
+  if (withBody.json !== undefined) {
+    try {
+      parts.push(JSON.stringify(withBody.json));
+    } catch {
+      // Non-serializable json payload -- ignore, .message/.text already captured above.
+    }
+  }
+
+  return parts.join(" | ");
 }
 
 // Treats the sandbox as permanently gone -- triggers the createIfMissing

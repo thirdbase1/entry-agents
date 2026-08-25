@@ -1185,3 +1185,69 @@ Remaining gaps from the original punch list, still open: detached
 background processes (dev servers) aren't restarted after a migration,
 no backoff on repeated migration failures, untested on very
 large-history repos.
+
+## 2026-08-25 (later still): MCP client plumbing -- groundwork for "thousands of tools" (commit 1104736)
+
+Owner asked to "give Entry access to thousands of tools." Real answer
+is MCP (Model Context Protocol) -- same mechanism Claude Code/Cursor
+use. Shipped the vendor-agnostic connector, deliberately did NOT wire
+it to a live source of tools yet -- that's a product decision, not an
+engineering one.
+
+- New `packages/agent/tools/mcp.ts`: `createMcpToolSet(servers)`
+  connects to any number of MCP servers (http/sse transport) in
+  parallel via `@ai-sdk/mcp`, merges their tools into one ToolSet
+  namespaced `mcp__<server>__<tool>` (avoids collisions between
+  servers and with Entry's own built-in tools), isolates a broken
+  server's connection failure instead of failing the whole call, and
+  returns `close()` to tear down every connection.
+- Every MCP-sourced tool gets wrapped with the same blanket approval
+  gate `web_fetch` already uses (`needsApproval` => true whenever
+  `permissionMode` is `"ask"`, the default). MCP has no standard
+  concept of "this tool is dangerous," and an agent that already has
+  bash/git-push/deploy access can't safely trust a remote server's
+  self-reported metadata -- so every external tool call is treated as
+  sensitive by default, same as every other blanket gate in this repo.
+- Wired into `open-agent.ts` via a new `extraTools` call option:
+  callers own resolving which servers to connect to and the connection
+  lifecycle (connect before the call, close after the stream is fully
+  consumed); the package itself only merges an already-built ToolSet in
+  inside `prepareCall`. Kept it this way on purpose -- no MCP-specific
+  code needed inside the package beyond the merge itself.
+- Version pin: `@ai-sdk/mcp@1.0.72`, not the latest `1.0.74`/`2.x`.
+  `2.x` tracks the `ai` v7 line (this repo is still on v6); `1.0.74`
+  got rejected outright by this workspace's `minimumReleaseAge` pnpm
+  guard (published <24h before the install attempt) -- picked `1.0.72`
+  instead, published 2026-08-21, whose `@ai-sdk/provider@3.0.15` /
+  `provider-utils@4.0.46` deps match what `ai@6.0.194` already
+  resolves to in this repo.
+- Looked hard at `@ai-sdk/code-mode` too (lets a model batch many tool
+  calls into one JS program instead of calling them one at a time --
+  would solve the "thousands of schemas in context" problem elegantly,
+  and its docs explicitly warn it does NOT integrate with tool
+  approval flows, so it'd only ever be safe for read-only/low-risk
+  tools anyway). Hard-blocked: it requires `ai@7.0.79` as a peer dep.
+  Upgrading the whole `ai` package major version across this monorepo
+  is its own dedicated migration with real breaking-change risk (same
+  call made on the `@vercel/sandbox` 3.1.0 attempt) -- not bundling it
+  into this change.
+- 7 new tests in `tools/mcp.test.ts` (namespacing, multi-server merge,
+  approval-gate wrapping at each permission mode, per-server failure
+  isolation, `close()` never throwing even when one client's `close()`
+  fails, empty-server-list edge case). Typecheck clean across
+  `packages/agent` and `apps/web`.
+
+**Not done, needs the owner's decision before this goes live:**
+nothing in `app/workflows/chat.ts` calls `createMcpToolSet` yet -- no
+real MCP servers are configured anywhere. Two paths, not mutually
+exclusive:
+1. Composio's Tool Router -- the actual path to *thousands*. Exposes a
+   small search/execute interface instead of dumping thousands of raw
+   tool schemas into every request (which would wreck tool-selection
+   accuracy on top of blowing context). Needs a Composio account + API
+   key from the owner.
+2. Generic self-serve "paste any MCP server URL" (like Cursor/Claude
+   Desktop) -- no vendor lock-in, smaller catalog per user, still needs
+   a DB-backed per-user/session config surface and a real security
+   review before letting user-supplied endpoints run tools alongside
+   an agent that already has bash/deploy access.

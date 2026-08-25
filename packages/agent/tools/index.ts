@@ -21,3 +21,10 @@ export { githubCliTool, type GithubCliToolInput } from "./github";
 export { vercelCliTool, type VercelCliToolInput } from "./vercel";
 export { vercelApiTool, type VercelApiToolInput } from "./vercel-api";
 export { webSearchTool } from "./web-search";
+export {
+  createMcpToolSet,
+  namespacedMcpToolName,
+  type McpServerConfig,
+  type McpToolSetResult,
+  type McpConnectionFailure,
+} from "./mcp";

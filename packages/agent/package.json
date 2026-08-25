@@ -17,7 +17,8 @@
     "@ai-sdk/openai-compatible": "catalog:",
     "@open-agents/sandbox": "workspace:*",
     "ai": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@ai-sdk/mcp": "1.0.72"
   },
   "devDependencies": {
     "@ai-sdk/devtools": "^0.0.15",

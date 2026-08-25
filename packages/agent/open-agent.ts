@@ -80,6 +80,14 @@ const callOptionsSchema = z.object({
   // sandbox-migration safety net. Undefined in any host that doesn't
   // wire it up (e.g. tests) -- getSandbox() just skips passing hooks.
   sandboxLifecycleHooks: z.custom<SandboxLifecycleHooksContext>().optional(),
+  // Extra tools merged on top of the built-in set for this call only
+  // (e.g. tools/mcp.ts's createMcpToolSet() output). The caller owns
+  // the full lifecycle -- resolving which servers to connect to,
+  // connecting, and closing the connections once this call's stream
+  // is fully consumed. This package deliberately stays vendor-agnostic
+  // about *where* extra tools come from; it only knows how to merge
+  // an already-built ToolSet in.
+  extraTools: z.custom<ToolSet>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -185,7 +193,9 @@ export const openAgent = new ToolLoopAgent({
       ...settings,
       model: callModel,
       tools: addCacheControl({
-        tools: settings.tools ?? tools,
+        tools: options.extraTools
+          ? { ...(settings.tools ?? tools), ...options.extraTools }
+          : settings.tools ?? tools,
         model: callModel,
       }),
       instructions: addCacheControl({

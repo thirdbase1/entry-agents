@@ -1009,3 +1009,83 @@ back to `2.0.0-beta.11`) rather than rush it mid-incident. Open
 follow-up: dedicate a separate pass to (a) find the 3.x snapshot-create
 API, (b) map `SandboxNetworkRule[]` to `NetworkPolicyRule[]` correctly,
 (c) re-run the full test suite, before attempting this again.
+
+## 2026-08-25: Default sandbox is now non-persistent (commit 21bab98)
+
+Owner explicitly asked: "Default sandbox should be non persistent."
+Changed the actual default in two places:
+- `apps/web/lib/sandbox/provisioning.ts` -- the main per-session sandbox
+  provisioning path (used on every chat session) had `persistent: true`
+  hardcoded; flipped to `persistent: false`.
+- `packages/sandbox/vercel/sandbox.ts` -- `VercelSandbox.create()`'s own
+  internal default (`persistent = true` destructure default) flipped to
+  `persistent = false`, so any other call site that omits the option now
+  gets the safe default too.
+
+Why: persistent mode's auto-snapshot-on-stop kept blowing through the
+Hobby plan's 15GB Snapshot Storage quota despite several rounds of
+fixes today (dca92d2, faf114a -- see entries above). Every fix closed
+one specific bug in the snapshot lifecycle, but the *feature itself*
+(auto-snapshot-on-every-stop) was the real source of runaway storage
+growth. Removing it as the default removes the whole failure class
+instead of chasing more edge cases in it.
+
+Left untouched, intentionally: `apps/web/app/api/sandbox/snapshot/route.ts`
+still creates with `persistent: true` -- that route is specifically about
+restoring a named/legacy persistent sandbox by request, not the default
+provisioning path.
+
+Trade-off (accepted): sessions no longer resume filesystem state across
+a full stop/restart -- e.g. after the 30-min inactivity hibernation in
+`lib/sandbox/lifecycle.ts`, the old sandbox is gone for good and the
+next connect just provisions a fresh one (git re-clone), rather than
+restoring a snapshot. Existing "sandbox not found" fallback handling in
+`lib/sandbox/utils.ts` (`clearSandboxResumeState`) already degrades
+gracefully for this case -- confirmed no crash path, just loses
+uncommitted in-sandbox state on resume after a stop.
+
+### In-progress, not yet wired up: 40-minute session-duration migration
+Same commit also added (but has NOT yet wired into the lifecycle
+workflow) the primitives for a follow-up safety net: proactively
+migrating/refreshing a session's sandbox a few minutes before the
+Vercel Hobby plan's 45-minute hard session cap, instead of hitting a
+hard cutoff mid-task.
+- `packages/sandbox/migrate.ts`: `packWorkspacePayload()` /
+  `restoreWorkspacePayload()` -- git bundle+diff+untracked files when
+  the workspace is a git repo, else a full tar (excluding
+  node_modules/.next/dist/.turbo) for non-git scratch sandboxes.
+- `packages/sandbox/interface.ts`: added `ActiveCommandInfo`,
+  `SandboxHooks.onCommandStart`/`onCommandEnd`, and
+  `Sandbox.killCommand()` / `packWorkspacePayload()` /
+  `restoreWorkspacePayload()`.
+- `packages/sandbox/vercel/sandbox.ts`: `exec()` now always starts
+  commands in detached mode internally so it can capture `cmdId`
+  immediately and fire `onCommandStart` before awaiting completion
+  (needed so an external process -- the lifecycle workflow -- can find
+  and kill this exact command by id later, since it runs in a totally
+  different invocation). Added `killCommand(cmdId)` and
+  `ExecResult.killedExternally` so a caller can tell "real failure"
+  apart from "killed on purpose for a migration, please retry".
+
+Still needed before this is live (do NOT consider it shipped):
+1. DB migration: `sessions.activeSandboxCommand` (jsonb) column so the
+   cmdId can be persisted durably across process invocations, plus a
+   `"migrating"` `lifecycleState` literal.
+2. `apps/web/lib/sandbox/migration.ts`: the actual
+   `performSandboxMigration(sessionId)` orchestrator -- kill the active
+   command if present, pack the payload, create a fresh sandbox (or for
+   a persistent one, just stop+resume the same identity), restore the
+   payload, update session state.
+3. Wire a new due-time check into
+   `apps/web/app/workflows/sandbox-lifecycle.ts` / `lifecycle.ts` for
+   "5 minutes before max session duration" that, unlike the existing
+   inactivity hibernate check, does NOT skip when there's an active
+   workflow -- it should interrupt it via `killCommand`.
+4. Wire the retry side in `packages/agent/tools/bash.ts`'s `execute()` --
+   after `sandbox.exec()` returns with `killedExternally: true`, wait
+   for the migration to finish and retry the same command once against
+   the refreshed sandbox, transparent to the model.
+5. A UI status indicator so the user sees "refreshing environment..."
+   instead of a silent multi-second gap during migration.
+
+Open follow-up, pick this up as its own dedicated pass.

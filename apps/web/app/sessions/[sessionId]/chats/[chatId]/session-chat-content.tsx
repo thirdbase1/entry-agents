@@ -3052,6 +3052,11 @@ export function SessionChatContent({
   const isServerRestoring = lifecycleTiming.state === "restoring";
   const isServerHibernated = lifecycleTiming.state === "hibernated";
   const isHibernatingUi = isHibernatingTransition || isServerHibernating;
+  // Server is proactively moving this session to a fresh sandbox ahead
+  // of the Hobby plan's hard session-duration cap (see
+  // lib/sandbox/migration.ts). Surfaced in the header so the user sees
+  // *something* during the multi-second gap instead of a silent pause.
+  const isServerMigrating = lifecycleTiming.state === "migrating";
 
   // Sandbox is active only when BOTH the local connection info is valid AND
   // the server agrees the lifecycle is active (not hibernating/hibernated/failed).
@@ -3489,6 +3494,21 @@ export function SessionChatContent({
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
+            {isServerMigrating && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex h-7 w-7 items-center justify-center">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-64 text-pretty">
+                  Refreshing environment -- moving your session to a fresh
+                  sandbox. This takes a few seconds and your work is preserved;
+                  any command running right now will automatically retry once
+                  it&apos;s done.
+                </TooltipContent>
+              </Tooltip>
+            )}
             {canUseSandboxActions && (
               <>
                 <Tooltip>

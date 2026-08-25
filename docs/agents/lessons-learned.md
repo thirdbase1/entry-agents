@@ -1155,3 +1155,33 @@ Still open (not done, don't assume otherwise):
 - Not yet tested against a real large-history repo -- `git bundle
   --all` captures full history with no size cap; could be slow/large
   for a big monorepo session.
+
+## 2026-08-25 (later): sandbox-migration UI indicator
+
+Closed the last real gap from the migration safety net above (the "no
+UI status indicator yet" item).
+
+- `session-chat-content.tsx`: added `isServerMigrating` (`lifecycleTiming.state
+  === "migrating"`) and a small amber spinner + tooltip in the
+  header-actions portal (the same `headerActionsRef` portal that
+  already renders the dev-server/code-editor buttons), reusing the
+  existing `Loader2`/`Tooltip` pattern the dev-server "starting" state
+  uses. Tooltip text explains what's happening and that any interrupted
+  command will auto-retry.
+- Found while looking for where to hook it in: `_sandboxUiStatus` and
+  `_SandboxHeaderBadge` (underscore-prefixed = intentionally unused,
+  per this codebase's convention) already existed in this file but were
+  never rendered anywhere -- looks like earlier WIP for a fuller status
+  badge that never got wired to a render target. Left them as-is rather
+  than untangling/wiring the whole thing in this pass; the new indicator
+  is a small, independent addition alongside them, not built on top of
+  them.
+- No new polling needed -- `session-chat-context.tsx` already runs a
+  15s status poll (`requestStatusSync`) while the tab is visible, which
+  updates `lifecycleTiming.state` from the server. The indicator picks
+  up "migrating" from that automatically.
+
+Remaining gaps from the original punch list, still open: detached
+background processes (dev servers) aren't restarted after a migration,
+no backoff on repeated migration failures, untested on very
+large-history repos.

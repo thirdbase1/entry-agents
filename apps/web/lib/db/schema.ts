@@ -645,3 +645,46 @@ export const benchmarkResults = pgTable(
     index("benchmark_results_benchmark_idx").on(table.benchmark),
   ],
 );
+
+// Self-serve, user-configured MCP (Model Context Protocol) servers --
+// the "paste any MCP server URL" path for extending the agent with
+// external tools, as opposed to a curated vendor catalog. See
+// packages/agent/tools/mcp.ts for the connector that actually uses
+// these once resolved per-request, and lib/mcp/header-encryption.ts
+// for why `encryptedHeaders` is encrypted rather than plain jsonb.
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // User-facing label AND the tool-namespace segment
+    // (mcp__<name>__<tool>) -- kept short and slug-like on write.
+    name: text("name").notNull(),
+    transport: text("transport", { enum: ["http", "sse"] }).notNull(),
+    url: text("url").notNull(),
+    // AES-256-GCM ciphertext of a Record<string, string> (e.g. an
+    // Authorization header carrying that server's API key), or null
+    // if the server needs no auth. Never decrypted for display --
+    // only decrypted server-side, per-request, right before opening
+    // the MCP connection. See lib/mcp/header-encryption.ts.
+    encryptedHeaders: text("encrypted_headers"),
+    // Independent of the underlying MCP server being reachable --
+    // lets a user turn a server off without losing/re-entering its
+    // config, and is checked before every request re-attempts a
+    // connection to a server that's been failing.
+    enabled: boolean("enabled").notNull().default(true),
+    lastConnectionError: text("last_connection_error"),
+    lastConnectionCheckedAt: timestamp("last_connection_checked_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("mcp_servers_user_id_idx").on(table.userId),
+    uniqueIndex("mcp_servers_user_id_name_idx").on(table.userId, table.name),
+  ],
+);
+
+export type McpServerRow = typeof mcpServers.$inferSelect;
+export type NewMcpServerRow = typeof mcpServers.$inferInsert;

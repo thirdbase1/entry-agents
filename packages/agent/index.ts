@@ -38,6 +38,14 @@ export {
   type AskUserQuestionToolUIPart,
 } from "./tools/ask-user-question";
 export type { SkillToolInput } from "./tools/skill";
+export { isAllowedWebUrl } from "./tools/fetch";
+export {
+  createMcpToolSet,
+  namespacedMcpToolName,
+  type McpServerConfig,
+  type McpToolSetResult,
+  type McpConnectionFailure,
+} from "./tools/mcp";
 // Tool exports
 export type {
   TaskPendingToolCall,

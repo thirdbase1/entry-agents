@@ -1251,3 +1251,50 @@ exclusive:
    a DB-backed per-user/session config surface and a real security
    review before letting user-supplied endpoints run tools alongside
    an agent that already has bash/deploy access.
+
+## 2026-08-25 (later still): self-serve BYO-MCP servers, live end to end
+
+Owner picked option 2 from the earlier MCP fork (generic "paste any MCP
+server URL," not Composio's Tool Router) -- shipped full stack, wired
+into the real chat request path.
+
+- `mcp_servers` table (migration `0050_add_mcp_servers.sql`): per-user,
+  `(userId, name)` unique. Headers stored as `encryptedHeaders`
+  (AES-256-GCM), never plaintext at rest.
+- `lib/mcp/header-encryption.ts`: derives its key via `hkdfSync` off
+  the existing `BETTER_AUTH_SECRET` rather than adding a new env var --
+  same pattern as better-auth's own `encryptOAuthTokens`. Decrypted
+  only server-side, immediately before opening the MCP connection --
+  API responses only ever return `hasHeaders: boolean`.
+- `lib/mcp/url-safety.ts`: SSRF guard for user-supplied server URLs.
+  Two layers -- reuses `isAllowedWebUrl` (now exported from
+  `@open-agents/agent`, shared with `web_fetch`) for write-time
+  protocol/literal-IP checks, plus a fresh `dns.lookup` resolution
+  right before every real connection attempt to close the DNS-rebinding
+  gap (a hostname that resolved public at save-time could resolve
+  private later). Documented as time-of-check, not IP-pinned --
+  revisit with a pinned dispatcher only if this becomes a real attack
+  surface rather than theoretical.
+- Full CRUD at `/api/settings/mcp-servers` (+ `/[id]`), settings UI at
+  `/settings/mcp-servers` (new sidebar entry, `Plug` icon).
+- Wired into `runAgentStep` in `app/workflows/chat.ts`: resolves the
+  user's enabled servers, calls `createMcpToolSet`, merges the result
+  into `fullAgentOptions.extraTools`. Connection failures are logged +
+  written back to `lastConnectionError` per server but never fail the
+  turn. `mcpToolSet` is declared *above* the function's try/catch/finally
+  (not inside the try block) specifically so `finally` can call
+  `mcpToolSet?.close()` regardless of which branch ran -- a `let`
+  declared inside `try {}` is out of scope in `finally {}` in JS, easy
+  mistake to make with this shape of function, worth remembering for
+  any future per-step resource that needs cleanup here.
+- 16 tests added (`header-encryption.test.ts`, `url-safety.test.ts`,
+  reused existing `tools/mcp.test.ts`). Typecheck + lint clean across
+  both `apps/web` and `packages/agent`.
+
+Not done / conscious scope cuts: no "test connection" button in the UI
+(errors only surface after a real chat turn tries and fails); no rate
+limit on how many servers a user can add; SSE-transport servers are
+opened and closed once per chat step rather than pooled/reused across
+steps in the same turn (matches how nothing else in this file pools
+resources across steps either, but worth reconsidering if this turns
+out to add meaningful latency in practice).

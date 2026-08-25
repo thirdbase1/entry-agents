@@ -9,12 +9,13 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import type {
-  GithubApiResult,
-  GithubRawCliResult,
-  OpenAgentCallOptions,
-  VercelApiResult,
-  VercelCliToolResult,
+import {
+  createMcpToolSet,
+  type GithubApiResult,
+  type GithubRawCliResult,
+  type OpenAgentCallOptions,
+  type VercelApiResult,
+  type VercelCliToolResult,
 } from "@open-agents/agent";
 import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
@@ -2153,6 +2154,10 @@ const runAgentStep = async (
   // how much account balance remains.
   let turnSpendCapped = false;
   const pendingDebits: Promise<void>[] = [];
+  // Hoisted above the try/catch/finally on purpose -- `let` inside the
+  // try block would be out of scope in the `finally` below, where it
+  // needs to be closed regardless of which branch ran.
+  let mcpToolSet: Awaited<ReturnType<typeof createMcpToolSet>> | undefined;
 
   try {
     let responseMessage: WebAgentUIMessage | undefined;
@@ -2350,6 +2355,49 @@ const runAgentStep = async (
         },
       },
     };
+
+    // Self-serve MCP servers this user has configured (see
+    // lib/db/mcp-servers.ts + packages/agent/tools/mcp.ts). Resolved
+    // fresh every step -- there's no long-lived process to pool the
+    // connections across steps anyway (this "use step" function can
+    // resume on a different worker between steps), same reasoning as
+    // why DB connections aren't cached across steps in this file.
+    // Deliberately never blocks/fails the turn: a broken server is
+    // logged and skipped, not surfaced as a step error.
+    try {
+      const { getEnabledMcpServersForRequest } =
+        await import("@/lib/db/mcp-servers");
+      const enabledServers = await getEnabledMcpServersForRequest(userId);
+      if (enabledServers.length > 0) {
+        mcpToolSet = await createMcpToolSet(enabledServers);
+        if (mcpToolSet.failures.length > 0) {
+          console.warn(
+            `[workflow] ${mcpToolSet.failures.length} MCP server(s) failed to connect for user ${userId}:`,
+            mcpToolSet.failures,
+          );
+          const { recordMcpServerConnectionResult } =
+            await import("@/lib/db/mcp-servers");
+          const { listMcpServers } = await import("@/lib/db/mcp-servers");
+          const servers = await listMcpServers(userId);
+          await Promise.all(
+            mcpToolSet.failures.map(async (failure) => {
+              const server = servers.find((s) => s.name === failure.name);
+              if (server) {
+                await recordMcpServerConnectionResult(server.id, failure.error);
+              }
+            }),
+          );
+        }
+      }
+    } catch (error) {
+      console.warn(
+        `[workflow] Failed to resolve MCP servers for user ${userId}, continuing without them:`,
+        error,
+      );
+    }
+    if (mcpToolSet?.tools && Object.keys(mcpToolSet.tools).length > 0) {
+      fullAgentOptions.extraTools = mcpToolSet.tools;
+    }
 
     const result = await webAgent.stream({
       messages,
@@ -2710,6 +2758,10 @@ const runAgentStep = async (
     // otherwise a workflow suspend right after this call could lose an
     // in-flight (unawaited) debitUsage write.
     await Promise.all(pendingDebits);
+    // Close any MCP server connections opened for this step -- see the
+    // resolution block above. Safe to call even if mcpToolSet is
+    // undefined (no servers were configured this step).
+    await mcpToolSet?.close();
     stopMonitor.stop();
     await stopMonitor.done;
   }

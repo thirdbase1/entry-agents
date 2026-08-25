@@ -351,6 +351,13 @@
       "when": 1787618663920,
       "tag": "0049_add_sandbox_migration_state",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1787695378838,
+      "tag": "0050_add_mcp_servers",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import {
   CreditCard,
   LogOut,
   Menu,
+  Plug,
   Settings as SettingsIcon,
   ShieldAlert,
   Router,
@@ -29,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { AccountsSectionSkeleton } from "./accounts-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
+import { McpServersSectionSkeleton } from "./mcp-servers-section";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 
 /** Skeleton shown while auth is loading for the combined profile page */
@@ -108,6 +110,12 @@ const baseSidebarItems = [
     label: "Gateway",
     href: "/settings/gateway",
     icon: Router,
+  },
+  {
+    id: "mcp-servers",
+    label: "MCP Servers",
+    href: "/settings/mcp-servers",
+    icon: Plug,
   },
 ];
 
@@ -259,6 +267,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "leaderboard" ? (
       <LeaderboardSectionSkeleton />
+    ) : activeItem?.id === "mcp-servers" ? (
+      <McpServersSectionSkeleton />
     ) : (
       <ProfilePageSkeleton />
     );

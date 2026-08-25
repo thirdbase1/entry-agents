@@ -246,7 +246,16 @@ export async function provisionSessionSandbox(params: {
         vcpus: DEFAULT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        persistent: true,
+        // Default changed 2026-08-25: this is the main per-session sandbox
+        // provisioning path, so this is what "default sandbox" means in
+        // practice. Persistent mode's auto-snapshot-on-stop kept blowing
+        // through the Hobby plan's 15GB Snapshot Storage quota despite
+        // several rounds of fixes (see docs/agents/lessons-learned.md) --
+        // switching the default off removes that whole failure class.
+        // Trade-off: sessions no longer resume filesystem state across a
+        // full stop/restart (e.g. after inactivity hibernation) -- only
+        // within a single continuous sandbox lifetime.
+        persistent: false,
         resume: true,
         createIfMissing: true,
       },

@@ -1,4 +1,4 @@
-import { Sandbox as VercelSandboxSDK } from "@vercel/sandbox";
+import { Sandbox as VercelSandboxSDK, type Command as VercelSandboxCommand } from "@vercel/sandbox";
 import type { Dirent } from "fs";
 import type {
   ExecResult,
@@ -13,6 +13,11 @@ import type {
   VercelSandboxConnectConfig,
 } from "./config.ts";
 import type { VercelState } from "./state.ts";
+import {
+  packWorkspacePayload,
+  restoreWorkspacePayload,
+  type WorkspacePayload,
+} from "../migrate.ts";
 
 const MAX_OUTPUT_LENGTH = 50_000;
 const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
@@ -254,6 +259,13 @@ export class VercelSandbox implements Sandbox {
   private session: VercelSandboxSession;
   private timeoutTimer?: ReturnType<typeof setTimeout>;
   private isStopped = false;
+  /**
+   * cmdIds killed via killCommand() -- exec() checks this in its
+   * finally-block to flag ExecResult.killedExternally so callers can
+   * tell "the command failed" apart from "we killed it for a migration
+   * and the caller should retry".
+   */
+  private killedCommandIds = new Set<string>();
   private _expiresAt?: number;
   private _timeout?: number;
   private _ports?: number[];
@@ -579,7 +591,15 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       runtime = "node22",
       ports,
       baseSnapshotId,
-      persistent = true,
+      // Default changed 2026-08-25: non-persistent is now the default.
+      // Persistent mode (auto-snapshot-on-stop + cross-session resume) kept
+      // repeatedly blowing through the Hobby plan's 15GB Snapshot Storage
+      // quota (see docs/agents/lessons-learned.md, multiple incidents
+      // 2026-08-18 through 2026-08-24), causing hard 402s on new sandbox
+      // creation. Callers that specifically need cross-session resume
+      // (e.g. a named long-lived project sandbox) should now pass
+      // `persistent: true` explicitly.
+      persistent = false,
       snapshotExpiration = DEFAULT_SNAPSHOT_EXPIRATION_MS,
       hooks,
       skipGitWorkspaceBootstrap = false,
@@ -985,18 +1005,53 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     timeoutMs: number,
     options?: { signal?: AbortSignal },
   ): Promise<ExecResult> {
+    // Always start detached internally (even though this method waits for
+    // completion below) so we get the command's id back immediately,
+    // before it finishes -- onCommandStart needs it right away so an
+    // external process (the sandbox-migration flow) can find and kill
+    // this exact command by id if the session's max duration is reached
+    // while it's still running.
+    let started: VercelSandboxCommand;
+    try {
+      started = await this.session.runCommand({
+        cmd: "bash",
+        args: ["-c", `cd "${cwd}" && ${command}`],
+        env: this.getCommandEnv(),
+        detached: true,
+      });
+    } catch (error) {
+      return {
+        success: false,
+        exitCode: null,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+        truncated: false,
+      };
+    }
+
+    if (this.hooks?.onCommandStart) {
+      try {
+        await this.hooks.onCommandStart({
+          cmdId: started.cmdId,
+          command,
+          cwd,
+          startedAt: Date.now(),
+        });
+      } catch (error) {
+        console.warn(
+          "[VercelSandbox] onCommandStart hook failed:",
+          error,
+        );
+      }
+    }
+
     try {
       const timeoutSignal = AbortSignal.timeout(timeoutMs);
       const signal = options?.signal
         ? AbortSignal.any([timeoutSignal, options.signal])
         : timeoutSignal;
 
-      const result = await this.session.runCommand({
-        cmd: "bash",
-        args: ["-c", `cd "${cwd}" && ${command}`],
-        env: this.getCommandEnv(),
-        signal,
-      });
+      const result = await started.wait({ signal });
 
       const [rawStdout, rawStderr] = await Promise.all([
         result.stdout(),
@@ -1011,6 +1066,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         stdout: stdout.output,
         stderr: stderr.output,
         truncated: stdout.truncated || stderr.truncated,
+        killedExternally: this.killedCommandIds.has(started.cmdId),
       };
     } catch (error) {
       if (error instanceof Error && error.name === "TimeoutError") {
@@ -1033,8 +1089,38 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         stdout: "",
         stderr: error instanceof Error ? error.message : String(error),
         truncated: false,
+        killedExternally: this.killedCommandIds.has(started.cmdId),
       };
+    } finally {
+      this.killedCommandIds.delete(started.cmdId);
+      if (this.hooks?.onCommandEnd) {
+        try {
+          await this.hooks.onCommandEnd(started.cmdId);
+        } catch (error) {
+          console.warn("[VercelSandbox] onCommandEnd hook failed:", error);
+        }
+      }
     }
+  }
+
+  /**
+   * Force-kill a running command by id from any process. Used by the
+   * sandbox-migration flow to stop an in-flight tool call (found via the
+   * {cmdId} persisted by onCommandStart) before packaging up the
+   * workspace and handing it off to a fresh sandbox.
+   */
+  async killCommand(cmdId: string): Promise<void> {
+    this.killedCommandIds.add(cmdId);
+    const command = await this.sdk.getCommand(cmdId);
+    await command.kill();
+  }
+
+  async packWorkspacePayload(): Promise<WorkspacePayload> {
+    return packWorkspacePayload(this);
+  }
+
+  async restoreWorkspacePayload(payload: WorkspacePayload): Promise<void> {
+    return restoreWorkspacePayload(this, payload);
   }
 
   /**

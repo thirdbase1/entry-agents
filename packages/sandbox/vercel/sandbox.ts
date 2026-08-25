@@ -1,4 +1,7 @@
-import { Sandbox as VercelSandboxSDK, type Command as VercelSandboxCommand } from "@vercel/sandbox";
+import {
+  Sandbox as VercelSandboxSDK,
+  type Command as VercelSandboxCommand,
+} from "@vercel/sandbox";
 import type { Dirent } from "fs";
 import type {
   ExecResult,
@@ -1038,10 +1041,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
           startedAt: Date.now(),
         });
       } catch (error) {
-        console.warn(
-          "[VercelSandbox] onCommandStart hook failed:",
-          error,
-        );
+        console.warn("[VercelSandbox] onCommandStart hook failed:", error);
       }
     }
 

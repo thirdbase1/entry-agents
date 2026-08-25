@@ -40,6 +40,17 @@ export const SANDBOX_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 /** Buffer for sandbox expiry checks (10 seconds) */
 export const SANDBOX_EXPIRES_BUFFER_MS = 10 * 1000;
 
+/**
+ * Lead time before a sandbox's hard session-duration cap at which the
+ * lifecycle workflow proactively migrates the session to a fresh
+ * sandbox instead of letting Vercel hard-kill it mid-task (Hobby's cap
+ * is 45 minutes -- see DEFAULT_SANDBOX_TIMEOUT_MS above). Chosen to
+ * leave enough headroom for packing the workspace, creating a new
+ * sandbox, and restoring it before time actually runs out. See
+ * lib/sandbox/migration.ts.
+ */
+export const SANDBOX_MIGRATION_LEAD_MS = 5 * 60 * 1000;
+
 /** Grace window before treating a lifecycle run as stale (2 minutes) */
 export const SANDBOX_LIFECYCLE_STALE_RUN_GRACE_MS = 2 * 60 * 1000;
 

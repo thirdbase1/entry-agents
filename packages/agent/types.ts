@@ -25,6 +25,35 @@ export type TodoItem = z.infer<typeof todoItemSchema>;
  * background auto-commit) and threads it through call options, same as it
  * threads `sandbox` itself.
  */
+/**
+ * App-injected hooks so the bash tool's sandbox connection can persist
+ * {cmdId, command, cwd, startedAt} for whichever command is currently
+ * running, durably enough that the sandbox-lifecycle workflow (running
+ * in a totally different process, ahead of the session's hard duration
+ * cap) can find and kill it before migrating the session to a fresh
+ * sandbox. Same layering reason as GithubToolContext above: this
+ * package can't reach apps/web's DB directly.
+ */
+export interface SandboxLifecycleHooksContext {
+  onCommandStart: (info: {
+    cmdId: string;
+    command: string;
+    cwd: string;
+    startedAt: number;
+  }) => Promise<void>;
+  onCommandEnd: (cmdId: string) => Promise<void>;
+  /**
+   * Re-fetches this session's current sandboxState from the DB. The
+   * bash tool calls this to reconnect to the *correct* sandbox after a
+   * command comes back `killedExternally` (force-killed by the
+   * sandbox-migration safety net) -- the sandbox already sitting in
+   * `experimental_context` is a point-in-time snapshot taken at the
+   * start of the turn and would still point at the old, now-stopped
+   * sandbox, not the fresh one the workspace was actually migrated to.
+   */
+  refreshSandboxState: () => Promise<SandboxState>;
+}
+
 export interface GithubApiRequestInput {
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   /**
@@ -170,6 +199,7 @@ export interface AgentContext {
   subagentModel?: LanguageModel;
   github?: GithubToolContext;
   vercel?: VercelToolContext;
+  sandboxLifecycleHooks?: SandboxLifecycleHooksContext;
 }
 
 export interface SandboxExecutionContext {

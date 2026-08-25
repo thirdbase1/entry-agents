@@ -2300,6 +2300,55 @@ const runAgentStep = async (
             },
           }
         : undefined,
+      // Rebuilt here for the same reason as commitAndPush above --
+      // functions can't cross the workflow-step boundary. Lets the
+      // sandbox-lifecycle workflow (a different process, running near
+      // this session's hard duration cap) find and kill whatever bash
+      // command is running right now before migrating to a fresh
+      // sandbox. See SandboxLifecycleHooksContext + lib/sandbox/migration.ts.
+      sandboxLifecycleHooks: {
+        onCommandStart: async (info) => {
+          const { updateSession } = await import("@/lib/db/sessions");
+          try {
+            await updateSession(sessionId, { activeSandboxCommand: info });
+          } catch (error) {
+            console.warn(
+              `[sandbox-lifecycle] Failed to persist active command for session ${sessionId}:`,
+              error,
+            );
+          }
+        },
+        onCommandEnd: async (cmdId) => {
+          const { getSessionById, updateSession } =
+            await import("@/lib/db/sessions");
+          try {
+            const current = await getSessionById(sessionId);
+            // Only clear if it's still the same command -- avoids
+            // clobbering a newer in-flight command's record in a race
+            // where onCommandEnd for an old command resolves after a
+            // new one already started (shouldn't normally happen since
+            // bash tool calls are sequential per session, but cheap to
+            // guard against).
+            if (current?.activeSandboxCommand?.cmdId === cmdId) {
+              await updateSession(sessionId, { activeSandboxCommand: null });
+            }
+          } catch (error) {
+            console.warn(
+              `[sandbox-lifecycle] Failed to clear active command for session ${sessionId}:`,
+              error,
+            );
+          }
+        },
+        refreshSandboxState: async () => {
+          const { getSessionById } = await import("@/lib/db/sessions");
+          const current = await getSessionById(sessionId);
+          // Falls back to the state already known for this step if the
+          // session vanished/archived mid-retry -- exec() against a
+          // stale-but-real state at least fails with a clear error
+          // instead of throwing here and losing the tool result.
+          return current?.sandboxState ?? agentOptions.sandbox.state;
+        },
+      },
     };
 
     const result = await webAgent.stream({

@@ -7,6 +7,10 @@ import {
   type SandboxLifecycleEvaluationResult,
   type SandboxLifecycleReason,
 } from "@/lib/sandbox/lifecycle";
+import {
+  performSandboxMigration,
+  type SandboxMigrationResult,
+} from "@/lib/sandbox/migration";
 import { canOperateOnSandbox } from "@/lib/sandbox/utils";
 
 interface LifecycleWakeDecision {
@@ -72,6 +76,13 @@ async function runLifecycleEvaluation(
   return evaluateSandboxLifecycle(sessionId, reason);
 }
 
+async function runSandboxMigrationStep(
+  sessionId: string,
+): Promise<SandboxMigrationResult> {
+  "use step";
+  return performSandboxMigration(sessionId);
+}
+
 async function clearLifecycleRunIdIfOwned(
   sessionId: string,
   runId: string,
@@ -107,6 +118,18 @@ export async function sandboxLifecycleWorkflow(
     await sleep(new Date(wakeAtMs));
 
     const evaluation = await runLifecycleEvaluation(sessionId, reason);
+
+    if (evaluation.action === "migration-needed") {
+      // Best-effort: performSandboxMigration handles its own error
+      // recovery (sets lifecycleState "failed" + lifecycleError on
+      // failure). Either way, loop back and recompute the wake
+      // decision fresh -- on success the session now has a brand-new
+      // sandboxExpiresAt far in the future; on failure the same
+      // near-expiry condition just gets re-evaluated on the next
+      // MIN_SLEEP tick, which retries the migration.
+      await runSandboxMigrationStep(sessionId);
+      continue;
+    }
 
     if (
       evaluation.action === "skipped" &&

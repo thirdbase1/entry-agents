@@ -88,7 +88,50 @@ export async function getSandbox(
     );
   }
 
-  return connectSandbox(context.sandbox.state);
+  // Threads onCommandStart/onCommandEnd through when the host app wired
+  // them up (see SandboxLifecycleHooksContext) so the sandbox-migration
+  // safety net can find and kill whatever command is currently running
+  // here from a different process, ahead of the session's hard
+  // duration cap. Undefined/no-op in hosts that don't wire it up.
+  const hooks = context.sandboxLifecycleHooks
+    ? {
+        onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
+        onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
+      }
+    : undefined;
+
+  return connectSandbox(context.sandbox.state, hooks ? { hooks } : undefined);
+}
+
+/**
+ * Reconnect to this session's sandbox using its *current* DB state
+ * rather than the point-in-time snapshot in `experimental_context`.
+ * Used by the bash tool after a command comes back `killedExternally`
+ * (force-killed by the sandbox-migration safety net) -- by then the
+ * session may already point at a brand-new sandbox, and reusing the
+ * stale context would just reconnect to the old, stopped one.
+ *
+ * Returns undefined (rather than throwing) when the host hasn't wired
+ * up `sandboxLifecycleHooks.refreshSandboxState` (e.g. tests, or any
+ * non-web host) -- callers should fall back to surfacing the original
+ * killed result in that case instead of retrying blindly.
+ */
+export async function reconnectSandboxAfterMigration(
+  experimental_context: unknown,
+): Promise<Sandbox | undefined> {
+  const context = isAgentContext(experimental_context)
+    ? experimental_context
+    : undefined;
+  if (!context?.sandboxLifecycleHooks?.refreshSandboxState) {
+    return undefined;
+  }
+
+  const freshState = await context.sandboxLifecycleHooks.refreshSandboxState();
+  const hooks = {
+    onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
+    onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
+  };
+  return connectSandbox(freshState, { hooks });
 }
 
 /**

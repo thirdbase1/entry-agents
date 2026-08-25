@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
-import { getSandbox } from "./utils";
+import { getSandbox, reconnectSandboxAfterMigration } from "./utils";
 
 const TIMEOUT_MS = 120_000;
 
@@ -171,6 +171,34 @@ EXAMPLES:
       const result = await sandbox.exec(command, workingDir, TIMEOUT_MS, {
         signal: abortSignal,
       });
+
+      // The sandbox-migration safety net force-kills whatever command is
+      // running right before it moves the workspace to a fresh sandbox
+      // (see lib/sandbox/migration.ts in apps/web). That's not a real
+      // command failure -- retry it exactly once against the sandbox's
+      // now-current state so the model (and the user) never even see
+      // the interruption. If the host hasn't wired up reconnection
+      // (reconnectSandboxAfterMigration returns undefined), fall
+      // through and report the killed result as-is.
+      if (result.killedExternally) {
+        const freshSandbox =
+          await reconnectSandboxAfterMigration(experimental_context);
+        if (freshSandbox) {
+          const retryResult = await freshSandbox.exec(
+            command,
+            workingDir,
+            TIMEOUT_MS,
+            { signal: abortSignal },
+          );
+          return {
+            success: retryResult.success,
+            exitCode: retryResult.exitCode,
+            stdout: retryResult.stdout,
+            stderr: retryResult.stderr,
+            ...(retryResult.truncated && { truncated: true }),
+          };
+        }
+      }
 
       return {
         success: result.success,

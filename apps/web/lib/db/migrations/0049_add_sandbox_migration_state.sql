@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "active_sandbox_command" jsonb;

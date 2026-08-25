@@ -211,6 +211,10 @@ export const sessions = pgTable(
         "hibernating",
         "hibernated",
         "restoring",
+        // Added 2026-08-25: session's sandbox is being proactively moved
+        // to a fresh sandbox ahead of the Hobby plan's hard 45-min
+        // session cap. See lib/sandbox/migration.ts.
+        "migrating",
         "archived",
         "failed",
       ],
@@ -222,6 +226,19 @@ export const sessions = pgTable(
     lifecycleRunId: text("lifecycle_run_id"),
     sandboxProvisioningRunId: text("sandbox_provisioning_run_id"),
     lifecycleError: text("lifecycle_error"),
+    // Added 2026-08-25: durable record of the in-flight bash command (if
+    // any) running in this session's sandbox, so a process other than
+    // the one that started it (the lifecycle workflow, ahead of the
+    // hard session-duration cap) can find and kill it before migrating
+    // the workspace to a fresh sandbox. Cleared once the command
+    // finishes or a migration completes. See lib/sandbox/migration.ts
+    // and packages/agent/tools/bash.ts.
+    activeSandboxCommand: jsonb("active_sandbox_command").$type<{
+      cmdId: string;
+      command: string;
+      cwd: string;
+      startedAt: number;
+    } | null>(),
     // Git stats (for display in session list)
     linesAdded: integer("lines_added").default(0),
     linesRemoved: integer("lines_removed").default(0),

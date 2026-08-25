@@ -7,8 +7,8 @@ import {
   updateSession,
 } from "@/lib/db/sessions";
 import {
-  SANDBOX_EXPIRES_BUFFER_MS,
   SANDBOX_INACTIVITY_TIMEOUT_MS,
+  SANDBOX_MIGRATION_LEAD_MS,
 } from "./config";
 import {
   canOperateOnSandbox,
@@ -34,7 +34,7 @@ export type SandboxLifecycleReason =
   | "status-check-overdue";
 
 export interface SandboxLifecycleEvaluationResult {
-  action: "skipped" | "hibernated" | "failed";
+  action: "skipped" | "hibernated" | "migration-needed" | "failed";
   reason?: string;
 }
 
@@ -62,6 +62,25 @@ export function getSandboxExpiresAtMs(
   return typeof sandboxState.expiresAt === "number"
     ? sandboxState.expiresAt
     : undefined;
+}
+
+/**
+ * True once a session's sandbox is close enough to its hard
+ * session-duration cap that the lifecycle workflow should proactively
+ * migrate it to a fresh sandbox rather than just skip evaluation --
+ * unlike the inactivity-hibernate path, doing nothing here guarantees a
+ * hard kill instead, so an active stream must trigger a migration
+ * instead of a no-op "active-workflow" skip. See
+ * lib/sandbox/migration.ts (performSandboxMigration).
+ */
+export function isSandboxMigrationDue(
+  sandboxState: SandboxState | null | undefined,
+): boolean {
+  const expiresAtMs = getSandboxExpiresAtMs(sandboxState);
+  if (expiresAtMs === undefined) {
+    return false;
+  }
+  return Date.now() >= expiresAtMs - SANDBOX_MIGRATION_LEAD_MS;
 }
 
 export function getSandboxExpiresAtDate(
@@ -133,7 +152,12 @@ function getExpiryDueAtMs(source: LifecycleTimingSource): number | null {
   if (!source.sandboxExpiresAt) {
     return null;
   }
-  return source.sandboxExpiresAt.getTime() - SANDBOX_EXPIRES_BUFFER_MS;
+  // Uses the migration lead time (minutes), not the 10s
+  // SANDBOX_EXPIRES_BUFFER_MS used elsewhere to mean "basically already
+  // expired" -- this value only controls when the lifecycle workflow
+  // wakes up to *evaluate*, and it needs enough runway before the hard
+  // cap to actually pack+restore a migration if a stream is active.
+  return source.sandboxExpiresAt.getTime() - SANDBOX_MIGRATION_LEAD_MS;
 }
 
 export function getLifecycleDueAtMs(source: LifecycleTimingSource): number {
@@ -197,6 +221,15 @@ export async function evaluateSandboxLifecycle(
   }
 
   if (await hasActiveStreamForSession(sessionId)) {
+    // Normally we just skip and wait for the stream to finish before
+    // considering hibernation. But if we're also close to the sandbox's
+    // hard session-duration cap, skipping guarantees Vercel hard-kills
+    // the sandbox mid-task -- signal the workflow to migrate instead of
+    // hibernating (migration itself lives in lib/sandbox/migration.ts,
+    // called from the workflow file, to avoid a circular import here).
+    if (isSandboxMigrationDue(sandboxState)) {
+      return { action: "migration-needed" };
+    }
     return { action: "skipped", reason: "active-workflow" };
   }
 

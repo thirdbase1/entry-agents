@@ -5,7 +5,6 @@ import {
   type Sandbox,
   type SandboxState,
   type Source,
-  type VercelState,
 } from "@open-agents/sandbox";
 import {
   getSessionById,
@@ -39,6 +38,8 @@ import {
   getResumableSandboxName,
   getSessionSandboxName,
   isSandboxActive,
+  isSandboxState,
+  type VercelSandboxState,
 } from "@/lib/sandbox/utils";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
 import { eq } from "drizzle-orm";
@@ -66,18 +67,7 @@ export class SessionArchivedDuringProvisioningError extends Error {
   }
 }
 
-type VercelSandboxState = { type: "vercel" } & VercelState;
-
-function isSandboxState(value: unknown): value is VercelSandboxState {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === "vercel"
-  );
-}
-
-async function getUserById(userId: string): Promise<UserRecord | null> {
+export async function getUserById(userId: string): Promise<UserRecord | null> {
   const [user] = await db
     .select({
       id: users.id,

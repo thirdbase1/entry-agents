@@ -68,11 +68,7 @@ async function packGitWorkspace(
     "base64",
   );
 
-  const diffResult = await sandbox.exec(
-    "git diff HEAD",
-    cwd,
-    PACK_TIMEOUT_MS,
-  );
+  const diffResult = await sandbox.exec("git diff HEAD", cwd, PACK_TIMEOUT_MS);
   const diffText = diffResult.stdout;
 
   const untrackedList = await sandbox.exec(
@@ -101,9 +97,7 @@ async function packPlainWorkspace(
   sandbox: Sandbox,
 ): Promise<WorkspacePayload & { kind: "plain" }> {
   const cwd = sandbox.workingDirectory;
-  const excludeArgs = PLAIN_TAR_EXCLUDES.map((p) => `--exclude=${p}`).join(
-    " ",
-  );
+  const excludeArgs = PLAIN_TAR_EXCLUDES.map((p) => `--exclude=${p}`).join(" ");
   const tarResult = await sandbox.exec(
     `tar ${excludeArgs} -czf ${FULL_TAR_PATH} .`,
     cwd,

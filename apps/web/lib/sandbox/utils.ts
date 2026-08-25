@@ -1,5 +1,24 @@
-import type { SandboxState } from "@open-agents/sandbox";
+import type { SandboxState, VercelState } from "@open-agents/sandbox";
 import { SANDBOX_EXPIRES_BUFFER_MS } from "./config";
+
+export type VercelSandboxState = { type: "vercel" } & VercelState;
+
+/**
+ * Lives here (rather than in provisioning.ts, where it originated) so
+ * both provisioning.ts and migration.ts can import it without creating
+ * an import cycle -- provisioning.ts -> lifecycle-kick.ts ->
+ * sandbox-lifecycle.ts -> migration.ts already forms a cycle back to
+ * provisioning.ts, so migration.ts can never import from provisioning.ts.
+ * This module has no upward dependencies, so it's a safe shared home.
+ */
+export function isSandboxState(value: unknown): value is VercelSandboxState {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "vercel"
+  );
+}
 
 function hasNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;

@@ -11,7 +11,11 @@ import {
 import { defaultModelLabel } from "./default-model";
 
 import type { SkillMetadata } from "./skills/types";
-import type { GithubToolContext, VercelToolContext } from "./types";
+import type {
+  GithubToolContext,
+  SandboxLifecycleHooksContext,
+  VercelToolContext,
+} from "./types";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
@@ -71,6 +75,11 @@ const callOptionsSchema = z.object({
   // in any host that doesn't wire up Vercel (e.g. tests) -- the
   // vercel_cli tool degrades to a clear error in that case.
   vercel: z.custom<VercelToolContext>().optional(),
+  // Injected by apps/web so the bash tool's sandbox connection can
+  // persist/clear the durable active-command record used by the
+  // sandbox-migration safety net. Undefined in any host that doesn't
+  // wire it up (e.g. tests) -- getSandbox() just skips passing hooks.
+  sandboxLifecycleHooks: z.custom<SandboxLifecycleHooksContext>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -191,6 +200,7 @@ export const openAgent = new ToolLoopAgent({
         permissionMode: options.permissionMode ?? "ask",
         github: options.github,
         vercel: options.vercel,
+        sandboxLifecycleHooks: options.sandboxLifecycleHooks,
       },
     };
   },

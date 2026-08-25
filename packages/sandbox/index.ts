@@ -1,5 +1,6 @@
 // interface
 export type {
+  ActiveCommandInfo,
   ExecResult,
   Sandbox,
   SandboxHook,
@@ -8,6 +9,15 @@ export type {
   SandboxType,
   SnapshotResult,
 } from "./interface.ts";
+
+// migration (moving a session's workspace to a fresh sandbox ahead of
+// its hard session-duration cap -- see lib/sandbox/migration.ts in
+// apps/web)
+export {
+  packWorkspacePayload,
+  restoreWorkspacePayload,
+  type WorkspacePayload,
+} from "./migrate.ts";
 
 // shared types
 export type { Source, FileEntry, SandboxStatus } from "./types.ts";

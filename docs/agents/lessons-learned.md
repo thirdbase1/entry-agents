@@ -1089,3 +1089,69 @@ Still needed before this is live (do NOT consider it shipped):
    instead of a silent multi-second gap during migration.
 
 Open follow-up, pick this up as its own dedicated pass.
+
+## 2026-08-25: 40-min session-migration safety net -- wired up and shipped
+
+Follow-up to the punch list above. Items 1-4 are now done; full picture:
+
+1. DB: `sessions.activeSandboxCommand` (jsonb) column added
+   (migration `0049_add_sandbox_migration_state.sql`), plus `"migrating"`
+   added to the `lifecycleState` text-enum (no DB migration needed for
+   that part -- it's a TS-level `text({enum})` constraint, not a real
+   Postgres enum/CHECK).
+2. `apps/web/lib/sandbox/migration.ts`: `performSandboxMigration(sessionId)`
+   -- connects to the existing sandbox, force-kills any in-flight command
+   (best-effort, via the new `activeSandboxCommand` record),
+   `packWorkspacePayload()`s it, creates a genuinely new sandbox
+   (`skipGitWorkspaceBootstrap: true`, no source/sandboxName so it never
+   tries to resume the old one), `restoreWorkspacePayload()`s into it,
+   stops the old sandbox (best-effort), and atomically swaps
+   `session.sandboxState` + bumps `lifecycleVersion`.
+3. Wake timing: `getExpiryDueAtMs()` in `lifecycle.ts` now subtracts
+   `SANDBOX_MIGRATION_LEAD_MS` (5 min) instead of the old 10s
+   `SANDBOX_EXPIRES_BUFFER_MS` -- that 10s constant is kept as-is for its
+   original job elsewhere (utils.ts / status route: "is this sandbox
+   already basically dead"), it's just not used for lifecycle-workflow
+   wake-scheduling anymore. Without this, the workflow would only ever
+   notice it's close to hard expiry 10 seconds out -- nowhere near enough
+   runway to pack+restore a workspace.
+4. `evaluateSandboxLifecycle()`'s active-stream branch now returns a new
+   `"migration-needed"` action (instead of always skipping) when
+   `isSandboxMigrationDue()` is true. The workflow file
+   (`sandbox-lifecycle.ts`) handles that action by calling
+   `performSandboxMigration` from its own step, then loops back --
+   deliberately NOT calling it from inside `lifecycle.ts` itself, since
+   `migration.ts` -> `provisioning.ts` -> `lifecycle-kick.ts` ->
+   `sandbox-lifecycle.ts` already cycles back to `migration.ts`, so
+   `lifecycle.ts` can never import `migration.ts` directly without an
+   import cycle. (Also had to move `isSandboxState`/`VercelSandboxState`
+   out of `provisioning.ts` into the dependency-free `utils.ts` for the
+   same reason -- `migration.ts` needed it but couldn't import from
+   `provisioning.ts`.)
+5. `packages/agent/tools/bash.ts`: after `sandbox.exec()` returns
+   `killedExternally: true`, retries the exact same command once,
+   transparently, against a freshly-reconnected sandbox. The tricky part:
+   the sandbox already sitting in `experimental_context` is a
+   point-in-time snapshot from the start of the turn, so just calling
+   `getSandbox()` again would reconnect to the same (now-stopped) old
+   sandbox. Added `sandboxLifecycleHooks.refreshSandboxState()` (re-fetches
+   `session.sandboxState` fresh from the DB) and a new
+   `reconnectSandboxAfterMigration()` helper in `tools/utils.ts` that uses
+   it, so the retry actually lands on the new sandbox.
+
+Still open (not done, don't assume otherwise):
+- No UI status indicator yet for "environment refreshing" during a
+  migration -- currently just a silent multi-second gap on whatever tool
+  call happens to get killed and retried.
+- Detached background processes (e.g. a dev server started via
+  `execDetached`) are NOT restarted after a migration -- they're just
+  gone. Only the foreground `bash` tool call gets the retry treatment.
+  Would need to track detached commands the same way and re-issue them
+  against the new sandbox after restore.
+- Migration failures retry every `SANDBOX_LIFECYCLE_MIN_SLEEP_MS` tick
+  with no backoff -- fine for transient errors, could spin uselessly on
+  a persistent one (e.g. bad credentials) until the old sandbox
+  hard-expires anyway and the whole thing becomes moot.
+- Not yet tested against a real large-history repo -- `git bundle
+  --all` captures full history with no size cap; could be slow/large
+  for a big monorepo session.

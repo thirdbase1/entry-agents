@@ -7,7 +7,7 @@ const COOLDOWN_SECONDS = 15 * 60;
 const REDIS_KEY_LAST_SENT = "telegram:model-alerts:last-sent";
 const REDIS_KEY_ACTIVE = "telegram:model-alerts:active";
 
-async function sendTelegramMessage(text: string): Promise<boolean> {
+export async function sendTelegramMessage(text: string): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
   if (!token || !chatId) {

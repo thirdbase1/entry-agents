@@ -16,6 +16,8 @@ const redisState: {
   ttl: 60_000,
 };
 
+const telegramState: { sentMessages: string[] } = { sentMessages: [] };
+
 function createMockPipeline() {
   const pipeline = {
     incr: mock((_key: string) => pipeline),
@@ -43,6 +45,13 @@ mock.module("ioredis", () => ({
   default: MockRedis,
 }));
 
+mock.module("./telegram-alerts", () => ({
+  sendTelegramMessage: mock(async (text: string) => {
+    telegramState.sentMessages.push(text);
+    return true;
+  }),
+}));
+
 const originalRedisUrl = process.env.REDIS_URL;
 const originalKvUrl = process.env.KV_URL;
 const originalNodeEnv = process.env.NODE_ENV;
@@ -57,6 +66,7 @@ async function loadRateLimitModule() {
 
 beforeEach(() => {
   redisInstances.length = 0;
+  telegramState.sentMessages.length = 0;
   redisState.execResults = [
     [null, 1],
     [null, 1],
@@ -105,7 +115,7 @@ describe("checkRateLimit", () => {
     expect(response).toBeNull();
   });
 
-  test("fails closed in production when Redis is not configured", async () => {
+  test("fails open (with a Telegram alert) in production when Redis is not configured", async () => {
     delete process.env.REDIS_URL;
     delete process.env.KV_URL;
     process.env[nodeEnvKey] = "production";
@@ -117,8 +127,11 @@ describe("checkRateLimit", () => {
       windowMs: 60_000,
     });
 
-    expect(response?.status).toBe(503);
-    expect(response?.headers.get("Retry-After")).toBe("30");
+    expect(response).toBeNull();
+    expect(telegramState.sentMessages).toHaveLength(1);
+    expect(telegramState.sentMessages[0]).toContain(
+      "Entry rate limiter degraded",
+    );
   });
 
   test("allows Redis commands to queue during initial connection", async () => {
@@ -138,7 +151,7 @@ describe("checkRateLimit", () => {
     expect(redisInstances[0]?.options.enableOfflineQueue).toBeUndefined();
   });
 
-  test("fails closed when the Redis expiry command fails", async () => {
+  test("fails open when the Redis expiry command fails", async () => {
     const originalConsoleError = console.error;
     console.error = mock(() => undefined) as unknown as typeof console.error;
     try {
@@ -156,9 +169,9 @@ describe("checkRateLimit", () => {
         windowMs: 60_000,
       });
 
-      expect(response?.status).toBe(503);
-      expect(response?.headers.get("Retry-After")).toBe("30");
+      expect(response).toBeNull();
       expect(redisInstances[0]?.disconnect).toHaveBeenCalledTimes(1);
+      expect(telegramState.sentMessages).toHaveLength(1);
     } finally {
       console.error = originalConsoleError;
     }
@@ -184,7 +197,7 @@ describe("checkRateLimit", () => {
     expect(response?.headers.get("Retry-After")).toBe("13");
   });
 
-  test("fails closed when the Redis check times out", async () => {
+  test("fails open when the Redis check times out", async () => {
     const originalConsoleError = console.error;
     console.error = mock(() => undefined) as unknown as typeof console.error;
     try {
@@ -200,9 +213,74 @@ describe("checkRateLimit", () => {
         windowMs: 60_000,
       });
 
-      expect(response?.status).toBe(503);
-      expect(response?.headers.get("Retry-After")).toBe("30");
+      expect(response).toBeNull();
       expect(redisInstances[0]?.disconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("circuit breaker skips a fresh Redis attempt right after a failure", async () => {
+    const originalConsoleError = console.error;
+    console.error = mock(() => undefined) as unknown as typeof console.error;
+    try {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      process.env[nodeEnvKey] = "production";
+      redisState.execResults = [
+        [null, 1],
+        [new Error("ERR syntax error"), null],
+      ];
+      const { checkRateLimit } = await loadRateLimitModule();
+
+      const first = await checkRateLimit({
+        key: `test:${crypto.randomUUID()}`,
+        limit: 2,
+        windowMs: 60_000,
+      });
+      expect(first).toBeNull();
+      expect(redisInstances).toHaveLength(1);
+
+      const second = await checkRateLimit({
+        key: `test:${crypto.randomUUID()}`,
+        limit: 2,
+        windowMs: 60_000,
+      });
+
+      // Second call should fail open immediately without constructing a
+      // fresh Redis client (the circuit breaker should short-circuit it).
+      expect(second).toBeNull();
+      expect(redisInstances).toHaveLength(1);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("only sends one Telegram alert while the circuit stays open", async () => {
+    const originalConsoleError = console.error;
+    console.error = mock(() => undefined) as unknown as typeof console.error;
+    try {
+      delete process.env.REDIS_URL;
+      delete process.env.KV_URL;
+      process.env[nodeEnvKey] = "production";
+      const { checkRateLimit } = await loadRateLimitModule();
+
+      await checkRateLimit({
+        key: `test:${crypto.randomUUID()}`,
+        limit: 2,
+        windowMs: 60_000,
+      });
+      await checkRateLimit({
+        key: `test:${crypto.randomUUID()}`,
+        limit: 2,
+        windowMs: 60_000,
+      });
+      await checkRateLimit({
+        key: `test:${crypto.randomUUID()}`,
+        limit: 2,
+        windowMs: 60_000,
+      });
+
+      expect(telegramState.sentMessages).toHaveLength(1);
     } finally {
       console.error = originalConsoleError;
     }

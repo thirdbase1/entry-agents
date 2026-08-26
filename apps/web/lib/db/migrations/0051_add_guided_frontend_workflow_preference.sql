@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "guided_frontend_workflow_enabled" boolean DEFAULT false NOT NULL;

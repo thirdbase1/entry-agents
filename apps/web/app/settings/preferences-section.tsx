@@ -316,6 +316,22 @@ function usePreferencesSectionState() {
     }
   };
 
+  const handleGuidedFrontendWorkflowEnabledChange = async (
+    enabled: boolean,
+  ) => {
+    setIsSaving(true);
+    try {
+      await updatePreferences({ guidedFrontendWorkflowEnabled: enabled });
+    } catch (error) {
+      console.error(
+        "Failed to update guided frontend workflow preference:",
+        error,
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handlePermissionModeChange = async (mode: PermissionMode) => {
     setIsSaving(true);
     try {
@@ -514,6 +530,7 @@ function usePreferencesSectionState() {
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
+    handleGuidedFrontendWorkflowEnabledChange,
     handlePermissionModeChange,
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
@@ -551,6 +568,7 @@ export function PreferencesSection() {
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
+    handleGuidedFrontendWorkflowEnabledChange,
     handlePermissionModeChange,
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
@@ -660,6 +678,27 @@ export function PreferencesSection() {
                 checked={preferences?.autoCreatePr ?? false}
                 onCheckedChange={handleAutoCreatePrChange}
                 disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="guided-frontend-workflow">
+                  Guided frontend workflow
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  For frontend requests: agree a design.md first, build one
+                  section at a time with a browser audit + fix loop, then run a
+                  states checklist (loading/empty/error/mobile/a11y/etc). Uses
+                  more turns than a plain build. You can also trigger it for a
+                  single message by asking for the &quot;guided frontend
+                  workflow&quot; even when this is off.
+                </p>
+              </div>
+              <Switch
+                id="guided-frontend-workflow"
+                checked={preferences?.guidedFrontendWorkflowEnabled ?? false}
+                onCheckedChange={handleGuidedFrontendWorkflowEnabledChange}
+                disabled={isSaving}
               />
             </div>
             <div className="grid gap-2">

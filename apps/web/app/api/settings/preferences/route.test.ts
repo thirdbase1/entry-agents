@@ -17,6 +17,7 @@ const preferencesState = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  guidedFrontendWorkflowEnabled: false,
   globalSkillRefs: [] as Array<{ source: string; skillName: string }>,
   enabledModelIds: [] as string[],
 };
@@ -207,6 +208,35 @@ describe("/api/settings/preferences", () => {
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0]).toEqual({ publicUsageEnabled: true });
     expect(body.preferences.publicUsageEnabled).toBe(true);
+  });
+
+  test("PATCH rejects invalid guidedFrontendWorkflowEnabled values", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", { guidedFrontendWorkflowEnabled: "yes" }),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid guidedFrontendWorkflowEnabled value");
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  test("PATCH updates guidedFrontendWorkflowEnabled when boolean is provided", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", { guidedFrontendWorkflowEnabled: true }),
+    );
+    const body = (await response.json()) as {
+      preferences: typeof preferencesState;
+    };
+
+    expect(response.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toEqual({ guidedFrontendWorkflowEnabled: true });
+    expect(body.preferences.guidedFrontendWorkflowEnabled).toBe(true);
   });
 
   test("PATCH rejects invalid globalSkillRefs values", async () => {

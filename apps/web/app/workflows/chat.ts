@@ -101,6 +101,9 @@ type ChatModelRuntime = {
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
+  /** From user_preferences -- see hasGuidedFrontendWorkflowTrigger below
+   * for the other (per-turn, phrase-based) way this can turn on. */
+  guidedFrontendWorkflowEnabled: boolean;
   /** This turn's credit balance (cents) at the moment the turn started --
    * threaded into runAgentStep so it can decrement it in real time after
    * every model step and abort mid-turn on exhaustion. See the block
@@ -549,6 +552,8 @@ async function resolveChatModelRuntime(params: {
     autoCreatePrEnabled,
     startingBalanceCents,
     enforceCreditBlock: !isAdminUser,
+    guidedFrontendWorkflowEnabled:
+      preferences?.guidedFrontendWorkflowEnabled ?? false,
   };
 }
 
@@ -640,6 +645,24 @@ function extractPlainText(parts: WebAgentUIMessage["parts"]): string {
     .filter((part) => part.type === "text")
     .map((part) => ("text" in part ? part.text : ""))
     .join("");
+}
+
+// Lets a user opt into the guided frontend workflow (see
+// packages/agent/system-prompt.ts's GUIDED_FRONTEND_WORKFLOW_PROMPT) for
+// a single turn even when their preferences.guidedFrontendWorkflowEnabled
+// is off -- e.g. "use the guided frontend workflow to build a pricing
+// page". Deliberately just a plain substring check (case-insensitive),
+// same spirit as the existing "/<skill-name>" slash-command detection in
+// packages/agent/system-prompt.ts -- no NLU, no session-level state.
+const GUIDED_FRONTEND_WORKFLOW_TRIGGER_PHRASE = "guided frontend workflow";
+
+function hasGuidedFrontendWorkflowTrigger(
+  message: WebAgentUIMessage | undefined,
+): boolean {
+  if (!message || message.role !== "user") return false;
+  return extractPlainText(message.parts)
+    .toLowerCase()
+    .includes(GUIDED_FRONTEND_WORKFLOW_TRIGGER_PHRASE);
 }
 
 /**
@@ -1699,6 +1722,14 @@ export async function runAgentWorkflow(options: Options) {
     // The real closure is rebuilt inside runAgentStep, right before it's
     // needed, so it never has to cross a workflow-step serialization
     // boundary.
+    // Preference wins by default; an explicit trigger phrase in this
+    // turn's latest user message can only turn it ON, never off -- so a
+    // user with the preference disabled can still opt in per-turn, but
+    // there's no way to accidentally disable someone else's standing
+    // preference via message text.
+    const guidedFrontendWorkflow =
+      modelRuntime.guidedFrontendWorkflowEnabled ||
+      hasGuidedFrontendWorkflowTrigger(latestMessage);
     const agentOptions: WorkflowAgentOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
@@ -1709,6 +1740,7 @@ export async function runAgentWorkflow(options: Options) {
         environmentDetails: runtime.environmentDetails,
       },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
+      ...(guidedFrontendWorkflow ? { guidedFrontendWorkflow: true } : {}),
       github: {
         hasRepo,
         repoOwner: runtime.repoOwner,

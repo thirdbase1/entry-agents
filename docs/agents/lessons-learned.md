@@ -1298,3 +1298,69 @@ opened and closed once per chat step rather than pooled/reused across
 steps in the same turn (matches how nothing else in this file pools
 resources across steps either, but worth reconsidering if this turns
 out to add meaningful latency in practice).
+
+## 2026-08-26: guided frontend workflow -- implemented, spec from bb70a85
+
+Built the "guided frontend workflow" mode planned in
+`docs/plans/guided-frontend-workflow.md` (commit `bb70a85`, spec only at
+the time). Design.md-first, section-by-section builds with real browser
+audits, a states checklist pass, and an optional skill-save offer -- all
+4 phases as agent-facing directives, not new tooling (reuses
+`ask_user_question`, the `agent-browser` skill, project-local skill
+files, existing `globalSkillRefs`).
+
+- `packages/agent/system-prompt.ts`: `GUIDED_FRONTEND_WORKFLOW_PROMPT`
+  (the 4 phases verbatim from the spec) + `guidedFrontendWorkflow?:
+  boolean` on `BuildSystemPromptOptions`, appended last so it doesn't
+  get buried above project-specific/skills sections.
+- `packages/agent/open-agent.ts`: threaded `guidedFrontendWorkflow`
+  through `callOptionsSchema` / `OpenAgentCallOptions` / `prepareCall`
+  same shape as the existing `customInstructions` passthrough.
+- New `user_preferences.guided_frontend_workflow_enabled` column
+  (migration `0051`, default `false`) -- a standing per-user
+  preference, toggle added to `/settings` (`preferences-section.tsx`,
+  same Switch pattern as auto-commit/auto-PR). Verified with
+  `drizzle-kit check` that the migration matches `schema.ts` before
+  committing.
+- `apps/web/app/workflows/chat.ts`: the preference alone isn't the only
+  way in -- `hasGuidedFrontendWorkflowTrigger()` does a plain
+  case-insensitive substring check for "guided frontend workflow" in
+  the latest user message, so anyone can opt in for a single turn even
+  with the preference off. Combined as OR (`guidedFrontendWorkflowEnabled
+  || hasGuidedFrontendWorkflowTrigger(latestMessage)`) -- deliberately
+  one-directional: a trigger phrase can only turn it on for that turn,
+  never off, so there's no way to accidentally disable someone's
+  standing preference via message text.
+- Gotcha worth remembering: `resolveChatModelRuntime()` builds
+  `ChatModelRuntime` well before `agentOptions` gets assembled further
+  down in the same function -- had to actually add
+  `guidedFrontendWorkflowEnabled` as its own field on that return type
+  (not just read `preferences` inline at the usage site) since the raw
+  `preferences` row isn't otherwise threaded that far.
+- Second gotcha: `apps/web/app/settings/preferences-section.tsx` splits
+  state into a `usePreferencesSectionState()` hook and a separate
+  `PreferencesSection()` component that destructures *specific* fields
+  off `state` -- adding a new handler to the hook's `return` block
+  without also adding it to the component's destructure list compiles
+  fine in isolation but fails at the JSX call site with "cannot find
+  name," which only `tsc`/full typecheck (not the file-scoped lint fix)
+  caught. Check both spots for any future preference toggle.
+- Tests: 4 new in `packages/agent/system-prompt.test.ts` (section
+  presence with pref on/off/default, ordering after other prompt
+  sections), 2 new PATCH validation/update tests in
+  `preferences/route.test.ts` matching the existing `publicUsageEnabled`
+  pattern. Did not add coverage in `apps/web/app/workflows/chat.test.ts`
+  for `hasGuidedFrontendWorkflowTrigger` -- that file has the
+  pre-existing, already-documented sandbox-only `bun test` failure
+  ("Export named ... not found"), so relying on typecheck + code review
+  + real CI there per the existing standing note on that file.
+- Full `pnpm turbo typecheck` (all 5 packages) and targeted `bun test`
+  runs (58 in `packages/agent`, 46 more across the touched `apps/web`
+  files) both clean before commit.
+
+Not done / conscious scope cuts: no telemetry on how often the trigger
+phrase vs. the preference toggle is actually used; no per-project
+override (it's account-wide via `user_preferences`, same granularity as
+every other preference in that table); Phase 4's "publish to your own
+skills repo" mention is just a pointer to the existing `npx skills add`
+mechanism, nothing new was built for it.

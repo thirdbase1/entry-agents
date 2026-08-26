@@ -448,6 +448,17 @@ export const userPreferences = pgTable("user_preferences", {
   alertsEnabled: boolean("alerts_enabled").notNull().default(true),
   alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
   publicUsageEnabled: boolean("public_usage_enabled").notNull().default(false),
+  // Opt-in mode for `apps/web/app/workflows/chat.ts` / packages/agent's
+  // system-prompt.ts: when on, the agent follows the guided frontend
+  // workflow (design.md first, section-by-section build+audit via the
+  // agent-browser skill, then a systematic states checklist) instead of
+  // one-shotting frontend requests. Off by default -- it costs more
+  // turns than a plain build. Users can also trigger it for a single
+  // turn via an explicit phrase even when this is off; see
+  // GUIDED_FRONTEND_WORKFLOW_TRIGGER_PHRASE in chat.ts.
+  guidedFrontendWorkflowEnabled: boolean("guided_frontend_workflow_enabled")
+    .notNull()
+    .default(false),
   globalSkillRefs: jsonb("global_skill_refs")
     .$type<GlobalSkillRef[]>()
     .notNull()

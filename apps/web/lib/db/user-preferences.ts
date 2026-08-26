@@ -22,6 +22,7 @@ export interface UserPreferencesData {
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
+  guidedFrontendWorkflowEnabled: boolean;
   globalSkillRefs: GlobalSkillRef[];
   enabledModelIds: string[];
 }
@@ -37,6 +38,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  guidedFrontendWorkflowEnabled: false,
   globalSkillRefs: [],
   enabledModelIds: [],
 };
@@ -90,6 +92,7 @@ export function toUserPreferencesData(
     | "alertsEnabled"
     | "alertSoundEnabled"
     | "publicUsageEnabled"
+    | "guidedFrontendWorkflowEnabled"
     | "globalSkillRefs"
     | "enabledModelIds"
   >,
@@ -108,6 +111,9 @@ export function toUserPreferencesData(
       row?.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
     publicUsageEnabled:
       row?.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+    guidedFrontendWorkflowEnabled:
+      row?.guidedFrontendWorkflowEnabled ??
+      DEFAULT_PREFERENCES.guidedFrontendWorkflowEnabled,
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
   };
@@ -178,6 +184,9 @@ export async function updateUserPreferences(
         updates.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
       publicUsageEnabled:
         updates.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+      guidedFrontendWorkflowEnabled:
+        updates.guidedFrontendWorkflowEnabled ??
+        DEFAULT_PREFERENCES.guidedFrontendWorkflowEnabled,
       globalSkillRefs:
         updates.globalSkillRefs ?? DEFAULT_PREFERENCES.globalSkillRefs,
       enabledModelIds:

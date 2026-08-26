@@ -18,6 +18,7 @@ export interface UserPreferences {
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
+  guidedFrontendWorkflowEnabled: boolean;
   globalSkillRefs: GlobalSkillRef[];
   enabledModelIds: string[];
 }

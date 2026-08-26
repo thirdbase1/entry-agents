@@ -22,6 +22,7 @@ interface UpdatePreferencesRequest {
   alertsEnabled?: boolean;
   alertSoundEnabled?: boolean;
   publicUsageEnabled?: boolean;
+  guidedFrontendWorkflowEnabled?: boolean;
   globalSkillRefs?: GlobalSkillRef[];
   enabledModelIds?: string[];
 }
@@ -178,6 +179,19 @@ export async function PATCH(req: Request) {
   }
   if (body.publicUsageEnabled !== undefined) {
     updates.publicUsageEnabled = body.publicUsageEnabled;
+  }
+
+  if (
+    body.guidedFrontendWorkflowEnabled !== undefined &&
+    typeof body.guidedFrontendWorkflowEnabled !== "boolean"
+  ) {
+    return Response.json(
+      { error: "Invalid guidedFrontendWorkflowEnabled value" },
+      { status: 400 },
+    );
+  }
+  if (body.guidedFrontendWorkflowEnabled !== undefined) {
+    updates.guidedFrontendWorkflowEnabled = body.guidedFrontendWorkflowEnabled;
   }
 
   if (body.globalSkillRefs !== undefined) {

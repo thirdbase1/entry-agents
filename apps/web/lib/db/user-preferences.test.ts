@@ -21,6 +21,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      guidedFrontendWorkflowEnabled: false,
       globalSkillRefs: [],
       enabledModelIds: [],
     });
@@ -40,6 +41,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      guidedFrontendWorkflowEnabled: false,
       globalSkillRefs: [],
       enabledModelIds: [],
     });
@@ -62,6 +64,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      guidedFrontendWorkflowEnabled: false,
       globalSkillRefs: [],
       enabledModelIds: [],
     });
@@ -84,6 +87,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      guidedFrontendWorkflowEnabled: false,
       globalSkillRefs: [
         { source: "vercel/ai", skillName: "bad name" },
       ] as never,
@@ -107,6 +111,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      guidedFrontendWorkflowEnabled: false,
       globalSkillRefs: [
         { source: "vercel/ai", skillName: "ai-sdk" },
         { source: "vercel/ai", skillName: "ai-sdk" },
@@ -133,6 +138,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: true,
+      guidedFrontendWorkflowEnabled: false,
       globalSkillRefs: [],
       enabledModelIds: [],
     });

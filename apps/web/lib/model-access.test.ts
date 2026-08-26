@@ -40,6 +40,7 @@ const basePreferences: UserPreferencesData = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  guidedFrontendWorkflowEnabled: false,
   globalSkillRefs: [],
   enabledModelIds: ["kimi-k3", "openai/gpt-5"],
 };

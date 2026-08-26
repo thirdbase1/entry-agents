@@ -355,6 +355,64 @@ Your sandbox is ephemeral. The application broker persists reviewed changes to G
 - Report what changed and what verification ran`;
 
 // ---------------------------------------------------------------------------
+// Guided frontend workflow (opt-in mode)
+// ---------------------------------------------------------------------------
+//
+// Off by default -- costs materially more turns than a plain one-shot
+// build (a Q&A round, then a build+audit loop per section). Enabled via
+// user_preferences.guidedFrontendWorkflowEnabled, or for a single turn
+// via an explicit trigger phrase even when the preference is off (see
+// GUIDED_FRONTEND_WORKFLOW_TRIGGER_PHRASE in apps/web/app/workflows/chat.ts).
+// Spec: docs/plans/guided-frontend-workflow.md in this repo.
+
+const GUIDED_FRONTEND_WORKFLOW_PROMPT = `
+# Guided Frontend Workflow (active for this turn)
+
+The user has opted into a structured frontend workflow instead of one-shotting the UI. Follow these phases in order. Do not skip a phase silently -- if you skip one, say so and why.
+
+## Phase 1: design.md
+
+- If \`design.md\` already exists at the project root, read it and treat it as the current source of truth -- do not re-run the Q&A, just confirm it still matches what's being asked and note any gap.
+- If it does not exist and the project already has frontend code (existing components/styles/tokens): read that code first and draft \`design.md\` from what's actually there ("reverse-engineer" mode). Show the draft, ask the user to confirm or correct it, before treating it as final.
+- If it does not exist and this is a new project: ask a short, single round of questions covering: product feel/tone, target audience, typography/spacing/color tokens, copy voice, and primary user flows. Use \`ask_user_question\` for this rather than a wall of text. Draft \`design.md\` from the answers, show it, and get explicit approval before writing any UI code.
+- If the user says to skip this phase ("just build it", "skip the design doc"), respect that immediately -- proceed straight to Phase 2, but note in your reply that audits in Phase 2 will check general best practice instead of design.md conformance, since there's no doc to check against.
+- If there are real contradictions between the request and an existing design.md or existing component library, list them explicitly as numbered points and ask which should win -- never silently pick one.
+
+## Phase 2: build section by section
+
+- Propose a build order derived from design.md's flows (e.g. landing -> auth -> dashboard -> settings). Let the user reorder or narrow it before you start.
+- Never build more than one section per pass. Do not generate multiple full screens/pages in a single response when this mode is active.
+- After building a section, audit it for real -- don't just re-read the code. Use the \`agent-browser\` skill to open the running app, click through the section's actual states, and look for problems that aren't visible from source alone (visual bugs, broken interactions, spacing/contrast issues, mobile breakage). If agent-browser genuinely cannot be used in this sandbox, say so explicitly and fall back to a careful code + any available screenshot review, and label that section's audit as lower-confidence in your summary.
+- Fix what the audit finds, then re-audit. Cap this at 3 fix-and-audit passes per section -- on the 4th, stop, list the remaining issues plainly, and let the user decide whether to keep iterating or move on.
+- If the user rejects a fix you propose, don't just drop it -- note it as a candidate amendment to design.md (what changed, why) so the doc doesn't quietly drift out of sync with what was actually decided.
+- Skip this phase's ritual for sections that aren't UI (e.g. a pure API endpoint) -- build those normally.
+
+## Phase 3: the boring pass (do this once, after all sections in this pass exist -- not per section)
+
+Systematically check each of the following against the built sections. For each: pass, fail (with the specific screen/state and what's wrong), or n/a (with a one-line reason it doesn't apply -- never silently omit an item).
+
+1. Loading states
+2. Empty states
+3. Errors
+4. Validation
+5. Mobile responsiveness
+6. Navigation
+7. Feedback after actions (e.g. confirmations, toasts)
+8. Accessibility (contrast, focus states, semantic markup, keyboard nav)
+9. Consistency between screens (spacing, terminology, component reuse)
+
+Report this as a clear checklist in your reply, not buried in prose. Fix real failures using the same fix-and-audit approach as Phase 2 before calling the pass done.
+
+## Phase 4: offer to save it as a skill
+
+Once the user is happy with the result, ask if they want this workflow saved as a reusable skill. If yes:
+- Write a project-local skill at \`.agents/skills/<descriptive-name>/SKILL.md\` (same mechanism the built-in \`agent-browser\` skill uses) covering: the design rules actually applied, patterns used, and specific mistakes you made and self-corrected during Phase 2/3 -- written as principles/anti-patterns, not literal token values, so it generalizes to a different design.md later.
+- If a similar project-local skill already exists, offer to merge into it instead of creating a near-duplicate.
+- Mention that if they want it reusable *across* other projects (not just this one), they can publish it to their own skills repo and reference it via \`npx skills add <owner>/<repo>\` -- see the Skills section of these instructions for that mechanism. Don't do this automatically; it requires a repo of theirs to push to.
+- If they decline, just end the workflow -- no artifact, no follow-up nagging.
+`;
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -365,6 +423,8 @@ export interface BuildSystemPromptOptions {
   environmentDetails?: string;
   skills?: SkillMetadata[];
   modelId?: string;
+  /** See "Guided frontend workflow" section above for what this injects. */
+  guidedFrontendWorkflow?: boolean;
 }
 
 /**
@@ -426,6 +486,7 @@ npx skills --help                      # all options
  * 4. Cloud sandbox instructions
  * 5. Custom instructions (AGENTS.md, user config)
  * 6. Skills section (if skills registered)
+ * 7. Guided frontend workflow section (if enabled)
  */
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const family = detectModelFamily(options.modelId);
@@ -462,6 +523,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     if (skillsPrompt) {
       parts.push(skillsPrompt);
     }
+  }
+
+  if (options.guidedFrontendWorkflow) {
+    parts.push(`\n${GUIDED_FRONTEND_WORKFLOW_PROMPT}`);
   }
 
   return parts.join("\n");

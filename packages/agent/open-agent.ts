@@ -88,6 +88,11 @@ const callOptionsSchema = z.object({
   // about *where* extra tools come from; it only knows how to merge
   // an already-built ToolSet in.
   extraTools: z.custom<ToolSet>().optional(),
+  // Opt-in mode (user_preferences.guidedFrontendWorkflowEnabled, or a
+  // single-turn trigger phrase -- see apps/web/app/workflows/chat.ts)
+  // that injects the Guided Frontend Workflow section into the system
+  // prompt. See system-prompt.ts's GUIDED_FRONTEND_WORKFLOW_PROMPT.
+  guidedFrontendWorkflow: z.boolean().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -187,6 +192,7 @@ export const openAgent = new ToolLoopAgent({
       environmentDetails: sandbox.environmentDetails,
       skills,
       modelId: mainSelection.id,
+      guidedFrontendWorkflow: options.guidedFrontendWorkflow,
     });
 
     return {
@@ -195,7 +201,7 @@ export const openAgent = new ToolLoopAgent({
       tools: addCacheControl({
         tools: options.extraTools
           ? { ...(settings.tools ?? tools), ...options.extraTools }
-          : settings.tools ?? tools,
+          : (settings.tools ?? tools),
         model: callModel,
       }),
       instructions: addCacheControl({

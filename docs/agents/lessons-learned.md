@@ -1498,3 +1498,29 @@ env var on the `entry-agents` project before this actually turns on
 for any user (unset today, so `getComposioMcpServerConfig` currently
 no-ops for everyone in prod) -- owner needs to create a Composio
 project and provide the `ak_...` key.
+
+## 2026-08-26 (later same day): COMPOSIO_API_KEY set + turbo.json env allowlist gap
+
+Owner provided a real `COMPOSIO_API_KEY` (`ak_...`) and it was set on
+the `entry-agents` Vercel project (production/preview/development).
+A plain redeploy of the already-built commit wasn't enough to pick it
+up (the deploy-skill's webhook-poll path just found the prior READY
+deployment for the same SHA, since nothing new had been pushed) --
+had to force a fresh build via `vercel deploy --prod` directly.
+
+That fresh build then surfaced a real gap: `turbo.json`'s `build`
+task declares an explicit `env` allowlist (Turborepo strict env mode)
+listing every secret the build/runtime is allowed to see --
+`COMPOSIO_API_KEY` wasn't in it, so despite being set correctly on
+Vercel it would have been invisible to `process.env` at runtime.
+Fixed by adding it to the list (alongside `REDIS_URL`,
+`TELEGRAM_BOT_TOKEN`, etc. which already follow this pattern).
+
+Lesson: setting a new secret on the Vercel project is necessary but
+not sufficient in this repo -- always also check `turbo.json`'s
+`tasks.build.env` allowlist and add the new var there, or it silently
+never reaches `process.env` no matter how the Vercel env var itself is
+configured. `vercel deploy` prints a `WARNING finished with warnings`
++ "these variables WILL NOT be available to your application" line
+when this happens -- don't skip past that as just noise (see the
+"never ignore warnings" standing rule).

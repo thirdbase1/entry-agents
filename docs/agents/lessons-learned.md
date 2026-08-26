@@ -1449,3 +1449,52 @@ function timeout -- otherwise a hanging (not just erroring) dependency
 turns a monitoring endpoint into a guaranteed 504/300s liability. Audit
 any other `api/public/*-status` routes added in the future against this
 before shipping.
+
+## 2026-08-26: Wired Composio in as a built-in MCP server
+
+Composio (https://composio.dev) is now wired into the chat request
+path in `apps/web/app/workflows/chat.ts` as one more MCP server,
+merged into the exact same generic connect/merge primitive the
+self-serve "paste any MCP server URL" feature already used
+(`createMcpToolSet` in `packages/agent/tools/mcp.ts`) -- this resolves
+the "not wired in yet" fork noted in that file's own module comment
+and the 2026-08-25 MCP entry above.
+
+- New `apps/web/lib/mcp/composio.ts`:
+  `getComposioMcpServerConfig(userId)` mints/resumes a Composio
+  *session* (their current name for what used to be called "Tool
+  Router"/hosted MCP) per user via `@composio/core`'s
+  `composio.create(userId, { mcp: true })` /
+  `composio.use(sessionId, { mcp: true })`, and returns
+  `session.mcp.{url,headers}` in the same `McpServerConfig` shape a
+  self-serve server uses. Never throws -- absent `COMPOSIO_API_KEY` or
+  any SDK failure (including a stale/unresumable stored session ID)
+  resolves to `null` and the turn continues without it.
+- New `composio_sessions` table (migration `0052`, one row per user)
+  persists the minted session ID so it's resumed across turns instead
+  of re-minted every message, per Composio's own guidance.
+- `"composio"` is now a reserved MCP server name (`lib/db/mcp-servers.ts`
+  `assertValidName`) so a self-serve server can't collide with the
+  built-in one in the merged/namespaced tool set.
+- SDK type gotcha worth remembering: `@composio/core`'s
+  `create()`/`use()` are *overloaded* -- passing the `{ mcp: true }`
+  literal is what selects the overload whose return type actually
+  surfaces `session.mcp` (the other overload's type omits it even
+  though the field exists at runtime either way). Don't hoist a
+  shared variable with a manually-written generic type argument for
+  this (tried `Session<any,any,any>` first, `any` gets flagged by
+  lint, and `unknown` fails a generic constraint on the provider type
+  param) -- easiest fix was a small helper function per branch and
+  letting TS infer the return type naturally from each call's own
+  overload resolution.
+- 16 tests added (`lib/mcp/composio.test.ts` mocks `@composio/core` +
+  the session-storage module the same way `packages/agent/tools/
+  mcp.test.ts` mocks `@ai-sdk/mcp`; `lib/db/mcp-servers.test.ts` covers
+  the new reserved-name rejection). Typecheck clean across all
+  packages, `ultracite check` clean.
+
+Open follow-up: `COMPOSIO_API_KEY` still needs to be set as a Vercel
+env var on the `entry-agents` project before this actually turns on
+for any user (unset today, so `getComposioMcpServerConfig` currently
+no-ops for everyone in prod) -- owner needs to create a Composio
+project and provide the `ak_...` key.

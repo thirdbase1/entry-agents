@@ -699,3 +699,23 @@ export const mcpServers = pgTable(
 
 export type McpServerRow = typeof mcpServers.$inferSelect;
 export type NewMcpServerRow = typeof mcpServers.$inferInsert;
+
+// Persists the Composio session ID we mint for each Entry user so the
+// chat request path resumes the same session across turns instead of
+// creating a fresh one on every message (Composio's own guidance --
+// see docs/agents/lessons-learned.md and .agents/skills/composio).
+// One row per user; not encrypted -- a session ID is only usable
+// together with our own COMPOSIO_API_KEY (never exposed to this
+// table or to the client), so it carries no standalone value if it
+// leaked, unlike the mcp_servers.encryptedHeaders column above.
+export const composioSessions = pgTable("composio_sessions", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  sessionId: text("session_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ComposioSessionRow = typeof composioSessions.$inferSelect;
+export type NewComposioSessionRow = typeof composioSessions.$inferInsert;

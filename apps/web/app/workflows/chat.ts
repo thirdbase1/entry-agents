@@ -2399,9 +2399,19 @@ const runAgentStep = async (
     try {
       const { getEnabledMcpServersForRequest } =
         await import("@/lib/db/mcp-servers");
+      const { getComposioMcpServerConfig } = await import("@/lib/mcp/composio");
       const enabledServers = await getEnabledMcpServersForRequest(userId);
-      if (enabledServers.length > 0) {
-        mcpToolSet = await createMcpToolSet(enabledServers);
+      // Composio (see lib/mcp/composio.ts) is a built-in MCP server,
+      // resolved the same way as a self-serve one and merged into the
+      // same combined server list -- createMcpToolSet() doesn't care
+      // which source a server config came from. Never throws: absent
+      // COMPOSIO_API_KEY or any SDK failure resolves to null.
+      const composioServer = await getComposioMcpServerConfig(userId);
+      const combinedServers = composioServer
+        ? [...enabledServers, composioServer]
+        : enabledServers;
+      if (combinedServers.length > 0) {
+        mcpToolSet = await createMcpToolSet(combinedServers);
         if (mcpToolSet.failures.length > 0) {
           console.warn(
             `[workflow] ${mcpToolSet.failures.length} MCP server(s) failed to connect for user ${userId}:`,

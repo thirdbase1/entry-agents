@@ -23,6 +23,12 @@ export interface McpServerSummary {
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
+// "composio" is reserved for the built-in Composio MCP integration
+// (see lib/mcp/composio.ts) -- a self-serve server sharing that exact
+// name would collide with it in the merged tool set's namespacing
+// (mcp__composio__<tool>) and in failure-result bookkeeping.
+const RESERVED_NAMES = new Set(["composio"]);
+
 export class InvalidMcpServerNameError extends Error {
   constructor(message: string) {
     super(message);
@@ -34,6 +40,11 @@ function assertValidName(name: string): void {
   if (!NAME_PATTERN.test(name)) {
     throw new InvalidMcpServerNameError(
       "Name must be 1-32 characters, lowercase letters/numbers/hyphens/underscores, starting with a letter or number",
+    );
+  }
+  if (RESERVED_NAMES.has(name)) {
+    throw new InvalidMcpServerNameError(
+      `"${name}" is a reserved name and can't be used for a custom MCP server`,
     );
   }
 }

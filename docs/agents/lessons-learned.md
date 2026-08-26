@@ -1364,3 +1364,52 @@ override (it's account-wide via `user_preferences`, same granularity as
 every other preference in that table); Phase 4's "publish to your own
 skills repo" mention is just a pointer to the existing `npx skills add`
 mechanism, nothing new was built for it.
+
+## 2026-08-26: Rate-limit Redis fail-open + recovery monitor
+
+Owner reported "Rate limit unavailable" when trying to create a new
+chat session. Root cause: the shared rate-limit Redis (Upstash) was
+genuinely down/erroring in production (confirmed live via a direct
+PING -- not a code bug on our side), and `checkRateLimit()`
+(`apps/web/lib/rate-limit.ts`) was fail-**closed** in production --
+returning a hard 503 on every rate-limited endpoint (session/chat/
+sandbox creation) whenever Redis was unavailable or a check threw.
+That turned a Redis-side degradation into a full outage for users.
+
+Fix (commit a543723, live):
+- Fail **open** instead of closed on Redis unavailable/error, matching
+  the existing fail-open pattern already used by `lib/skills-cache.ts`
+  for the same Redis instance.
+- Added a 15s in-memory circuit breaker so a sustained outage doesn't
+  retry (and pay the timeout) on every single request.
+- Added a deduped (15 min window) Telegram alert on the first failure
+  of an outage, via `lib/telegram-alerts.ts`, so we get notified
+  without being spammed per-request.
+- 8 new/updated tests in `rate-limit.test.ts`, typecheck + lint clean.
+
+Recovery monitoring (commit 57162fb + Superagent workflow, both live):
+- The in-app Telegram alert above covers "just went down" in real
+  time, but nothing told us when it came back -- fail-open silently
+  keeps working either way, so recovery was invisible.
+- Added `GET /api/public/redis-status` (mirrors the existing
+  `luna-status` pattern) -- public/unauthed, returns only
+  `{available, checkedAt}`, opens a short-lived dedicated Redis client
+  and issues a real PING per request. Intended for periodic polling
+  (every 15-30 min), not a tight loop.
+- Superagent side: `checkRedisStatus` backend function polls that
+  endpoint, tracks down/up state in a new `RedisMonitorState` entity
+  (single row, key `entry_redis`) to detect the down->up transition,
+  and a scheduled workflow "Entry Redis Recovery Monitor" (every 30
+  min, does NOT self-deactivate -- unlike the one-off Luna outage
+  monitor, Redis rate-limit/outages can recur) pings the owner on
+  WhatsApp only on that transition.
+- Verified live end-to-end immediately after shipping: Redis was
+  actually down at the time (`available: false` from the real PING),
+  and the state entity correctly recorded `isDown: true`.
+
+Gotcha for next time: Vercel Runtime Log retention on Hobby is ~1hr
+(already documented elsewhere in this file) and low-traffic
+projects may simply have no relevant log lines yet right after a
+fix ships -- don't assume "no error in the logs" means "not
+reproducing"; verify root cause directly against the dependency
+(here, a raw Redis PING) when logs are inconclusive.

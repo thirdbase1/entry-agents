@@ -13,6 +13,15 @@ import { NextResponse } from "next/server";
  * Does a real tiny completion call (max_tokens: 5) through the gateway
  * on every request, so keep polling interval sane (this is intended to
  * be hit every 15-30 min by one scheduled job, not on a tight loop).
+ *
+ * 2026-08-26: added an explicit request timeout. While Luna's upstream
+ * pool was down, the fetch call itself was HANGING (not just erroring),
+ * so this route ran until Vercel's hard 300s function timeout killed it
+ * with a 504 -- every single poll. An AbortController with a short
+ * (8s) budget now guarantees this always resolves fast, treating a
+ * timeout the same as "not available" (which is the correct signal
+ * anyway -- a real healthy model responds to a 5-token completion in
+ * well under a second).
  */
 export async function GET() {
   const baseURL = process.env.GATEWAY_BASE_URL;
@@ -23,6 +32,9 @@ export async function GET() {
       { status: 200 },
     );
   }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   try {
     const response = await fetch(
@@ -38,6 +50,7 @@ export async function GET() {
           max_tokens: 5,
           messages: [{ role: "user", content: "ok" }],
         }),
+        signal: controller.signal,
       },
     );
     return NextResponse.json({
@@ -49,5 +62,7 @@ export async function GET() {
       available: false,
       checkedAt: new Date().toISOString(),
     });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

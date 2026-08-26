@@ -1413,3 +1413,39 @@ projects may simply have no relevant log lines yet right after a
 fix ships -- don't assume "no error in the logs" means "not
 reproducing"; verify root cause directly against the dependency
 (here, a raw Redis PING) when logs are inconclusive.
+
+## 2026-08-26: Rotated the rate-limit Redis to a fresh Upstash instance + fixed luna-status hanging to a 504
+
+**Redis rotation:** The shared Upstash Redis backing `checkRateLimit()`
+was down again (the same instance behind the 2026-08-26 fail-open fix
+above). Rather than wait on the provider, provisioned a brand new,
+separate Upstash account/database (via browser automation, personal
+API key created just for this) and pointed the `REDIS_URL` env var on
+the `entry-agents` Vercel project at it (all three targets:
+production/preview/development), then triggered a redeploy so the new
+value took effect. Verified via `GET /api/public/redis-status` ->
+`{"available":true,...}` after the redeploy went READY. The Superagent
+"Entry Redis Recovery Monitor" workflow should pick up the down->up
+transition on its next poll and notify the owner.
+
+**luna-status hanging, not just erroring:** While pulling runtime logs
+to confirm the Redis fix, found `GET /api/public/luna-status` repeatedly
+hitting Vercel's hard 300s function timeout (`504`, "Vercel Runtime
+Timeout Error: Task timed out after 300 seconds") instead of returning
+`{available:false}` quickly. Root cause: unlike `redis-status` (which
+already races its PING against a 3s timeout), `luna-status`'s
+`fetch(...)` call to the gateway had no timeout/`AbortController` at
+all. While Luna's upstream pool is down, the request doesn't error
+fast -- it just hangs, so the function ran to the platform's max
+duration on every single poll. Fixed by adding an `AbortController`
+with an 8s budget (`signal: controller.signal`), treating an abort the
+same as any other failure (`available:false`) in the existing `catch`
+block. A healthy model would never approach 8s for a 5-token
+completion, so this can't produce a false negative on a real recovery.
+
+Lesson: any public health-check route that does a live upstream call
+must have its own request timeout independent of the platform's
+function timeout -- otherwise a hanging (not just erroring) dependency
+turns a monitoring endpoint into a guaranteed 504/300s liability. Audit
+any other `api/public/*-status` routes added in the future against this
+before shipping.

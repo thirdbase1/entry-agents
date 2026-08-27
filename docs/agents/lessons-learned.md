@@ -1555,3 +1555,109 @@ the latter expects `persistent: true`, stale since the 2026-08-25
 default flip to `false`). Confirmed failing identically on a clean
 `main` checkout before this change, so not a regression -- needs its
 own pass to update the stale assertions.
+
+## 2026-08-27: pentest findings sweep -- SSRF, secret leakage, auth fail-open, missing headers
+
+A focused security pass (external pentest-style review) found and
+fixed several real, independent issues, all deployed together in
+commit 9bea486:
+
+1. **Two admin debug routes leaking raw content, guarded by a
+   hardcoded secret instead of real auth**
+   (`apps/web/app/api/admin/temp-msg-check` and
+   `temp-reasoning-check`). Deleted outright -- they were
+   leftover debug scaffolding, not something worth hardening.
+
+2. **SSRF / DNS-rebinding on self-serve MCP server URLs.**
+   `resolveAndAssertPublic` only ran once, at save time
+   (`lib/db/mcp-servers.ts`) -- a URL that resolved publicly then could
+   resolve privately by the time a real chat turn connected to it,
+   with nothing re-checking. Fixed in `app/workflows/chat.ts`: every
+   enabled server's URL is re-validated with `resolveAndAssertPublic`
+   immediately before each turn's `createMcpToolSet()` call; any that
+   now fail are dropped (logged, not a hard turn failure) rather than
+   trusted.
+
+   While fixing this, also found `lib/mcp/url-safety.ts` carried its
+   *own* hand-rolled `isPrivateIpv4`/`isPrivateIpv6` that only
+   pattern-matched a few IPv6 prefixes (`::ffff:127.`, `::ffff:10.`,
+   `::ffff:169.254.`) -- missed `::ffff:192.168.x.x` and
+   `::ffff:172.16-31.x.x` entirely. Switched it to reuse the shared
+   `isPrivateHost` from `packages/agent/tools/fetch.ts` (same one
+   `web_fetch` uses) instead of maintaining two divergent
+   implementations.
+
+   **That in turn surfaced a real bug in the shared checker itself**:
+   `parseIpv6Address` only understood raw hex-group IPv6 notation
+   (`::ffff:c0a8:101`), never the standard RFC 4291 dotted-decimal
+   form for IPv4-mapped addresses (`::ffff:192.168.1.1`) -- which is
+   exactly the form `dns.lookup()` and `getent ahosts` actually return
+   in practice. Confirmed this is a non-issue for URL-*literal* input
+   (e.g. someone pasting `http://[::ffff:127.0.0.1]/mcp`) because
+   Node's own `URL` constructor normalizes that hostname to hex form
+   before `isPrivateHost` ever sees it -- but the DNS-*resolved*-address
+   path (both `resolveAndAssertPublic` after `dns.lookup()`, and
+   `web_fetch`'s own sandbox-side `getent ahosts` resolution) hands
+   `isPrivateHost` the raw resolver string directly, with no such
+   normalization. Fixed by adding `rewriteEmbeddedIpv4Tail()` to
+   `parseIpv6Address` in `packages/agent/tools/fetch.ts`, so this one
+   fix closes the gap for every consumer at once. Added regression
+   tests (`apps/web/lib/mcp/url-safety.test.ts`, mocking
+   `node:dns/promises`) that fail without the fix and pass with it.
+
+3. **Public share pages never redacted raw `bash` tool output at
+   all.** `read`/`write`/`edit` already had path-based `.env`
+   redaction and `task` output was recursively sanitized, but a shared
+   session's actual bash stdout/stderr (e.g. `env`, `cat .env`, a
+   printed API key from a failed request) went out completely
+   unfiltered. Added `redactSecretLookingText()` -- a line-level
+   pattern scan (vendor key prefixes, `KEY=value` env lines, PEM
+   headers, `Authorization: Bearer`) applied to both top-level
+   `tool-bash` parts and bash calls nested inside a sub-agent's `task`
+   final-message log. New dedicated test file
+   `redact-shared-env-content.test.ts`.
+
+   Gotcha hit while writing those patterns: two `\b` word-boundary
+   regex escapes got silently corrupted into literal backspace bytes
+   (`\x08`) somewhere in editing, which would have made both patterns
+   never match anything real. Caught by writing the regression test
+   first and watching it fail unexpectedly, not by the type checker
+   (a `RegExp` literal with a raw control character is still valid
+   TypeScript).
+
+4. **Both cron routes failed OPEN when `CRON_SECRET` was unset.**
+   `if (cronSecret) { ...check... }` meant no secret configured ==
+   auth check skipped entirely == real unauthenticated endpoint,
+   despite `run-benchmarks`'s own comment explicitly saying it must
+   never be public (spends real metered-API money per run). Fixed to
+   fail closed: missing secret now returns 500, never silently opens
+   the route.
+
+5. **No security response headers at all.** Confirmed via curl against
+   prod -- zero `X-Frame-Options`, `Content-Security-Policy`,
+   `X-Content-Type-Options`, `Referrer-Policy`, or `Permissions-Policy`.
+   Biggest concrete risk was clickjacking (the whole app, including
+   real credit-spending actions, could be iframed for UI-redress
+   against a logged-in user). Added the safe baseline set via
+   `next.config.ts`'s `headers()`. Deliberately did **not** add a
+   `script-src`/`style-src` CSP in this pass -- the app has an inline
+   theme-init `<script>` in `app/layout.tsx` plus Next's own inline
+   chunks, so a real script CSP needs a dedicated nonce/hash pass with
+   actual testing, not something to bolt on blind.
+
+6. **`billing/verify` leaked another user's payment status.** It
+   trusted whatever `reference` string the authenticated caller
+   passed with no check that it was *their* transaction -- anyone who
+   obtained someone else's Paystack reference (leaked callback URL,
+   shared support ticket, etc.) could probe whether that other
+   person's payment succeeded or failed. Crediting itself was never at
+   risk (`processChargeSuccess` only ever credits the `userId` from
+   Paystack's own verified transaction metadata, never the caller's
+   session), but the status disclosure was real. Fixed: now requires
+   `metadata.userId === session.user.id` before revealing anything
+   about the transaction, 403 otherwise.
+
+All six fixed in one pass, typecheck + `ultracite check` clean, real
+regression tests added for #2 (both the URL-safety layer and the root
+IPv6-parsing bug) and #3, verified live post-deploy (deleted routes
+404, headers present, cron routes 401 without a token).

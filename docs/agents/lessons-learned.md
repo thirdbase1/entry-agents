@@ -1524,3 +1524,34 @@ configured. `vercel deploy` prints a `WARNING finished with warnings`
 + "these variables WILL NOT be available to your application" line
 when this happens -- don't skip past that as just noise (see the
 "never ignore warnings" standing rule).
+
+## 2026-08-27: sandbox provisioning failures lose the real API error body
+
+Found while checking Vercel runtime logs: a real user session
+(sandboxProvisioningWorkflow) failed with only "Status code 400 is not
+ok" in both the logs and the session's persisted `lifecycleError` --
+no way to tell what was actually wrong with the request. Root cause:
+the 2026-08-24 fix that folds `.text`/`.json` into the @vercel/sandbox
+SDK's generic `APIError.message` (`toErrorMessage()` in
+packages/sandbox/vercel/connect.ts) was only ever wired into the
+402/quota detector functions in that same file -- the general
+provisioning failure path in
+apps/web/app/workflows/sandbox-provisioning.ts still used bare
+`error.message` when persisting `lifecycleError`, so any other status
+code (400, 500, etc.) still surfaced with zero diagnosable detail.
+
+Fixed: exported `toErrorMessage` from packages/sandbox's public index
+and used it in sandbox-provisioning.ts's catch block instead of
+`error.message`. Root cause of the specific 400 that triggered this is
+still unknown -- it happened before this fix shipped, so the log/DB
+only has the generic message. Watch `lifecycleError` on the next
+provisioning failure to actually see the body.
+
+Also noted, not fixed: `packages/sandbox/vercel/sandbox.test.ts` has 2
+pre-existing failing tests unrelated to this change (`VercelSandbox.exec
+> preserves stderr output from failed commands` and `VercelSandbox
+persistence > persists sandboxName in state for created sandboxes` --
+the latter expects `persistent: true`, stale since the 2026-08-25
+default flip to `false`). Confirmed failing identically on a clean
+`main` checkout before this change, so not a regression -- needs its
+own pass to update the stale assertions.

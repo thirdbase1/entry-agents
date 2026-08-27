@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@open-agents/sandbox";
 import { getWorkflowMetadata } from "workflow";
 import {
   claimSessionSandboxProvisioningRunId,
@@ -42,7 +43,15 @@ async function runProvisioning(sessionId: string, runId: string) {
       return { skipped: true, reason: "session-archived" };
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    // Use toErrorMessage() (not bare error.message) so the persisted
+    // lifecycleError carries the real API response body -- the
+    // @vercel/sandbox SDK's APIError keeps .message generic ("Status
+    // code 400 is not ok") and puts the actual cause on separate
+    // .text/.json properties. Found 2026-08-27 while debugging a real
+    // 400 that reached this catch with no diagnosable detail at all
+    // (same generic-message gap as the 2026-08-24 402/quota incident,
+    // just never patched for the general provisioning-failure path).
+    const message = toErrorMessage(error);
     await updateSession(sessionId, {
       lifecycleState: "failed",
       lifecycleError: message,

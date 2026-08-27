@@ -54,6 +54,7 @@ export {
 export {
   connectVercelSandbox,
   VercelSandbox,
+  toErrorMessage,
   type VercelSandboxConfig,
   type VercelSandboxConnectConfig,
   type VercelState,

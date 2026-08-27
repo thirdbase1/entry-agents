@@ -53,7 +53,7 @@ function getSandboxName(state: VercelState): string | undefined {
 // hard-failing every chat sandbox provision instead. Now folds in
 // `.text`/`.json` (duck-typed, not an SDK import) so detection sees the
 // real body content too.
-function toErrorMessage(error: unknown): string {
+export function toErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
     return String(error);
   }
@@ -164,7 +164,10 @@ async function createSandboxWithQuotaFallback(
   try {
     return await VercelSandbox.create(config);
   } catch (error) {
-    if (config.persistent === false || !isSnapshotStorageQuotaExceededError(error)) {
+    if (
+      config.persistent === false ||
+      !isSnapshotStorageQuotaExceededError(error)
+    ) {
       throw error;
     }
 

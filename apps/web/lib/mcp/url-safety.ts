@@ -1,6 +1,5 @@
-import { isAllowedWebUrl } from "@open-agents/agent";
+import { isAllowedWebUrl, isPrivateHost } from "@open-agents/agent";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 
 // MCP connections in the self-serve "paste any MCP server URL" path
 // are opened directly from this Next.js server (not from inside a
@@ -16,53 +15,24 @@ import { isIP } from "node:net";
 //    closes the DNS-rebinding gap where a hostname that looked public
 //    at save-time later resolves to an internal address.
 //
+// SECURITY FIX (2026-08-27, pentest finding): this file used to carry
+// its own hand-rolled isPrivateIpv4/isPrivateIpv6 instead of reusing
+// web_fetch's isPrivateHost. Its IPv6 check only pattern-matched
+// "::ffff:127.", "::ffff:10.", and "::ffff:169.254." prefixes, so an
+// attacker-controlled domain with an AAAA record like
+// "::ffff:192.168.1.1" or "::ffff:172.16.0.1" sailed through as
+// "public" even though it's an IPv4-mapped private address. Now reuses
+// the single, properly bitwise-parsed isPrivateHost from
+// packages/agent/tools/fetch.ts (also used by the web_fetch tool) so
+// there's one source of truth for "is this address private" instead
+// of two implementations that can silently drift apart.
+//
 // This is a time-of-check, not a fully IP-pinned connection -- a
 // narrow TOCTOU window between this check and the MCP client's own
 // connect remains (same residual class of risk most SSRF guards
 // accept without a custom IP-pinned dispatcher). Revisit with an
 // IP-pinned fetch/dispatcher if this ever looks like a real attack
 // surface in practice rather than a theoretical one.
-
-function isPrivateIpv4(address: string): boolean {
-  const parts = address.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
-    return false;
-  }
-  const [a, b] = parts;
-  return (
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    a === 0
-  );
-}
-
-function isPrivateIpv6(address: string): boolean {
-  const normalized = address.toLowerCase();
-  return (
-    normalized === "::1" ||
-    normalized === "::" ||
-    normalized.startsWith("fe80:") || // link-local
-    normalized.startsWith("fc") || // unique local (fc00::/7)
-    normalized.startsWith("fd") ||
-    normalized.startsWith("::ffff:127.") ||
-    normalized.startsWith("::ffff:10.") ||
-    normalized.startsWith("::ffff:169.254.")
-  );
-}
-
-function isPrivateAddress(address: string): boolean {
-  const version = isIP(address);
-  if (version === 4) {
-    return isPrivateIpv4(address);
-  }
-  if (version === 6) {
-    return isPrivateIpv6(address);
-  }
-  return true; // not a recognizable literal IP -- treat as unsafe
-}
 
 export class UnsafeMcpServerUrlError extends Error {
   constructor(message: string) {
@@ -94,7 +64,7 @@ export async function resolveAndAssertPublic(url: string): Promise<void> {
     throw new UnsafeMcpServerUrlError(`Could not resolve host: ${hostname}`);
   }
 
-  if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
+  if (addresses.length === 0 || addresses.some((addr) => isPrivateHost(addr))) {
     throw new UnsafeMcpServerUrlError(
       "URL resolves to a private or internal address",
     );

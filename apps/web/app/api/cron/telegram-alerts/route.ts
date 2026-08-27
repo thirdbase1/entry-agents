@@ -25,12 +25,24 @@ export const dynamic = "force-dynamic";
  * at once/day each.
  */
 export async function GET(req: Request) {
+  // SECURITY FIX (2026-08-27, pentest finding): this used to fail OPEN
+  // -- `if (cronSecret) { ...check... }` skipped the entire auth check
+  // whenever CRON_SECRET was unset (accidentally removed from env,
+  // never configured on a preview deployment, etc.), silently turning
+  // this into a real unauthenticated endpoint. That's the wrong
+  // failure mode for an auth guard on a route that spends real money /
+  // mutates real state -- fail closed instead: no secret configured
+  // means no request gets through, full stop.
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!cronSecret) {
+    return NextResponse.json(
+      { error: "Server misconfigured: CRON_SECRET is not set" },
+      { status: 500 },
+    );
+  }
+  const authHeader = req.headers.get("authorization");
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let stuckSessionsRekicked = 0;

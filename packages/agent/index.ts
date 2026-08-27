@@ -38,7 +38,7 @@ export {
   type AskUserQuestionToolUIPart,
 } from "./tools/ask-user-question";
 export type { SkillToolInput } from "./tools/skill";
-export { isAllowedWebUrl } from "./tools/fetch";
+export { isAllowedWebUrl, isPrivateHost } from "./tools/fetch";
 export {
   createMcpToolSet,
   namespacedMcpToolName,

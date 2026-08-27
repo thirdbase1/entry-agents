@@ -2400,7 +2400,36 @@ const runAgentStep = async (
       const { getEnabledMcpServersForRequest } =
         await import("@/lib/db/mcp-servers");
       const { getComposioMcpServerConfig } = await import("@/lib/mcp/composio");
-      const enabledServers = await getEnabledMcpServersForRequest(userId);
+      const rawEnabledServers = await getEnabledMcpServersForRequest(userId);
+      // SECURITY FIX (2026-08-27, pentest finding): resolveAndAssertPublic
+      // used to run only at MCP-server save-time (lib/db/mcp-servers.ts),
+      // never again before the real connection here -- a classic
+      // DNS-rebinding SSRF gap (attacker's domain resolves public at
+      // save-time, then to a private/internal address by the time a chat
+      // turn actually connects). Re-check every self-serve server's URL
+      // fresh, right before connecting, and silently drop any that now
+      // resolve privately -- same "log and skip, don't fail the turn"
+      // philosophy as a server that's simply unreachable.
+      const { resolveAndAssertPublic } = await import("@/lib/mcp/url-safety");
+      const enabledServers = (
+        await Promise.all(
+          rawEnabledServers.map(async (server) => {
+            try {
+              await resolveAndAssertPublic(server.url);
+              return server;
+            } catch (error) {
+              console.warn(
+                `[workflow] Dropping MCP server "${server.name}" for user ${userId}: URL failed pre-connect SSRF re-check:`,
+                error,
+              );
+              return null;
+            }
+          }),
+        )
+      ).filter(
+        (server): server is (typeof rawEnabledServers)[number] =>
+          server !== null,
+      );
       // Composio (see lib/mcp/composio.ts) is a built-in MCP server,
       // resolved the same way as a self-serve one and merged into the
       // same combined server list -- createMcpToolSet() doesn't care

@@ -22,6 +22,27 @@ export async function GET(req: Request) {
 
   try {
     const verified = await verifyTransaction(reference);
+    const metadata = verified.metadata ?? {};
+
+    // SECURITY FIX (2026-08-27, pentest finding): this route trusted
+    // whatever `reference` string the client passed with no check that
+    // it actually belongs to the caller's own transaction -- any
+    // authenticated user who obtained (guessed, leaked callback URL,
+    // shared support ticket, etc.) another user's Paystack reference
+    // could probe this endpoint to learn whether that other person's
+    // payment succeeded or failed. Crediting itself was never at risk
+    // (processChargeSuccess only ever credits metadata.userId from
+    // Paystack's own verified transaction, never the caller's session),
+    // but the status leak is real. Require metadata.userId to match the
+    // caller before revealing anything about this transaction.
+    if (metadata.userId !== session.user.id) {
+      return Response.json(
+        { error: "Not authorized for this reference" },
+        {
+          status: 403,
+        },
+      );
+    }
 
     if (verified.status !== "success") {
       return Response.json({
@@ -29,8 +50,6 @@ export async function GET(req: Request) {
         credited: false,
       });
     }
-
-    const metadata = verified.metadata ?? {};
     await processChargeSuccess({
       reference: verified.reference,
       customerCode: verified.customerCode,

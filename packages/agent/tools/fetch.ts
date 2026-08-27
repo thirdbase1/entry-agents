@@ -52,7 +52,49 @@ function parseIpv4Address(hostname: string): Ipv4Address | null {
   return [parsed[0] ?? 0, parsed[1] ?? 0, parsed[2] ?? 0, parsed[3] ?? 0];
 }
 
-function parseIpv6Address(hostname: string): Ipv6Address | null {
+/**
+ * Rewrites a trailing embedded IPv4 dotted-quad (RFC 4291's standard
+ * textual form for IPv4-mapped/compatible addresses, e.g.
+ * "::ffff:192.168.1.1") into two plain hex groups ("::ffff:c0a8:101")
+ * so the rest of this parser -- which only understands hex groups --
+ * can handle it. Returns the input unchanged if there's no embedded
+ * IPv4 tail to rewrite.
+ *
+ * SECURITY FIX (2026-08-27, pentest finding): without this, an
+ * address like "::ffff:192.168.1.1" -- the form dns.lookup() and
+ * `getent ahosts` actually hand back for IPv4-mapped IPv6 answers --
+ * failed to parse as an IPv6 address at all (the dotted tail doesn't
+ * match the hex-group regex below), so isPrivateIpv6Address silently
+ * returned false instead of correctly resolving it to the (very
+ * possibly private) mapped IPv4 address. A DNS answer in this form
+ * sailed straight through every consumer of isPrivateHost/isAllowedWebUrl
+ * (web_fetch tool, and the MCP self-serve server URL SSRF guard) as
+ * "public" even when it mapped to 127.0.0.1, 192.168.x.x, etc.
+ */
+function rewriteEmbeddedIpv4Tail(hostname: string): string {
+  const lastColon = hostname.lastIndexOf(":");
+  if (lastColon === -1) {
+    return hostname;
+  }
+
+  const tail = hostname.slice(lastColon + 1);
+  if (!tail.includes(".")) {
+    return hostname;
+  }
+
+  const octets = parseIpv4Address(tail);
+  if (!octets) {
+    return hostname;
+  }
+
+  const highGroup = ((octets[0] << 8) | octets[1]).toString(16);
+  const lowGroup = ((octets[2] << 8) | octets[3]).toString(16);
+
+  return `${hostname.slice(0, lastColon)}:${highGroup}:${lowGroup}`;
+}
+
+function parseIpv6Address(rawHostname: string): Ipv6Address | null {
+  const hostname = rewriteEmbeddedIpv4Tail(rawHostname);
   const [head = "", tail = "", ...extra] = hostname.split("::");
 
   if (extra.length > 0) {
@@ -158,7 +200,7 @@ function isPrivateIpv6Address(hostname: string): boolean {
   return isUnspecified || isLoopback || isUniqueLocal || isLinkLocal;
 }
 
-function isPrivateHost(hostname: string): boolean {
+export function isPrivateHost(hostname: string): boolean {
   const normalizedHostname = normalizeHostname(hostname);
 
   return (

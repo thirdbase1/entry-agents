@@ -1661,3 +1661,51 @@ All six fixed in one pass, typecheck + `ultracite check` clean, real
 regression tests added for #2 (both the URL-safety layer and the root
 IPv6-parsing bug) and #3, verified live post-deploy (deleted routes
 404, headers present, cron routes 401 without a token).
+
+## 2026-08-27: Live pentest found unauthenticated cost/DoS abuse on the two public health-check routes
+
+Went back and did an actual live black-box attack pass on entry-agents.vercel.app (not just
+code review) at the owner's request. Two real, currently-exploitable findings, both fixed and
+deployed same session:
+
+1. `GET /api/public/redis-status` -- public, unauthenticated, no rate limit. Confirmed live: 40
+   rapid unauthenticated requests all returned 200, each one opening a brand new connection to
+   the shared Upstash Redis and issuing a real PING. This is the exact kind of load that has
+   already tipped this same Redis instance into provider-side throttling twice before (see the
+   2026-08-26 and 2026-08-23 entries above). A scanner or abusive script hitting this in a tight
+   loop could self-inflict another outage.
+2. `GET /api/public/luna-status` -- same problem, worse consequence: every hit fires a real,
+   separately-billed 5-token completion call through GATEWAY_API_KEY with zero caching. Confirmed
+   live with 2 back-to-back curls -- each one triggered its own fresh upstream call (8.3s then
+   2.2s, no reuse). Currently low-impact only because Luna's upstream pool happens to be down
+   (fails fast on timeout); the moment it recovers, this becomes an unauthenticated way for
+   anyone to spend the owner's real metered API budget on demand with no cap.
+
+Both routes are intentionally public/unauthed by design (external monitor workflows poll them
+without a session), so the fix wasn't to add auth -- it was a short in-process cache + in-flight
+de-dupe (10s TTL for redis-status, 20s for luna-status) so any burst of concurrent requests within
+the window collapses into at most one real upstream call. Cache is per-serverless-instance (not
+shared via Redis/DB) which is fine here since the goal is just capping worst-case abuse, not
+billing-grade consistency.
+
+Also live-verified during this pass (no new issues, confirming earlier fixes hold in prod):
+- Both cron routes (`run-benchmarks`, `telegram-alerts`) reject every auth-bypass attempt tried
+  (missing header, wrong bearer, empty bearer, SQLi-style token, case-mangled header name) --
+  401 every time, method-mismatch requests correctly 405 before auth is even checked.
+- `X-Frame-Options: DENY` and `frame-ancestors 'none'` are actually present on live responses.
+- No CRLF/header-injection reflection, no prototype-pollution crash, no oversized-payload hang on
+  the billing webhook (2MB body rejected in <0.5s on signature check, before ever touching a
+  parser that would materialize it).
+- SQL/NoSQL-injection-style payloads (`' OR '1'='1`, `{"$ne":null}`, etc.) in session/chat ID path
+  params never reach the DB layer -- auth guard rejects them first (401 "Not authenticated"),
+  every time.
+
+Real cross-user IDOR testing (two distinct authenticated accounts hitting each other's
+session/chat IDs) is still NOT actually verified live -- blocked on two things: (1) no second
+real GitHub/Vercel identity available to sign in with from this environment (OAuth is a
+popup flow, can't complete it without real credentials), (2) DATABASE_URL/POSTGRES_URL are
+genuine Vercel "Sensitive" env vars -- `vercel env pull` explicitly refuses to return them, by
+platform design, so direct DB inspection to find real cross-user IDs isn't possible from here
+either. The code-level guarantee (every session/chat/file route funnels through the same
+`requireOwnedSession*`/`requireOwnedChatById` helpers, verified by reading the helpers directly)
+is the strongest evidence available without owner-provided second credentials or DB access.

@@ -236,27 +236,20 @@ export async function provisionSessionSandbox(params: {
         vcpus: DEFAULT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        // Reverted 2026-08-28 back to persistent (Vercel's own default).
-        // The 2026-08-25 flip to `persistent: false` traded away real
-        // resume-from-stop entirely (confirmed via Vercel's docs:
-        // non-persistent sandboxes literally "cannot be resumed" -- state
-        // is discarded the instant the VM stops, before any of our code
-        // runs) just to dodge unbounded Snapshot Storage growth. That
-        // growth had a real, narrower root cause: every stop created a
-        // brand new snapshot without ever cleaning up the prior one for
-        // the same session (see docs/agents/lessons-learned.md, 2026-08-18
-        // through 2026-08-24 incidents). The correct fix is
-        // `keepLastSnapshots: { count: 1, deleteEvicted: true }` (now the
-        // default in VercelSandbox.create when persistent -- see
-        // packages/sandbox/vercel/sandbox.ts), which caps storage at one
-        // live snapshot per active named sandbox while keeping real
-        // resume working. `resume: true` + `createIfMissing: true` mean a
-        // still-live sandbox resumes from its snapshot; the stale-sandbox
-        // delete+recreate path in connect.ts now only fires for the
-        // genuinely unresumable case (snapshot itself expired/deleted, or
-        // a legacy non-persistent session) -- never for a healthy stopped
-        // persistent sandbox, which resumes instead.
-        persistent: true,
+        // Kept non-persistent (owner-confirmed 2026-08-28, after briefly
+        // trying `persistent: true` earlier the same day -- see
+        // docs/agents/lessons-learned.md for the full back-and-forth).
+        // Non-persistent still means a stopped sandbox's filesystem is
+        // gone for good (Vercel's own docs: "cannot be resumed"), so the
+        // actual fix for not losing user work is upstream of this file:
+        // lib/sandbox/lifecycle.ts no longer proactively hibernates an
+        // idle sandbox 15 minutes early -- it now waits until the
+        // sandbox is genuinely near its real Hobby-plan 45-minute hard
+        // cap before stopping it, active or idle. That closes the actual
+        // gap (early voluntary stop on a sandbox that could have kept
+        // running) without paying Snapshot Storage costs for persistence
+        // this app doesn't otherwise need.
+        persistent: false,
         resume: true,
         createIfMissing: true,
       },

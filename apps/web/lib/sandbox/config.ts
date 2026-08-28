@@ -34,7 +34,16 @@ export const DEFAULT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 4;
 /** Manual extension duration for explicit fallback flows (20 minutes) */
 export const EXTEND_TIMEOUT_DURATION_MS = 20 * 60 * 1000;
 
-/** Inactivity window before lifecycle hibernates an idle sandbox (30 minutes) */
+/**
+ * Inactivity window used ONLY as a fallback wake time for the lifecycle
+ * workflow when a session has no tracked `sandboxExpiresAt` yet (e.g.
+ * mid-provisioning). No longer the primary hibernate trigger as of
+ * 2026-08-28 -- see `getLifecycleDueAtMs` in lib/sandbox/lifecycle.ts.
+ * Previously this fired well before the sandbox's real Hobby-plan
+ * 45-min hard cap (see DEFAULT_SANDBOX_TIMEOUT_MS), proactively
+ * hibernating (and, since sandboxes are non-persistent, permanently
+ * discarding) an idle sandbox's filesystem up to ~25 minutes early.
+ */
 export const SANDBOX_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Buffer for sandbox expiry checks (10 seconds) */

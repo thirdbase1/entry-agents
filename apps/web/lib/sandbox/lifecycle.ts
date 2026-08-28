@@ -160,13 +160,30 @@ function getExpiryDueAtMs(source: LifecycleTimingSource): number | null {
   return source.sandboxExpiresAt.getTime() - SANDBOX_MIGRATION_LEAD_MS;
 }
 
+// Changed 2026-08-28: previously took the MIN of this and the real
+// hard-cap-based `expiryDueAtMs`, which meant an idle sandbox got
+// proactively hibernated (and, since sandboxes are non-persistent,
+// permanently lost -- Vercel's own docs confirm non-persistent
+// sandboxes "cannot be resumed") up to
+// `SANDBOX_INACTIVITY_TIMEOUT_MS - SANDBOX_MIGRATION_LEAD_MS` (~25 min
+// on Hobby's 45-min cap) *before* Vercel would have force-stopped it
+// anyway. Owner explicitly asked: don't stop a sandbox until it
+// genuinely has to. Now the real expiry governs whenever it's known --
+// an idle sandbox keeps running (and being billed for idle compute)
+// until shortly before its actual hard cap, active or not, instead of
+// being cut short by a separate, earlier idle timer. Trade-off accepted
+// per owner: this costs more idle compute time than the old 30-min
+// cutoff, in exchange for never discarding work earlier than Vercel
+// itself would force. `getInactivityDueAtMs`/`hibernateAfter` remain as
+// a fallback only for the rare case a session has no tracked
+// `sandboxExpiresAt` yet (e.g. mid-provisioning), so the lifecycle
+// workflow never sleeps forever.
 export function getLifecycleDueAtMs(source: LifecycleTimingSource): number {
-  const inactivityDueAtMs = getInactivityDueAtMs(source);
   const expiryDueAtMs = getExpiryDueAtMs(source);
-  if (expiryDueAtMs === null) {
-    return inactivityDueAtMs;
+  if (expiryDueAtMs !== null) {
+    return expiryDueAtMs;
   }
-  return Math.min(inactivityDueAtMs, expiryDueAtMs);
+  return getInactivityDueAtMs(source);
 }
 
 async function hasActiveStreamForSession(sessionId: string): Promise<boolean> {

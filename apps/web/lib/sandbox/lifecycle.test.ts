@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 
 import {
-  SANDBOX_EXPIRES_BUFFER_MS,
   SANDBOX_INACTIVITY_TIMEOUT_MS,
+  SANDBOX_MIGRATION_LEAD_MS,
 } from "./config";
 
 mock.module("server-only", () => ({}));
@@ -14,21 +14,32 @@ beforeAll(async () => {
 });
 
 describe("getLifecycleDueAtMs", () => {
-  test("prefers hibernateAfter when earlier than expiry", () => {
+  // Rewritten 2026-08-28: owner asked for sandboxes to never stop before
+  // they genuinely have to. Previously this took the MIN of the real
+  // sandbox expiry and a separate, earlier `hibernateAfter`/inactivity
+  // clock -- meaning an idle sandbox got hibernated (and, being
+  // non-persistent, permanently lost) up to ~25 minutes before Vercel's
+  // real Hobby-plan 45-min hard cap. Now the real expiry governs
+  // whenever it's known, full stop; `hibernateAfter`/inactivity is only
+  // a fallback for sessions with no tracked expiry yet.
+  test("uses the real sandbox expiry even when hibernateAfter is much earlier", () => {
     const baseMs = Date.UTC(2025, 0, 1, 0, 0, 0);
+    const expiresAt = new Date(baseMs + 45 * 60 * 1000);
     const record = {
+      // Simulates the old 30-min idle timer firing well before the
+      // real 45-min cap -- must NOT win anymore.
       hibernateAfter: new Date(baseMs + 15 * 60 * 1000),
       lastActivityAt: new Date(baseMs),
-      sandboxExpiresAt: new Date(baseMs + 5 * 60 * 60 * 1000),
+      sandboxExpiresAt: expiresAt,
       updatedAt: new Date(baseMs),
     };
 
     expect(lifecycleModule.getLifecycleDueAtMs(record)).toBe(
-      record.hibernateAfter.getTime(),
+      expiresAt.getTime() - SANDBOX_MIGRATION_LEAD_MS,
     );
   });
 
-  test("uses sandbox expiry when it is earlier", () => {
+  test("uses the real sandbox expiry (minus migration lead) whenever it is known", () => {
     const baseMs = Date.UTC(2025, 0, 1, 0, 0, 0);
     const expiresAt = new Date(baseMs + 10 * 60 * 1000);
     const record = {
@@ -39,11 +50,26 @@ describe("getLifecycleDueAtMs", () => {
     };
 
     expect(lifecycleModule.getLifecycleDueAtMs(record)).toBe(
-      expiresAt.getTime() - SANDBOX_EXPIRES_BUFFER_MS,
+      expiresAt.getTime() - SANDBOX_MIGRATION_LEAD_MS,
     );
   });
 
-  test("falls back to lastActivityAt when hibernateAfter is missing", () => {
+  test("falls back to hibernateAfter when there is no tracked expiry yet", () => {
+    const baseMs = Date.UTC(2025, 0, 1, 0, 0, 0);
+    const hibernateAfter = new Date(baseMs + 15 * 60 * 1000);
+    const record = {
+      hibernateAfter,
+      lastActivityAt: new Date(baseMs),
+      sandboxExpiresAt: null,
+      updatedAt: new Date(baseMs),
+    };
+
+    expect(lifecycleModule.getLifecycleDueAtMs(record)).toBe(
+      hibernateAfter.getTime(),
+    );
+  });
+
+  test("falls back to lastActivityAt when both expiry and hibernateAfter are missing", () => {
     const baseMs = Date.UTC(2025, 0, 1, 0, 0, 0);
     const lastActivityAt = new Date(baseMs + 2 * 60 * 1000);
     const record = {
@@ -58,7 +84,7 @@ describe("getLifecycleDueAtMs", () => {
     );
   });
 
-  test("falls back to updatedAt when lastActivityAt is missing", () => {
+  test("falls back to updatedAt when lastActivityAt is missing too", () => {
     const baseMs = Date.UTC(2025, 0, 1, 0, 0, 0);
     const updatedAt = new Date(baseMs + 3 * 60 * 1000);
     const record = {

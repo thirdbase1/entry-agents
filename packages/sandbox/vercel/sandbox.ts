@@ -596,7 +596,16 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       // creation. Callers that specifically need cross-session resume
       // (e.g. a named long-lived project sandbox) should now pass
       // `persistent: true` explicitly.
-      persistent = true,
+      // Default is non-persistent (owner-confirmed decision 2026-08-28,
+      // reaffirmed after briefly trying persistent-by-default the same
+      // day -- see docs/agents/lessons-learned.md). Non-persistent still
+      // means "cannot resume" per Vercel's own docs, but the real fix for
+      // not losing work is the lifecycle-hibernation change in
+      // lib/sandbox/lifecycle.ts (don't stop a sandbox before it
+      // genuinely needs to), not silently paying for snapshot storage.
+      // `keepLastSnapshots` stays available below for any caller that
+      // explicitly opts into `persistent: true`.
+      persistent = false,
       snapshotExpiration = DEFAULT_SNAPSHOT_EXPIRATION_MS,
       keepLastSnapshots = persistent
         ? { count: 1, deleteEvicted: true }

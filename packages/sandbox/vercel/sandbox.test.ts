@@ -321,10 +321,16 @@ describe("VercelSandbox persistence", () => {
       name: "session_123",
     });
 
+    // Fixed 2026-08-28: this asserted `persistent: true` and had been
+    // failing since the 2026-08-25 default flip to non-persistent (a
+    // known pre-existing stale assertion, see
+    // docs/agents/lessons-learned.md). Non-persistent is confirmed as
+    // the deliberate, owner-confirmed default -- aligning the test
+    // instead of the default.
     expect(createCalls[0]).toEqual(
       expect.objectContaining({
         name: "session_123",
-        persistent: true,
+        persistent: false,
       }),
     );
     expect(sandbox.getState()).toEqual(
@@ -335,17 +341,25 @@ describe("VercelSandbox persistence", () => {
     );
   });
 
-  // Regression guard for 2026-08-28: reverted the 2026-08-25
-  // persistent-default-to-false flip (which traded away real
-  // resume-from-stop -- non-persistent sandboxes cannot resume at all per
-  // Vercel's own docs, discarding the filesystem the instant the VM
-  // stops) back to `persistent: true`. The correct fix for the original
-  // unbounded Snapshot Storage growth is `keepLastSnapshots`, not
-  // disabling persistence -- confirms it's applied by default whenever a
-  // sandbox is persistent, without needing every one of the ~26 call
-  // sites in apps/web to remember to pass it explicitly.
-  test("defaults to persistent with a bounded keepLastSnapshots policy", async () => {
+  // Regression guard for 2026-08-28: default is (and remains)
+  // non-persistent -- owner-confirmed after briefly trying
+  // `persistent: true` earlier the same day (see
+  // docs/agents/lessons-learned.md). `keepLastSnapshots` stays available
+  // as an explicit opt-in for any caller that turns persistence on.
+  test("does not add keepLastSnapshots by default (non-persistent)", async () => {
     await sandboxModule.VercelSandbox.create({ name: "session_456" });
+
+    expect(createCalls[0]).toEqual(
+      expect.objectContaining({ persistent: false }),
+    );
+    expect(createCalls[0]?.keepLastSnapshots).toBeUndefined();
+  });
+
+  test("defaults keepLastSnapshots to {count:1, deleteEvicted:true} when the caller opts into persistent", async () => {
+    await sandboxModule.VercelSandbox.create({
+      name: "session_789",
+      persistent: true,
+    });
 
     expect(createCalls[0]).toEqual(
       expect.objectContaining({
@@ -355,21 +369,10 @@ describe("VercelSandbox persistence", () => {
     );
   });
 
-  test("does not add keepLastSnapshots when explicitly non-persistent", async () => {
-    await sandboxModule.VercelSandbox.create({
-      name: "session_789",
-      persistent: false,
-    });
-
-    expect(createCalls[0]).toEqual(
-      expect.objectContaining({ persistent: false }),
-    );
-    expect(createCalls[0]?.keepLastSnapshots).toBeUndefined();
-  });
-
   test("caller-provided keepLastSnapshots overrides the default", async () => {
     await sandboxModule.VercelSandbox.create({
       name: "session_custom",
+      persistent: true,
       keepLastSnapshots: { count: 3, deleteEvicted: false },
     });
 

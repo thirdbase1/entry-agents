@@ -1864,3 +1864,57 @@ state intact instead of being deleted and recreated empty. The stale-sandbox del
 `connect.ts` (`deleteStaleSandboxByName`, still status-guarded to `stopped/aborted/failed` only)
 remains as a fallback for the genuinely unresumable case -- an expired/deleted snapshot (410) or a
 lingering legacy non-persistent session -- but should now be rare instead of the routine path.
+
+## 2026-08-28 (later same day): Reverted to non-persistent by owner request -- real fix was the early-hibernate bug, not persistence
+
+Owner overrode the persistent-default revert above: keep sandboxes non-persistent, but "reverse
+engineer" why they were stopping early and fix so a sandbox never stops before it genuinely has
+to reach Vercel's real Hobby-plan 45-minute session cap.
+
+Root cause found in `lib/sandbox/lifecycle.ts`: `getLifecycleDueAtMs` took the **minimum** of two
+independent clocks --
+
+- `getExpiryDueAtMs`: the sandbox's real SDK-reported `sandboxExpiresAt`, minus
+  `SANDBOX_MIGRATION_LEAD_MS` (5 min) -- the genuine Vercel-enforced boundary.
+- `getInactivityDueAtMs`: a separate, unconditional 30-minute idle timer
+  (`SANDBOX_INACTIVITY_TIMEOUT_MS`), completely independent of how close the sandbox actually was
+  to its real cap.
+
+Since 30 min < 45 min, an idle sandbox's own inactivity clock almost always won that MIN() and
+fired *first* -- proactively calling `sandbox.stop()` up to ~15 minutes (in practice, once the
+5-min migration lead is netted out, up to ~10-15 min) before Vercel would ever have forced it.
+Combined with `persistent: false` (non-persistent sandboxes cannot resume -- Vercel's own docs:
+state is discarded the instant the VM stops), this was outright destroying a session's live
+workspace state *earlier than necessary*, not because Vercel required it but because our own code
+chose to save a few minutes of idle compute cost.
+
+Fix: `getLifecycleDueAtMs` now returns the real expiry-based due time whenever `sandboxExpiresAt`
+is known, full stop -- the inactivity timer only survives as a fallback wake time for the rare case
+a session has no tracked expiry yet (e.g. mid-provisioning). This applies identically to both the
+idle path (now hibernates right at the real boundary instead of ~15 min early) and the
+already-correct active-stream path (`isSandboxMigrationDue`, unchanged, was already governed by
+the real expiry). Net effect: a sandbox -- active or idle -- now runs the full real session
+duration before anything stops it, active or idle.
+
+Trade-off accepted explicitly per owner: this means idle sessions between the old 30-min mark and
+the real ~40-45-min mark now consume additional idle compute-seconds they previously didn't (no
+longer cut short early). No storage-cost impact either way, since `persistent: false` was kept as
+owner-confirmed (superseding the earlier same-day attempt to flip the default to `persistent: true`
+-- see the entry directly above this one). `keepLastSnapshots` added in that same earlier attempt
+was kept as a harmless opt-in for any future caller that does turn persistence on, defaulting to
+`{ count: 1, deleteEvicted: true }` whenever `persistent: true` is explicitly passed.
+
+Changed files: `apps/web/lib/sandbox/config.ts` (doc comment only, deprecating
+`SANDBOX_INACTIVITY_TIMEOUT_MS` as the primary trigger), `apps/web/lib/sandbox/lifecycle.ts` (the
+actual fix), `apps/web/lib/sandbox/provisioning.ts` (persistent:false, updated reasoning),
+`packages/sandbox/vercel/sandbox.ts` (persistent default reverted to false, keepLastSnapshots kept
+as opt-in). Rewrote `lifecycle.test.ts`'s `getLifecycleDueAtMs` describe block to assert the new
+semantics (was asserting the old MIN()-based behavior, including one assertion that was already
+stale/wrong against the real `SANDBOX_MIGRATION_LEAD_MS` constant even before today). Also widened
+a pre-existing flaky fixture margin in `lifecycle-evaluate.test.ts` (exact-5-min boundary raced
+`Date.now()` against `SANDBOX_MIGRATION_LEAD_MS`; confirmed flaking on a clean stash of `main`
+before any of today's changes, unrelated to this fix) from 5 min to 8 min out. Full suite green
+except the two already-documented pre-existing issues: `VercelSandbox.exec > preserves stderr
+output` (unrelated real failure) and `lifecycle-kick.test.ts`'s "Export named ... not found"
+module-cache flake (the same known sandbox `bun test` quirk documented 2026-08-20, reproduces on a
+clean checkout regardless of code changes, passes fine standalone).

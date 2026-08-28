@@ -65,7 +65,12 @@ function makeDueSession(): TestSessionRecord {
     sandboxState: {
       type: "vercel",
       sandboxName: "session_session-1",
-      expiresAt: nowMs + 5 * 60_000,
+      // 8 min out, clearly outside SANDBOX_MIGRATION_LEAD_MS (5 min) --
+      // was exactly 5 min, which raced Date.now() against the lead
+      // threshold and flaked pre-existing on clean main (confirmed
+      // 2026-08-28, unrelated to the lifecycle due-time fix in this
+      // same file's module).
+      expiresAt: nowMs + 8 * 60_000,
     },
     hibernateAfter: new Date(nowMs - 1_000),
     lastActivityAt: new Date(nowMs - 60_000),

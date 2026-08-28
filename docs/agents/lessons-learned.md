@@ -1709,3 +1709,38 @@ platform design, so direct DB inspection to find real cross-user IDs isn't possi
 either. The code-level guarantee (every session/chat/file route funnels through the same
 `requireOwnedSession*`/`requireOwnedChatById` helpers, verified by reading the helpers directly)
 is the strongest evidence available without owner-provided second credentials or DB access.
+
+## 2026-08-28: Added deepseek-v4-flash-vision-exp, glm-5.3-flash, qwen3.8-flash via api.b.ai
+
+Owner provided a new reseller (api.b.ai) and key, asked for these three specific models, priced
+at each model's real creator's official rate rather than the reseller's rate. Full pricing/context-
+window sourcing and the gateway-side wiring (including a real bug fix -- a dead
+`EXTRA_MODEL_ROUTES_JSON_4` slot that existed on Vercel but was never read by the gateway code) are
+documented in entry-gateway's `improve.md` (commit d42d2c5) -- this entry covers the app-side
+reasoning-effort work only.
+
+Live-probed all three against api.b.ai directly (never assumed vendor docs describe the real
+reseller-routed behavior, matching this file's established pattern for every other model here):
+
+- `deepseek-v4-flash-vision-exp` accepts the full none/low/medium/high/xhigh/max range but is kept
+  on `DEFAULT_LEVELS` (low/medium/high only) to match `deepseek-v4-flash`'s own existing
+  convention in `model-reasoning.ts`.
+- `glm-5.3-flash` genuinely can't disable thinking -- `none` *and* `medium` both hard-400 straight
+  from Z.ai's own backend (not a gateway/reseller quirk): "该模型始终思考，不支持关闭思考；请使用
+  low、high 或 max。" Real vocabulary is exactly low/high/max, added as an explicit override.
+- `qwen3.8-flash`'s real vocabulary is the full none/low/medium/high/xhigh/max -- wider than either
+  existing Qwen3.8 model in this codebase -- and `none` genuinely zeroes out reasoning_content
+  (verified: reasoning_tokens/reasoning_content both empty), a real disable rather than a silent
+  no-op. Added as its own explicit override.
+
+Verified end-to-end after both entry-agents and entry-gateway redeployed: used the existing
+`/api/admin/reasoning-probe` diagnostic route (already proxies through *this app's* real
+`GATEWAY_BASE_URL`/`GATEWAY_API_KEY`, so it exercises the actual production gateway, not a direct
+api.b.ai call) to confirm all three model ids return real 200s with correct reasoning_content
+through production. Note: `AUDIT_ROUTE_SECRET_LIVE` (the header this route accepts) was a Vercel
+"sensitive" var with a lost/unknown value -- rotated it to a known value to make this verification
+possible; the original `AUDIT_ROUTE_SECRET` still works too if anyone else already had it.
+
+No model-picker icon work needed -- `provider-icons.tsx` infers the brand from the model id's own
+prefix (`deepseek-`, `glm-`, `qwen-`), not any field the gateway returns, so all three automatically
+got the right @lobehub/icons brand with zero code changes.

@@ -165,3 +165,33 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ results });
 }
+
+// TEMPORARY: GET passthrough to the gateway's /v1/debug/routes, used
+// 2026-08-28 to inspect the live route config (provider field) for the
+// api.b.ai models before extending the prompt_cache_key session-affinity
+// fix to them. Delete once that's done -- same one-off pattern as the
+// POST probe above.
+export async function GET(request: Request) {
+  const expected = process.env.AUDIT_ROUTE_SECRET;
+  const expectedLive = process.env.AUDIT_ROUTE_SECRET_LIVE;
+  const provided = request.headers.get("x-audit-secret");
+  if (!provided || (provided !== expected && provided !== expectedLive)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const baseURL = process.env.GATEWAY_BASE_URL;
+  const apiKey = process.env.GATEWAY_API_KEY;
+  if (!baseURL || !apiKey) {
+    return NextResponse.json(
+      { error: "GATEWAY_BASE_URL / GATEWAY_API_KEY not set" },
+      { status: 500 },
+    );
+  }
+  const res = await fetch(`${baseURL.replace(/\/$/, "")}/debug/routes`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  const text = await res.text();
+  return new NextResponse(text, {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}

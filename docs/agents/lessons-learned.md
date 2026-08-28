@@ -1744,3 +1744,44 @@ possible; the original `AUDIT_ROUTE_SECRET` still works too if anyone else alrea
 No model-picker icon work needed -- `provider-icons.tsx` infers the brand from the model id's own
 prefix (`deepseek-`, `glm-`, `qwen-`), not any field the gateway returns, so all three automatically
 got the right @lobehub/icons brand with zero code changes.
+
+## 2026-08-28: sandbox provisioning permanently wedged for a session -- stale stopped-sandbox name collision
+
+Real production incident, reported by the owner via WhatsApp ("entry can't use sandbox"). Vercel's
+runtime logs only ever showed the bare `[workflow-sdk] ... Status code 400 is not ok` (the
+`toErrorMessage()` enrichment from the 2026-08-27 fix persists the real body to
+`sessions.lifecycleError` in the DB, then deliberately re-throws the *original* error for the
+workflow-sdk's own retry/log machinery -- so the enriched detail never shows up in Vercel logs
+themselves). `DATABASE_URL`/`POSTGRES_URL` are Vercel Sensitive vars and not readable from this
+sandbox, so root-causing needed a temporary secret-gated admin route
+(`/api/admin/sandbox-failures`, deleted again once done -- same one-off pattern as
+`/api/admin/reasoning-probe`) to read `sessions.lifecycleError` for the failing session directly.
+
+Real body: `{"error":{"code":"bad_request","message":"A sandbox with the name
+'session_<id>' already exists for this project. Use GET /sandboxes/:name to resume it or delete it
+first."}}` -- repeated identically 5 times within one minute, permanently wedging that session.
+
+Root cause: `connectNamedSandbox` in `packages/sandbox/vercel/connect.ts` first tries
+`VercelSandbox.connect(name, { resume })`. When the underlying sandbox is STOPPED (not deleted --
+plausible fallout of the 2026-08-25 non-persistent-default flip, since non-persistent sandboxes
+appear not to support a real resume path), that call fails with a "sandbox is stopped"-shaped
+error. `isSandboxNotFoundError` treats that the same as a truly-gone 404/410 (correct for the
+expired-snapshot case it was built for on 2026-08-23) and falls through to the `createIfMissing`
+fallback's `create()` call -- but the stopped sandbox object still exists on Vercel's side under
+that name, so `create()` with the same name 400s every single time, forever, for that session.
+
+Fix: added `isSandboxAlreadyExistsError()` (matches `"status code 400"` + `"already exists"` +
+`"sandbox"` on the folded `toErrorMessage()` output) and a `deleteStaleSandboxByName()` helper
+(`VercelSandboxSDK.get({ name, resume: false })` to get a handle, then `.delete()`, best-effort --
+swallows its own errors since the real signal is the retry's outcome). `createSandboxWithQuotaFallback`
+now catches this specific collision, deletes the stale sandbox, and retries `create()` exactly once
+(guarded by an `alreadyRetriedAfterDelete` flag to avoid any loop). Regression test in
+`connect-already-exists.test.ts` using the real captured error body, following the same
+`FakeAPIError`-shape pattern as `connect-quota-fallback.test.ts`.
+
+Not yet root-caused (separate, lower-priority follow-up): *why* the initial `connect()` treats this
+session's stopped sandbox as unresumable in the first place -- i.e. whether non-persistent
+sandboxes are simply never resumable by Vercel design (matching the accepted 2026-08-25 trade-off,
+in which case this fix's delete-and-recreate is the correct terminal behavior and nothing more is
+needed), or whether there's a real resumability bug being masked by this fix. Revisit if the same
+"already exists" collision keeps recurring at any real volume after this ships.

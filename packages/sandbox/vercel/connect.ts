@@ -1,3 +1,4 @@
+import { Sandbox as VercelSandboxSDK } from "@vercel/sandbox";
 import type { Sandbox, SandboxHooks } from "../interface.ts";
 import type { VercelSandboxConfig } from "./config.ts";
 import { VercelSandbox } from "./sandbox.ts";
@@ -118,6 +119,50 @@ export function isSnapshotStorageQuotaExceededError(error: unknown): boolean {
   );
 }
 
+// Found 2026-08-28 debugging a real production incident: a session's
+// sandbox goes STOPPED (not deleted) -- e.g. from the non-persistent
+// default flip on 2026-08-25, non-persistent sandboxes appear not to
+// support the resume:true path at all. connectNamedSandbox's initial
+// VercelSandbox.connect(..., { resume }) call then fails with a
+// "sandbox is stopped"-shaped error, which isSandboxNotFoundError
+// (correctly, for the 410/expired-snapshot case it was designed for)
+// treats as "permanently gone" and falls through to createIfMissing's
+// create() fallback. But a STOPPED sandbox is not actually gone from
+// Vercel's side -- create() with the same name then hard-400s with
+// "A sandbox with the name '<name>' already exists for this project.
+// Use GET /sandboxes/:name to resume it or delete it first," and every
+// subsequent retry repeats the exact same failure forever (confirmed:
+// this session failed 5 provisioning attempts within one minute, all
+// identical). Detects that specific collision so the caller can delete
+// the stale stopped sandbox object and retry create() once, instead of
+// wedging the session permanently.
+export function isSandboxAlreadyExistsError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  return (
+    message.includes("status code 400") &&
+    message.includes("already exists") &&
+    message.includes("sandbox")
+  );
+}
+
+// Deletes a stale sandbox object by name so a subsequent create() with
+// the same name won't 400. Best-effort: if the delete itself fails (the
+// sandbox may have been cleaned up by Vercel or another request in the
+// meantime), swallow the error -- the retry attempt's own success/failure
+// is the real signal, not this cleanup step.
+async function deleteStaleSandboxByName(name: string): Promise<void> {
+  try {
+    const stale = await VercelSandboxSDK.get({ name, resume: false });
+    await stale.delete();
+  } catch (cleanupError) {
+    console.warn(
+      `[sandbox] Best-effort delete of stale sandbox "${name}" failed ` +
+        "(may already be gone) -- proceeding to retry create() anyway.",
+      cleanupError,
+    );
+  }
+}
+
 function buildCreateConfig(
   state: VercelState,
   options?: ConnectOptions,
@@ -160,10 +205,25 @@ function buildCreateConfig(
 
 async function createSandboxWithQuotaFallback(
   config: VercelSandboxConfig,
+  alreadyRetriedAfterDelete = false,
 ): Promise<Sandbox> {
   try {
     return await VercelSandbox.create(config);
   } catch (error) {
+    if (
+      config.name &&
+      !alreadyRetriedAfterDelete &&
+      isSandboxAlreadyExistsError(error)
+    ) {
+      console.warn(
+        `[sandbox] create() collided with a stale stopped sandbox named ` +
+          `"${config.name}" -- deleting it and retrying create() once.`,
+        error,
+      );
+      await deleteStaleSandboxByName(config.name);
+      return createSandboxWithQuotaFallback(config, true);
+    }
+
     if (
       config.persistent === false ||
       !isSnapshotStorageQuotaExceededError(error)

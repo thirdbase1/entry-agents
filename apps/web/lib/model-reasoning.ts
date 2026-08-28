@@ -153,6 +153,38 @@ const MODEL_REASONING_LEVELS: Record<string, ReasoningEffortLevel[]> = {
     { value: "high", label: "High" },
     { value: "max", label: "Max" },
   ],
+  // Confirmed 2026-08-28 via live probe against api.b.ai
+  // (deepseek-v4-flash-vision-exp/glm-5.3-flash/qwen3.8-flash added the
+  // same day). GLM-5.3-Flash genuinely cannot turn thinking off -- both
+  // "none" and "medium" get a hard 400 back from the upstream itself:
+  // "该模型始终思考，不支持关闭思考；请使用 low、high 或 max。" ("this model
+  // always thinks, disabling thinking isn't supported; use low, high, or
+  // max"). low/high/max all returned 200 with real, effort-scaled
+  // reasoning_content. Matches Z.ai's own docs (thinking.type only
+  // supports "enabled").
+  "glm-5.3-flash": [
+    { value: "low", label: "Low" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+  // Confirmed 2026-08-28 via live probe against api.b.ai: unlike
+  // qwen3.8-27b (none/low/medium/xhigh) and qwen3.8-max-free
+  // (low/medium/xhigh), this checkpoint's real accepted vocabulary is the
+  // full none/low/medium/high/xhigh/max -- every value returned 200, and
+  // "none" genuinely zeroes out reasoning_content/reasoning_tokens (real
+  // disable, not a silent ignore) while medium/high/xhigh/max each came
+  // back with distinct non-zero reasoning_tokens. Given its own explicit
+  // list (rather than falling back to DEFAULT_LEVELS) because "none" is a
+  // real, verified capability worth exposing in the UI, same rationale as
+  // qwen3.8-27b's override above.
+  "qwen3.8-flash": [
+    { value: "none", label: "Off" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "XHigh" },
+    { value: "max", label: "Max" },
+  ],
 };
 
 export function getReasoningEffortLevels(
@@ -275,6 +307,16 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   "claude-sonnet-4-6",
   "claude-sonnet-5",
   "claude-haiku-4-5-20251001",
+  // Added 2026-08-28, all three confirmed via live probe against
+  // api.b.ai (see the MODEL_REASONING_LEVELS entries above for
+  // glm-5.3-flash/qwen3.8-flash's real vocabulary; deepseek-v4-flash-
+  // vision-exp shares deepseek-v4-flash's DEFAULT_LEVELS treatment -- it
+  // technically accepted xhigh/max too in the live probe, same as
+  // deepseek-v4-flash always has, but this codebase's convention is to
+  // keep the DeepSeek family on the plain low/medium/high selector).
+  "deepseek-v4-flash-vision-exp",
+  "glm-5.3-flash",
+  "qwen3.8-flash",
 ]);
 
 export function isReasoningCapableModel(modelId: string): boolean {

@@ -1762,13 +1762,24 @@ Real body: `{"error":{"code":"bad_request","message":"A sandbox with the name
 first."}}` -- repeated identically 5 times within one minute, permanently wedging that session.
 
 Root cause: `connectNamedSandbox` in `packages/sandbox/vercel/connect.ts` first tries
-`VercelSandbox.connect(name, { resume })`. When the underlying sandbox is STOPPED (not deleted --
-plausible fallout of the 2026-08-25 non-persistent-default flip, since non-persistent sandboxes
-appear not to support a real resume path), that call fails with a "sandbox is stopped"-shaped
-error. `isSandboxNotFoundError` treats that the same as a truly-gone 404/410 (correct for the
-expired-snapshot case it was built for on 2026-08-23) and falls through to the `createIfMissing`
-fallback's `create()` call -- but the stopped sandbox object still exists on Vercel's side under
-that name, so `create()` with the same name 400s every single time, forever, for that session.
+`VercelSandbox.connect(name, { resume })` -- confirmed `provisioning.ts`'s main call site already
+passes `resume: true` explicitly (not a "we forgot to ask for resume" bug). The underlying sandbox
+is STOPPED (not deleted) -- plausible fallout of the 2026-08-25 non-persistent-default flip, since
+non-persistent sandboxes appear to genuinely not support being resumed by Vercel even when asked.
+That resume attempt fails with a "sandbox is stopped"-shaped error. `isSandboxNotFoundError` treats
+that the same as a truly-gone 404/410 (correct for the expired-snapshot case it was built for on
+2026-08-23) and falls through to the `createIfMissing` fallback's `create()` call -- but the stopped
+sandbox object still exists on Vercel's side under that name, so `create()` with the same name 400s
+every single time, forever, for that session.
+
+Confirmed this is the *right* terminal behavior, not just a workaround: the 2026-08-25 flip already
+accepted "sessions no longer resume fs state across a full stop/restart" as the intentional
+trade-off for the default (`persistent: false`) path, and Vercel's own resume attempt (which we do
+call, with `resume: true`) already failed before we ever reach delete+recreate -- so there is no
+state being discarded that wasn't already going to be lost. The rare explicit persistent/legacy-
+snapshot-restore path (`api/sandbox/snapshot`) still passes its `snapshotId` through to
+`buildCreateConfig`'s `restoreSnapshotId`, so even a delete+recreate there still restores from the
+last snapshot rather than starting fully blank.
 
 Fix: added `isSandboxAlreadyExistsError()` (matches `"status code 400"` + `"already exists"` +
 `"sandbox"` on the folded `toErrorMessage()` output) and a `deleteStaleSandboxByName()` helper
@@ -1785,3 +1796,12 @@ sandboxes are simply never resumable by Vercel design (matching the accepted 202
 in which case this fix's delete-and-recreate is the correct terminal behavior and nothing more is
 needed), or whether there's a real resumability bug being masked by this fix. Revisit if the same
 "already exists" collision keeps recurring at any real volume after this ships.
+
+**Follow-up hardening (same day, before deploy):** added a safety guard before the delete step --
+`isSafeToDeleteSandboxStatus()` only allows deleting a sandbox whose live status is genuinely
+terminal (`stopped`/`aborted`/`failed`); a `running`/`pending`/`stopping`/`snapshotting` status
+throws `UnsafeToDeleteSandboxError` instead of deleting. The per-session provisioning claim-lock
+(`claimSessionSandboxProvisioningRunId`) should mean this code path never actually races a live
+attempt for the same session -- but if that assumption is ever wrong (a bypassed/expired lock, or
+some other bug reusing a name), silently deleting a live sandbox would destroy real in-progress
+work instead of just failing loudly. Cheap insurance, unit-tested in `connect-already-exists.test.ts`.

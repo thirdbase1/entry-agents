@@ -145,22 +145,62 @@ export function isSandboxAlreadyExistsError(error: unknown): boolean {
   );
 }
 
-// Deletes a stale sandbox object by name so a subsequent create() with
-// the same name won't 400. Best-effort: if the delete itself fails (the
-// sandbox may have been cleaned up by Vercel or another request in the
-// meantime), swallow the error -- the retry attempt's own success/failure
-// is the real signal, not this cleanup step.
-async function deleteStaleSandboxByName(name: string): Promise<void> {
-  try {
-    const stale = await VercelSandboxSDK.get({ name, resume: false });
-    await stale.delete();
-  } catch (cleanupError) {
-    console.warn(
-      `[sandbox] Best-effort delete of stale sandbox "${name}" failed ` +
-        "(may already be gone) -- proceeding to retry create() anyway.",
-      cleanupError,
+// Statuses that mean the sandbox is genuinely, terminally dead -- safe to
+// delete without losing anything in-flight. Deliberately narrower than
+// sandbox.ts's own isStoppedSessionStatus (which also includes "stopping"
+// and "snapshotting" for its own "can I still connect to this" purpose):
+// a sandbox mid-stop or mid-snapshot is still doing real work, and this
+// per-session provisioning claim-lock (see claimSessionSandboxProvisioningRunId)
+// should mean we never race a live attempt in the first place -- but if
+// that assumption is ever wrong (a bypassed lock, a name reused across a
+// bug elsewhere), deleting a "running"/"pending" sandbox out from under
+// an actual in-progress session would destroy real, live work. Fail loud
+// (rethrow the original "already exists" error) instead of guessing.
+const SAFE_TO_DELETE_STATUSES = new Set(["stopped", "aborted", "failed"]);
+
+// Exported separately (pure, no SDK call) so this specific safety
+// decision -- which statuses are safe to delete without risking live
+// in-progress work -- is unit-testable on its own.
+export function isSafeToDeleteSandboxStatus(
+  status: string | undefined,
+): boolean {
+  return SAFE_TO_DELETE_STATUSES.has(status ?? "");
+}
+
+class UnsafeToDeleteSandboxError extends Error {
+  constructor(name: string, status: string | undefined) {
+    super(
+      `Refusing to delete sandbox "${name}" -- its status is "${status}", ` +
+        "not a terminal stopped/aborted/failed state. This means the " +
+        '"already exists" collision is NOT a stale-stopped-sandbox case; ' +
+        "deleting it could destroy a real in-progress session.",
     );
+    this.name = "UnsafeToDeleteSandboxError";
   }
+}
+
+// Deletes a stale, terminally-dead sandbox object by name so a subsequent
+// create() with the same name won't 400. Verifies the sandbox is actually
+// dead first (see SAFE_TO_DELETE_STATUSES above) -- refuses to delete a
+// live/in-progress one. If the sandbox is already gone by the time we
+// check (deleted by Vercel or another request), that's fine -- nothing to
+// do, the retry's own create() call is the real signal either way.
+async function deleteStaleSandboxByName(name: string): Promise<void> {
+  let stale: Awaited<ReturnType<typeof VercelSandboxSDK.get>>;
+  try {
+    stale = await VercelSandboxSDK.get({ name, resume: false });
+  } catch (getError) {
+    if (isSandboxNotFoundError(getError)) {
+      return;
+    }
+    throw getError;
+  }
+
+  if (!isSafeToDeleteSandboxStatus(stale.status)) {
+    throw new UnsafeToDeleteSandboxError(name, stale.status);
+  }
+
+  await stale.delete();
 }
 
 function buildCreateConfig(

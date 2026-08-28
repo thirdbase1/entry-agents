@@ -82,3 +82,28 @@ describe("isSandboxAlreadyExistsError", () => {
     expect(isSandboxAlreadyExistsError("just a string")).toBe(false);
   });
 });
+
+// Regression test for the delete-safety guard added alongside the fix
+// above: deleteStaleSandboxByName must refuse to delete a sandbox that
+// isn't genuinely terminally dead. The per-session provisioning
+// claim-lock (claimSessionSandboxProvisioningRunId) should mean this
+// never actually races a live attempt -- but if that assumption is ever
+// wrong, silently deleting a "running"/"pending" sandbox would destroy
+// real in-progress work instead of just failing loudly.
+describe("isSafeToDeleteSandboxStatus", () => {
+  test("terminal statuses are safe to delete", async () => {
+    const { isSafeToDeleteSandboxStatus } = await import("./connect.ts");
+    expect(isSafeToDeleteSandboxStatus("stopped")).toBe(true);
+    expect(isSafeToDeleteSandboxStatus("aborted")).toBe(true);
+    expect(isSafeToDeleteSandboxStatus("failed")).toBe(true);
+  });
+
+  test("live or in-progress statuses are NOT safe to delete", async () => {
+    const { isSafeToDeleteSandboxStatus } = await import("./connect.ts");
+    expect(isSafeToDeleteSandboxStatus("running")).toBe(false);
+    expect(isSafeToDeleteSandboxStatus("pending")).toBe(false);
+    expect(isSafeToDeleteSandboxStatus("stopping")).toBe(false);
+    expect(isSafeToDeleteSandboxStatus("snapshotting")).toBe(false);
+    expect(isSafeToDeleteSandboxStatus(undefined)).toBe(false);
+  });
+});

@@ -1,6 +1,8 @@
 import {
   Sandbox as VercelSandboxSDK,
   type Command as VercelSandboxCommand,
+  type NetworkPolicy,
+  type NetworkPolicyRule,
 } from "@vercel/sandbox";
 import type { Dirent } from "fs";
 import type {
@@ -47,17 +49,9 @@ interface SandboxRouteLike {
   port: number;
 }
 
-interface SandboxNetworkTransform {
-  headers?: Record<string, string>;
-}
-
-interface SandboxNetworkRule {
-  transform?: SandboxNetworkTransform[];
-}
-
-interface SandboxNetworkPolicy {
-  allow: Record<string, SandboxNetworkRule[]>;
-}
+type SandboxNetworkPolicy = NetworkPolicy & {
+  allow: Record<string, NetworkPolicyRule[]>;
+};
 
 // Domain-scoped credential grants currently in effect for a sandbox's
 // egress network policy. Both GitHub and Vercel CLI auth can be active
@@ -77,7 +71,7 @@ interface CredentialBrokeringGrants {
 function buildCredentialBrokeringPolicy(
   grants: CredentialBrokeringGrants,
 ): SandboxNetworkPolicy {
-  const allow: Record<string, SandboxNetworkRule[]> = { "*": [] };
+  const allow: Record<string, NetworkPolicyRule[]> = { "*": [] };
 
   if (grants.github) {
     const token = grants.github;
@@ -602,8 +596,11 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       // creation. Callers that specifically need cross-session resume
       // (e.g. a named long-lived project sandbox) should now pass
       // `persistent: true` explicitly.
-      persistent = false,
+      persistent = true,
       snapshotExpiration = DEFAULT_SNAPSHOT_EXPIRATION_MS,
+      keepLastSnapshots = persistent
+        ? { count: 1, deleteEvicted: true }
+        : undefined,
       hooks,
       skipGitWorkspaceBootstrap = false,
     } = config;
@@ -619,15 +616,22 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     // Calculate SDK timeout with buffer for beforeStop hook.
     const sdkTimeout = effectiveTimeout + TIMEOUT_BUFFER_MS;
 
+    // `runtime` is deliberately NOT part of this shared base -- @vercel/
+    // sandbox 3.x's CreateSandboxParams is a discriminated union where the
+    // `source: { type: "snapshot" }` branch requires `runtime`/`image` to
+    // be `never` (omitted entirely, not just undefined). Spreading a
+    // `runtime` key into a snapshot-restore call used to type-check fine
+    // on the old 2.0.0-beta.11 SDK but breaks on 3.x. Found + fixed
+    // 2026-08-28 while finishing the upgrade attempt logged 2026-08-24.
     const createBaseConfig = {
       ...(name ? { name } : {}),
       resources: { vcpus },
       timeout: sdkTimeout,
-      runtime,
       persistent,
       networkPolicy: buildCredentialBrokeringPolicy({ github: githubToken }),
       ...(ports && { ports }),
       ...(snapshotExpiration !== undefined && { snapshotExpiration }),
+      ...(keepLastSnapshots && { keepLastSnapshots }),
     };
 
     let sdk: VercelSandboxSDK;
@@ -644,6 +648,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     } else if (source) {
       sdk = await VercelSandboxSDK.create({
         ...createBaseConfig,
+        runtime,
         source: {
           type: "git",
           url: source.url,
@@ -651,7 +656,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         },
       });
     } else {
-      sdk = await VercelSandboxSDK.create(createBaseConfig);
+      sdk = await VercelSandboxSDK.create({ ...createBaseConfig, runtime });
     }
 
     // Seed the tracked-grants map to match the networkPolicy this sdk

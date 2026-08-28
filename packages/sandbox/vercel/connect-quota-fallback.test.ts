@@ -54,16 +54,23 @@ describe("isSnapshotStorageQuotaExceededError (real SDK APIError shape)", () => 
 
   test("does not match an unrelated real 402 APIError", () => {
     const error = new FakeAPIError(402, {
-      text: JSON.stringify({ code: "payment_required", message: "Card declined" }),
+      text: JSON.stringify({
+        code: "payment_required",
+        message: "Card declined",
+      }),
     });
     expect(isSnapshotStorageQuotaExceededError(error)).toBe(false);
   });
 
   test("does not match unrelated errors", () => {
-    expect(isSnapshotStorageQuotaExceededError(new Error("Status code 500 is not ok"))).toBe(
-      false,
-    );
-    expect(isSnapshotStorageQuotaExceededError(new Error("network timeout"))).toBe(false);
+    expect(
+      isSnapshotStorageQuotaExceededError(
+        new Error("Status code 500 is not ok"),
+      ),
+    ).toBe(false);
+    expect(
+      isSnapshotStorageQuotaExceededError(new Error("network timeout")),
+    ).toBe(false);
   });
 
   test("handles non-Error thrown values", () => {
@@ -81,7 +88,9 @@ describe("isSnapshotStorageQuotaExceededError (real SDK APIError shape)", () => 
 // off `.message` for errors that don't carry those extra properties.
 describe("isSandboxNotFoundError (unaffected by the toErrorMessage change)", () => {
   test("still matches a plain 404 Error with no .text/.json", () => {
-    expect(isSandboxNotFoundError(new Error("Status code 404 is not ok"))).toBe(true);
+    expect(isSandboxNotFoundError(new Error("Status code 404 is not ok"))).toBe(
+      true,
+    );
   });
 
   test("still matches a real APIError-shaped 410", () => {

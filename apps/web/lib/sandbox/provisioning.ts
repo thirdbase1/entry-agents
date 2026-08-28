@@ -236,16 +236,27 @@ export async function provisionSessionSandbox(params: {
         vcpus: DEFAULT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        // Default changed 2026-08-25: this is the main per-session sandbox
-        // provisioning path, so this is what "default sandbox" means in
-        // practice. Persistent mode's auto-snapshot-on-stop kept blowing
-        // through the Hobby plan's 15GB Snapshot Storage quota despite
-        // several rounds of fixes (see docs/agents/lessons-learned.md) --
-        // switching the default off removes that whole failure class.
-        // Trade-off: sessions no longer resume filesystem state across a
-        // full stop/restart (e.g. after inactivity hibernation) -- only
-        // within a single continuous sandbox lifetime.
-        persistent: false,
+        // Reverted 2026-08-28 back to persistent (Vercel's own default).
+        // The 2026-08-25 flip to `persistent: false` traded away real
+        // resume-from-stop entirely (confirmed via Vercel's docs:
+        // non-persistent sandboxes literally "cannot be resumed" -- state
+        // is discarded the instant the VM stops, before any of our code
+        // runs) just to dodge unbounded Snapshot Storage growth. That
+        // growth had a real, narrower root cause: every stop created a
+        // brand new snapshot without ever cleaning up the prior one for
+        // the same session (see docs/agents/lessons-learned.md, 2026-08-18
+        // through 2026-08-24 incidents). The correct fix is
+        // `keepLastSnapshots: { count: 1, deleteEvicted: true }` (now the
+        // default in VercelSandbox.create when persistent -- see
+        // packages/sandbox/vercel/sandbox.ts), which caps storage at one
+        // live snapshot per active named sandbox while keeping real
+        // resume working. `resume: true` + `createIfMissing: true` mean a
+        // still-live sandbox resumes from its snapshot; the stale-sandbox
+        // delete+recreate path in connect.ts now only fires for the
+        // genuinely unresumable case (snapshot itself expired/deleted, or
+        // a legacy non-persistent session) -- never for a healthy stopped
+        // persistent sandbox, which resumes instead.
+        persistent: true,
         resume: true,
         createIfMissing: true,
       },

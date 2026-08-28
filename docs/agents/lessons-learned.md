@@ -1805,3 +1805,62 @@ throws `UnsafeToDeleteSandboxError` instead of deleting. The per-session provisi
 attempt for the same session -- but if that assumption is ever wrong (a bypassed/expired lock, or
 some other bug reusing a name), silently deleting a live sandbox would destroy real in-progress
 work instead of just failing loudly. Cheap insurance, unit-tested in `connect-already-exists.test.ts`.
+
+## 2026-08-28: Reverted `persistent: false` default -- non-persistent sandboxes literally cannot resume (fixed properly this time)
+
+Owner pushed back hard on the delete-and-recreate behavior found in the "already exists"
+collision fix above and asked directly: can a stopped sandbox be resumed instead of deleted, and
+make sure sandbox provisioning never destroys user work. Checked Vercel's own docs
+(vercel.com/docs/sandbox/concepts/persistent-sandboxes) rather than guessing:
+
+- Persistent (the SDK's own default): "Automatically snapshotted" on stop, "`Sandbox.get({ name
+  })` or any SDK call auto-resumes". Real resume, real filesystem state back.
+- Non-persistent: "Discarded unless manually snapshotted" on stop, "Cannot be resumed; create a
+  new sandbox". This is a hard platform limitation, not a bug in our code -- the filesystem is
+  gone the instant the VM stops, before any of our provisioning code runs.
+
+The 2026-08-25 flip to `persistent: false` as the main per-session default (see that date's entry)
+traded away real resume-from-stop *entirely* just to dodge unbounded Snapshot Storage growth. That
+growth had a narrower, fixable root cause (see 2026-08-18/23 entries): every `stop()` created a
+brand new snapshot without ever cleaning up the prior one for the same session. The delete+recreate
+"already exists" collision bug two entries above was itself *downstream* of the 2026-08-25 flip --
+a non-persistent sandbox going "stopped" can never be resumed, so `connect()` always fell through
+to `create()`, which then collided with the still-registered (but unresumable) name.
+
+Correct fix, done properly this time (a prior 2026-08-24 attempt at the underlying SDK bump was
+reverted mid-incident, see that entry -- both its documented breaking changes are now fixed below):
+
+1. Bumped `@vercel/sandbox` from the pinned `2.0.0-beta.11` to `3.2.0` (pnpm's
+   `minimumReleaseAge` policy blocked `3.2.1`, published hours earlier -- used the next-newest).
+2. Fixed breaking change 1: `source: { type: "snapshot" }` is now a separate branch of
+   `CreateSandboxParams` that requires `runtime`/`image` to be `never` (omitted, not just
+   undefined). Split `createBaseConfig` in `vercel/sandbox.ts` so `runtime` is only added for the
+   git-source/empty-sandbox branches, never alongside `source.type: "snapshot"`.
+3. Fixed breaking change 2: our hand-rolled `SandboxNetworkRule { transform?: ... }` (optional
+   `transform`) stopped structurally matching the SDK's `NetworkPolicyRule` discriminated union
+   (`transform` XOR `forwardURL`, both required-when-present). Replaced the local reimplementation
+   with the SDK's own exported `NetworkPolicy`/`NetworkPolicyRule` types in
+   `buildCredentialBrokeringPolicy` instead of chasing the shape again on the next bump.
+4. Reverted `apps/web/lib/sandbox/provisioning.ts`'s main session path back to `persistent: true`.
+5. Added `keepLastSnapshots?: { count; expiration?; deleteEvicted? }` to `VercelSandboxConfig`,
+   defaulted to `{ count: 1, deleteEvicted: true }` in `VercelSandbox.create()` whenever
+   `persistent` is true (and not overridden by the caller) -- this is the actual fix for the
+   original storage-growth problem: caps worst case at one live snapshot per active named sandbox,
+   old one deleted immediately on every new snapshot, instead of accumulating forever.
+
+`migration.ts` and `snapshot-refresh.ts` still explicitly pass `persistent: false` for their
+genuinely one-off/ephemeral sandboxes (migration scratch sandbox, base-image build) -- unaffected,
+correctly untouched.
+
+Verified: `tsc --noEmit` clean on `packages/sandbox`, full suite 64/65 pass (the 1 fail --
+`VercelSandbox.exec > preserves stderr output` -- is the pre-existing, already-documented unrelated
+failure, confirmed failing identically on a clean stash of `main`). Added 3 new regression tests in
+`sandbox.test.ts` for the `keepLastSnapshots` default/override/opt-out behavior. The previously
+stale `persists sandboxName in state for created sandboxes` test (asserted `persistent: true`,
+which was failing since the 2026-08-25 flip) now passes again since the default matches it.
+
+Net effect: going forward, a session's sandbox that goes STOPPED resumes with its real filesystem
+state intact instead of being deleted and recreated empty. The stale-sandbox delete path in
+`connect.ts` (`deleteStaleSandboxByName`, still status-guarded to `stopped/aborted/failed` only)
+remains as a fallback for the genuinely unresumable case -- an expired/deleted snapshot (410) or a
+lingering legacy non-persistent session -- but should now be rare instead of the routine path.

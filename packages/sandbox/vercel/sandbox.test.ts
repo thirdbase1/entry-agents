@@ -335,6 +335,52 @@ describe("VercelSandbox persistence", () => {
     );
   });
 
+  // Regression guard for 2026-08-28: reverted the 2026-08-25
+  // persistent-default-to-false flip (which traded away real
+  // resume-from-stop -- non-persistent sandboxes cannot resume at all per
+  // Vercel's own docs, discarding the filesystem the instant the VM
+  // stops) back to `persistent: true`. The correct fix for the original
+  // unbounded Snapshot Storage growth is `keepLastSnapshots`, not
+  // disabling persistence -- confirms it's applied by default whenever a
+  // sandbox is persistent, without needing every one of the ~26 call
+  // sites in apps/web to remember to pass it explicitly.
+  test("defaults to persistent with a bounded keepLastSnapshots policy", async () => {
+    await sandboxModule.VercelSandbox.create({ name: "session_456" });
+
+    expect(createCalls[0]).toEqual(
+      expect.objectContaining({
+        persistent: true,
+        keepLastSnapshots: { count: 1, deleteEvicted: true },
+      }),
+    );
+  });
+
+  test("does not add keepLastSnapshots when explicitly non-persistent", async () => {
+    await sandboxModule.VercelSandbox.create({
+      name: "session_789",
+      persistent: false,
+    });
+
+    expect(createCalls[0]).toEqual(
+      expect.objectContaining({ persistent: false }),
+    );
+    expect(createCalls[0]?.keepLastSnapshots).toBeUndefined();
+  });
+
+  test("caller-provided keepLastSnapshots overrides the default", async () => {
+    await sandboxModule.VercelSandbox.create({
+      name: "session_custom",
+      keepLastSnapshots: { count: 3, deleteEvicted: false },
+    });
+
+    expect(createCalls[0]).toEqual(
+      expect.objectContaining({
+        persistent: true,
+        keepLastSnapshots: { count: 3, deleteEvicted: false },
+      }),
+    );
+  });
+
   test("derives resumed expiresAt without the provider stop buffer", async () => {
     const startedAt = new Date();
     currentSessionStateFactory = () => ({

@@ -159,6 +159,29 @@ export async function performSandboxMigration(
       ...buildActiveLifecycleUpdate(newSandboxState),
     });
 
+    // Best-effort: if a dev server was running on the old sandbox, it
+    // died with it (workspace *files* transfer via the payload above,
+    // but a detached background process never does). Relaunching is
+    // deliberately outside the try/catch that guards the migration
+    // itself -- the workspace is already safely moved at this point,
+    // so a relaunch failure here must not be reported as a migration
+    // failure. See relaunchDevServerAfterMigration's own doc comment.
+    try {
+      const { relaunchDevServerAfterMigration } =
+        await import("@/app/api/sessions/[sessionId]/dev-server/route");
+      const relaunched = await relaunchDevServerAfterMigration(freshSandbox);
+      if (relaunched) {
+        console.log(
+          `[sandbox-migration] Relaunched dev server for session ${sessionId} on the fresh sandbox (${relaunched.packagePath}:${relaunched.port}).`,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[sandbox-migration] Dev server relaunch check failed for session ${sessionId} (non-fatal, migration already succeeded):`,
+        error,
+      );
+    }
+
     console.log(
       `[sandbox-migration] Migrated session ${sessionId} to a fresh sandbox ahead of its session-duration cap.`,
     );

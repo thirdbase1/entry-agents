@@ -503,3 +503,135 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
   });
 });
+
+describe("relaunchDevServerAfterMigration", () => {
+  beforeEach(() => {
+    currentMtimeMs = 1_000;
+    fileContents = new Map();
+    existingPaths = new Set<string>();
+    pathEntries = new Map<string, MockPathEntry>();
+    seedDefaultWorkspace();
+    runningPids = new Set<string>();
+    lastLaunchCommand = null;
+    lastLaunchCwd = null;
+    execMock.mockClear();
+    readFileMock.mockClear();
+    writeFileMock.mockClear();
+    execDetachedMock.mockClear();
+  });
+
+  function freshSandbox() {
+    return {
+      workingDirectory: "/vercel/sandbox",
+      exec: execMock,
+      readFile: readFileMock,
+      writeFile: writeFileMock,
+      stat: statMock,
+      access: accessMock,
+      execDetached: execDetachedMock,
+      domain: domainMock,
+    };
+  }
+
+  test("does nothing when no dev server was running before migration", async () => {
+    const { relaunchDevServerAfterMigration } = await routeModulePromise;
+
+    // No .open-agents-dev-server-state.json in the (freshly restored)
+    // workspace -- readFile throws, readPersistedDevServerTarget treats
+    // that as "nothing persisted".
+    const result = await relaunchDevServerAfterMigration(
+      freshSandbox() as never,
+    );
+
+    expect(result).toBeNull();
+    expect(execDetachedMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("relaunches on the fresh sandbox when a dev server was running before migration", async () => {
+    const { relaunchDevServerAfterMigration } = await routeModulePromise;
+
+    // Simulates the persisted target file having survived the
+    // untracked-file transfer from the old sandbox.
+    setMockFile(
+      DEV_SERVER_STATE_FILE,
+      JSON.stringify({ packageDir: "apps/web", port: 3000 }),
+    );
+
+    const result = await relaunchDevServerAfterMigration(
+      freshSandbox() as never,
+    );
+
+    expect(result).toEqual({
+      packagePath: "apps/web",
+      port: 3000,
+      url: "https://sb-3000.vercel.run",
+    });
+    expect(execDetachedMock).toHaveBeenCalledTimes(1);
+    expect(lastLaunchCwd).toBe("/vercel/sandbox/apps/web");
+    expect(fileContents.get(DEV_SERVER_STATE_FILE)).toBe(
+      JSON.stringify({ packageDir: "apps/web", port: 3000 }),
+    );
+  });
+
+  test("returns null without throwing when no dev script can be found despite a stale persisted target", async () => {
+    const { relaunchDevServerAfterMigration } = await routeModulePromise;
+
+    fileContents = new Map();
+    existingPaths = new Set<string>();
+    pathEntries = new Map<string, MockPathEntry>();
+    setMockDirectory("/vercel/sandbox");
+    setMockFile(
+      "/vercel/sandbox/package.json",
+      JSON.stringify({ scripts: { test: "bun test" } }),
+    );
+    currentFindOutput = "./package.json\n";
+    setMockFile(
+      DEV_SERVER_STATE_FILE,
+      JSON.stringify({ packageDir: ".", port: 3000 }),
+    );
+
+    const result = await relaunchDevServerAfterMigration(
+      freshSandbox() as never,
+    );
+
+    expect(result).toBeNull();
+    expect(execDetachedMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("swallows a launch failure and returns null instead of throwing", async () => {
+    const { relaunchDevServerAfterMigration } = await routeModulePromise;
+
+    setMockFile(
+      DEV_SERVER_STATE_FILE,
+      JSON.stringify({ packageDir: "apps/web", port: 3000 }),
+    );
+
+    const failingExecDetached = mock(async () => {
+      throw new Error("sandbox rejected the command");
+    });
+
+    const result = await relaunchDevServerAfterMigration({
+      ...freshSandbox(),
+      execDetached: failingExecDetached,
+    } as never);
+
+    expect(result).toBeNull();
+  });
+
+  test("returns null when the sandbox does not support background commands", async () => {
+    const { relaunchDevServerAfterMigration } = await routeModulePromise;
+
+    setMockFile(
+      DEV_SERVER_STATE_FILE,
+      JSON.stringify({ packageDir: "apps/web", port: 3000 }),
+    );
+
+    const result = await relaunchDevServerAfterMigration({
+      ...freshSandbox(),
+      execDetached: undefined,
+    } as never);
+
+    expect(result).toBeNull();
+    expect(execDetachedMock).toHaveBeenCalledTimes(0);
+  });
+});

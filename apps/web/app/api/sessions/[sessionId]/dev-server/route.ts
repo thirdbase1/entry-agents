@@ -895,6 +895,110 @@ async function connectDevServerSandboxForSession(
   };
 }
 
+/**
+ * Shared launch sequence used both by the POST handler below (explicit
+ * user/UI-triggered launch) and by relaunchDevServerAfterMigration
+ * (automatic post-migration relaunch). Detects the package manager,
+ * decides whether deps need installing, starts the process detached,
+ * and persists the target so a future check knows what's running.
+ */
+async function launchDevServerAtTarget(
+  sandbox: ConnectedSandbox,
+  target: LaunchableDevServerTarget,
+): Promise<DevServerLaunchResponse> {
+  if (!sandbox.execDetached) {
+    throw new Error("Sandbox does not support background commands");
+  }
+  const execDetached = sandbox.execDetached;
+
+  const { candidate, packageDirAbs, port } = target;
+
+  const { packageManager, installRootAbs } = await detectPackageManager(
+    sandbox,
+    packageDirAbs,
+    candidate.packageManagerField,
+  );
+  const installDependencies = await shouldInstallDependencies({
+    sandbox,
+    installRootAbs,
+    packageDirAbs,
+    packageManager,
+  });
+  const launchCommand = buildLaunchCommand({
+    packageManager,
+    framework: candidate.framework,
+    port,
+    installRootAbs,
+    packageDirAbs,
+    installDependencies,
+    pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
+  });
+
+  try {
+    await execDetached(launchCommand, packageDirAbs);
+  } catch (error) {
+    await clearDevServerPidFile(sandbox, packageDirAbs, port).catch(
+      () => undefined,
+    );
+    throw error;
+  }
+
+  await writePersistedDevServerTarget(sandbox, target);
+  return buildDevServerResponse(sandbox, target);
+}
+
+/**
+ * Best-effort dev-server relaunch after a sandbox migration (see
+ * lib/sandbox/migration.ts). packWorkspacePayload/restoreWorkspacePayload
+ * carry over the workspace *files* to the new sandbox, but a dev server
+ * that was running as a detached background process on the old sandbox
+ * does not survive -- it just dies with that sandbox, silently, with no
+ * restart. This re-resolves the same launch target from the restored
+ * files (deterministic over the same repo contents) and starts it fresh
+ * on the new sandbox.
+ *
+ * Only acts if a dev server was actually running before migration (a
+ * persisted target file exists in the restored workspace) -- sessions
+ * that never had one running are left alone. Never throws: migration
+ * success/failure must never hinge on this, so any error here is
+ * swallowed and reported as a null return, same as "nothing to do".
+ */
+export async function relaunchDevServerAfterMigration(
+  sandbox: ConnectedSandbox,
+): Promise<DevServerLaunchResponse | null> {
+  if (!sandbox.execDetached) {
+    return null;
+  }
+
+  try {
+    const hadPersistedTarget = Boolean(
+      await readPersistedDevServerTarget(sandbox),
+    );
+    if (!hadPersistedTarget) {
+      return null;
+    }
+
+    // The persisted target's pid file, if it survived the untracked-file
+    // transfer at all, refers to a PID on the now-dead old sandbox --
+    // always stale here. Clear it and re-resolve from scratch rather
+    // than trusting the stale packageDir/port pairing.
+    await clearPersistedDevServerTarget(sandbox);
+
+    const target = await resolveDevServerTarget(sandbox);
+    if (!target) {
+      return null;
+    }
+
+    return await launchDevServerAtTarget(sandbox, target);
+  } catch (error) {
+    console.warn(
+      "[dev-server] Best-effort relaunch after sandbox migration failed:",
+      error,
+    );
+    return null;
+  }
+}
+
 export async function POST(_req: Request, context: RouteContext) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
@@ -942,7 +1046,7 @@ export async function POST(_req: Request, context: RouteContext) {
       );
     }
 
-    const { candidate, packageDirAbs, port } = target;
+    const { packageDirAbs, port } = target;
     const existingPid = await getRunningDevServerPid({
       sandbox,
       packageDirAbs,
@@ -953,38 +1057,7 @@ export async function POST(_req: Request, context: RouteContext) {
       return Response.json(buildDevServerResponse(sandbox, target));
     }
 
-    const { packageManager, installRootAbs } = await detectPackageManager(
-      sandbox,
-      packageDirAbs,
-      candidate.packageManagerField,
-    );
-    const installDependencies = await shouldInstallDependencies({
-      sandbox,
-      installRootAbs,
-      packageDirAbs,
-      packageManager,
-    });
-    const launchCommand = buildLaunchCommand({
-      packageManager,
-      framework: candidate.framework,
-      port,
-      installRootAbs,
-      packageDirAbs,
-      installDependencies,
-      pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
-    });
-
-    try {
-      await sandbox.execDetached(launchCommand, packageDirAbs);
-    } catch (error) {
-      await clearDevServerPidFile(sandbox, packageDirAbs, port).catch(
-        () => undefined,
-      );
-      throw error;
-    }
-
-    await writePersistedDevServerTarget(sandbox, target);
-    return Response.json(buildDevServerResponse(sandbox, target));
+    return Response.json(await launchDevServerAtTarget(sandbox, target));
   } catch (error) {
     console.error("Failed to launch dev server:", error);
     return Response.json(

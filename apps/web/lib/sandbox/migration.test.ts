@@ -98,15 +98,33 @@ mock.module("@open-agents/sandbox", () => ({
   restoreWorkspacePayload: spies.restoreWorkspacePayload,
 }));
 
+let relaunchShouldThrow = false;
+const relaunchDevServerAfterMigrationSpy = mock(async (_sandbox: unknown) => {
+  if (relaunchShouldThrow) {
+    throw new Error("relaunch exploded");
+  }
+  return null as { packagePath: string; port: number; url: string } | null;
+});
+
+// Mocked (rather than letting the real module load) so this test stays
+// scoped to performSandboxMigration's own orchestration -- the actual
+// relaunch logic has its own dedicated tests in the dev-server route's
+// test file.
+mock.module("@/app/api/sessions/[sessionId]/dev-server/route", () => ({
+  relaunchDevServerAfterMigration: relaunchDevServerAfterMigrationSpy,
+}));
+
 const { performSandboxMigration } = await import("./migration");
 
 beforeEach(() => {
   sessionRecord = makeDueSession();
   connectSandboxShouldFail = false;
   packShouldFail = false;
+  relaunchShouldThrow = false;
   Object.values(spies).forEach((spy) => spy.mockClear());
   killCommandSpy.mockClear();
   stopSpy.mockClear();
+  relaunchDevServerAfterMigrationSpy.mockClear();
 });
 
 describe("performSandboxMigration", () => {
@@ -187,5 +205,28 @@ describe("performSandboxMigration", () => {
 
     expect(result).toEqual({ action: "skipped", reason: "not-due-yet" });
     expect(sessionRecord?.migrationFailureCount).toBe(2);
+  });
+
+  test("checks whether a dev server needs relaunching after a successful migration", async () => {
+    const result = await performSandboxMigration("session-1");
+
+    expect(result).toEqual({ action: "migrated" });
+    expect(relaunchDevServerAfterMigrationSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("still reports the migration as successful when the dev server relaunch check throws", async () => {
+    relaunchShouldThrow = true;
+
+    const result = await performSandboxMigration("session-1");
+
+    expect(result).toEqual({ action: "migrated" });
+  });
+
+  test("does not attempt a dev server relaunch when the migration itself fails", async () => {
+    connectSandboxShouldFail = true;
+
+    await performSandboxMigration("session-1");
+
+    expect(relaunchDevServerAfterMigrationSpy).not.toHaveBeenCalled();
   });
 });

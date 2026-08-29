@@ -2010,3 +2010,35 @@ imported," e.g. whether the import is actually invoked outside a step boundary) 
 alone rather than speculatively "fixing" files that aren't actually broken.
 
 Deployed as commit 7af662a, on top of the retry-backoff fix (6cb3663).
+
+## 2026-08-29: sandbox migration didn't restart a running dev server
+
+Follow-up to the 45-min-cap migration work above. `performSandboxMigration` moves the
+*workspace* (git history + uncommitted/untracked files) to a fresh sandbox via
+`packWorkspacePayload`/`restoreWorkspacePayload`, but a dev server started via the bash
+tool's `detached: true` mode (or the `/api/sessions/[sessionId]/dev-server` route) is a live
+background process -- it just dies with the old sandbox. Nothing relaunched it, so a user
+mid-preview would silently lose their running dev server on every migration with no restart
+and no clear signal why the preview URL stopped responding.
+
+Fix: extracted the dev server's launch sequence (package-manager detection, install-if-needed,
+`execDetached`, persist target) out of the POST handler in
+`apps/web/app/api/sessions/[sessionId]/dev-server/route.ts` into a shared
+`launchDevServerAtTarget` helper, and added `relaunchDevServerAfterMigration(sandbox)`. It
+checks whether a dev server was actually running before migration (a persisted target file
+exists in the restored workspace), and if so, re-resolves the same launch target from the
+restored files (deterministic over the same repo contents -- same candidate-scoring logic the
+route already used) and starts it fresh on the new sandbox. The persisted target's old PID is
+always stale on the new sandbox, so it's cleared and re-detected rather than trusted directly.
+
+Wired into `performSandboxMigration` in `lib/sandbox/migration.ts`, called *after* the new
+sandbox state is already persisted to the session -- deliberately outside the migration's own
+try/catch, so a relaunch failure is logged but never turns a successful migration into a
+reported failure (the workspace is already safely moved by that point regardless).
+
+16 new tests (12 in the route's test file, 4 in migration's), typecheck/lint/format clean,
+verified with a genuine `next build`. Confirmed cross-file `mock.module` state leaks when
+running two test files that both mock the dev-server route module together in one `bun test`
+invocation -- not a real bug, just why this repo's CI uses `pnpm test:isolated` (spawns `bun
+test` once per file) instead of a single `bun test` sweep; always verify test files that mock
+shared modules individually, not just via a multi-file ad-hoc run.

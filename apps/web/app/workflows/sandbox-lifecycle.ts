@@ -1,21 +1,34 @@
 import { sleep } from "workflow";
-import { getSessionById, updateSession } from "@/lib/db/sessions";
 import {
   SANDBOX_LIFECYCLE_MIN_SLEEP_MS,
   SANDBOX_MIGRATION_MAX_ATTEMPTS,
 } from "@/lib/sandbox/config";
-import {
-  evaluateSandboxLifecycle,
-  getLifecycleDueAtMs,
-  getMigrationRetryBackoffMs,
-  type SandboxLifecycleEvaluationResult,
-  type SandboxLifecycleReason,
+import { getMigrationRetryBackoffMs } from "@/lib/sandbox/migration-backoff";
+import type {
+  SandboxLifecycleEvaluationResult,
+  SandboxLifecycleReason,
 } from "@/lib/sandbox/lifecycle";
-import {
-  performSandboxMigration,
-  type SandboxMigrationResult,
-} from "@/lib/sandbox/migration";
+import type { SandboxMigrationResult } from "@/lib/sandbox/migration";
 import { canOperateOnSandbox } from "@/lib/sandbox/utils";
+
+// NOTE ON IMPORTS IN THIS FILE (fixed 2026-08-29): everything below
+// that touches the database (getSessionById/updateSession,
+// evaluateSandboxLifecycle, getLifecycleDueAtMs, performSandboxMigration)
+// is loaded via dynamic import() *inside* the "use step" functions that
+// use it, never as a top-level static import -- a static import of any
+// module that transitively imports "@/lib/db/sessions" (which pulls in
+// "postgres" via lib/db/client.ts) leaks Node.js-dependent code into
+// this file's restricted "use workflow" bundle even when every actual
+// call site is safely inside a step. This was a real, already-live
+// latent bug (the getSessionById/updateSession top-level import here
+// predates today) that a build cache hit had been silently masking;
+// only surfaced once an unrelated change in this file forced a fresh
+// build. `canOperateOnSandbox` and `getMigrationRetryBackoffMs` stay as
+// static imports because their modules (lib/sandbox/utils.ts,
+// lib/sandbox/migration-backoff.ts) are deliberately dependency-free.
+// See docs/agents/lessons-learned.md 2026-08-29 entry, and the
+// 2026-08-26 chat.ts entry for the same class of fix
+// (checkIsRepeatFailureStep).
 
 interface LifecycleWakeDecision {
   shouldContinue: boolean;
@@ -27,6 +40,8 @@ async function claimLifecycleLease(
   sessionId: string,
   runId: string,
 ): Promise<boolean> {
+  const { getSessionById, updateSession } = await import("@/lib/db/sessions");
+
   const current = await getSessionById(sessionId);
   if (!current) {
     return false;
@@ -49,6 +64,9 @@ async function computeLifecycleWakeDecision(
   runId: string,
 ): Promise<LifecycleWakeDecision> {
   "use step";
+
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { getLifecycleDueAtMs } = await import("@/lib/sandbox/lifecycle");
 
   const session = await getSessionById(sessionId);
   if (!session) {
@@ -77,6 +95,7 @@ async function runLifecycleEvaluation(
   reason: SandboxLifecycleReason,
 ): Promise<SandboxLifecycleEvaluationResult> {
   "use step";
+  const { evaluateSandboxLifecycle } = await import("@/lib/sandbox/lifecycle");
   return evaluateSandboxLifecycle(sessionId, reason);
 }
 
@@ -84,6 +103,7 @@ async function runSandboxMigrationStep(
   sessionId: string,
 ): Promise<SandboxMigrationResult> {
   "use step";
+  const { performSandboxMigration } = await import("@/lib/sandbox/migration");
   return performSandboxMigration(sessionId);
 }
 
@@ -92,6 +112,8 @@ async function clearLifecycleRunIdIfOwned(
   runId: string,
 ): Promise<void> {
   "use step";
+
+  const { getSessionById, updateSession } = await import("@/lib/db/sessions");
 
   const session = await getSessionById(sessionId);
   if (!session || session.lifecycleRunId !== runId) {

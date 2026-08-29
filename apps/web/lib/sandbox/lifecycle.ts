@@ -9,8 +9,6 @@ import {
 import {
   SANDBOX_INACTIVITY_TIMEOUT_MS,
   SANDBOX_MIGRATION_LEAD_MS,
-  SANDBOX_MIGRATION_RETRY_BASE_MS,
-  SANDBOX_MIGRATION_RETRY_MAX_MS,
 } from "./config";
 import {
   canOperateOnSandbox,
@@ -83,23 +81,6 @@ export function isSandboxMigrationDue(
     return false;
   }
   return Date.now() >= expiresAtMs - SANDBOX_MIGRATION_LEAD_MS;
-}
-
-/**
- * Exponential backoff for a failed sandbox migration attempt, capped
- * at SANDBOX_MIGRATION_RETRY_MAX_MS. failureCount is 1 on the first
- * failure (see performSandboxMigration's SandboxMigrationResult), so
- * this starts at the base delay rather than doubling it immediately.
- * Lives here (a plain module) rather than in the "use workflow" file
- * that calls it, so it can be unit-tested directly without hitting the
- * bundler restrictions on workflow files.
- */
-export function getMigrationRetryBackoffMs(failureCount: number): number {
-  const exponent = Math.max(failureCount - 1, 0);
-  return Math.min(
-    SANDBOX_MIGRATION_RETRY_BASE_MS * 2 ** exponent,
-    SANDBOX_MIGRATION_RETRY_MAX_MS,
-  );
 }
 
 export function getSandboxExpiresAtDate(

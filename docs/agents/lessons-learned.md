@@ -1961,3 +1961,52 @@ already-migrating skip, and not-due-yet skip (doesn't touch the counter). Added 
 and Bun's mock registry isn't file-scoped) -- this is exactly why `pnpm test:isolated`
 (`scripts/test-isolated.ts`) spawns one `bun test <file>` process per file; confirmed all pass that
 way (matches CI). Not a real regression, just the same known class of issue.
+
+## 2026-08-29 (same day, follow-up): fixed a real prod-blocking build break surfaced by the above fix
+
+Pushing the migration-retry-backoff fix above (commit 6cb3663) broke the production build:
+`ERROR: [plugin: workflow-node-module-error] You are attempting to use "postgres" ... lib/db/client.ts:15:21`,
+failing `next build` entirely. Root cause was **pre-existing and latent**, not introduced by that
+commit -- confirmed via `git diff` that the offending line
+(`import { getSessionById, updateSession } from "@/lib/db/sessions";` at the top of
+`apps/web/app/workflows/sandbox-lifecycle.ts`) was byte-for-byte unchanged. Turbo's remote build
+cache had apparently never invalidated for this exact file/bundle since the "migrating" lifecycle
+state was added (2026-08-25), so a real Node-module-in-workflow-bundle violation sat live on `main`
+undetected until this unrelated change finally forced a cache miss and a truly fresh build.
+
+The rule (matches the 2026-08-26 chat.ts `checkIsRepeatFailureStep` fix): a file containing a
+`"use workflow"` function must not have ANY top-level static import -- direct or transitive -- that
+reaches a Node.js-dependent package (here, `postgres` via `lib/db/sessions.ts` -> `lib/db/client.ts`),
+even if every actual call site is safely inside a `"use step"` function. Fixed by:
+- Converting `sandbox-lifecycle.ts`'s own `getSessionById`/`updateSession` usage (in
+  `claimLifecycleLease`, `computeLifecycleWakeDecision`, `clearLifecycleRunIdIfOwned`) to
+  `await import("@/lib/db/sessions")` inside each function body instead of a top-level import.
+- Same treatment for `evaluateSandboxLifecycle` (from `lib/sandbox/lifecycle.ts`) and
+  `performSandboxMigration` (from `lib/sandbox/migration.ts`) -- both modules themselves statically
+  import `@/lib/db/sessions`, so even importing just one named export from them at the top of
+  `sandbox-lifecycle.ts` pulled the whole module (and its postgres dependency) in transitively.
+  Now dynamically imported inside `runLifecycleEvaluation`/`computeLifecycleWakeDecision`'s step
+  bodies respectively.
+- `getLifecycleDueAtMs` also moved to a dynamic import inside `computeLifecycleWakeDecision` for
+  the same reason (same module as `evaluateSandboxLifecycle`).
+- Extracted `getMigrationRetryBackoffMs` out of `lib/sandbox/lifecycle.ts` into a brand-new,
+  deliberately dependency-free `lib/sandbox/migration-backoff.ts` (only imports plain constants
+  from `config.ts`) -- it's called directly inside the `"use workflow"` function itself (not inside
+  a step, since it just computes a sleep duration), so it can never be a dynamic import; it has to
+  be a *safe* static import instead. Moved its 4 unit tests to a new `migration-backoff.test.ts`.
+- `canOperateOnSandbox` (from `lib/sandbox/utils.ts`) stays a static import -- confirmed
+  dependency-free (only imports `config.ts` and a type from `@open-agents/sandbox`).
+
+Verified with a genuinely fresh local build (`rm -rf .next && next build`, bypassing the
+`db:migrate:apply` step per the skill's documented sandbox `DATABASE_URL` limitation) -- reproduced
+the exact failure against the pre-fix code, then confirmed a clean full build (all routes, all 5
+workflow files) after the fix. Also swept every other `"use workflow"` file
+(`archive-sandbox-stop.ts`, `chat.ts`, `run-benchmarks.ts`, `sandbox-provisioning.ts`) for the same
+pattern -- `archive-sandbox-stop.ts` textually has the same top-level `getSessionById`/
+`updateSession` import, and `chat.ts` has a similar-looking one, but since the full build already
+covers every workflow file in one pass and passed clean, neither is currently triggering the
+bundler's reachability check (tree-shaking/reachability clearly depends on more than just "is this
+imported," e.g. whether the import is actually invoked outside a step boundary) -- left those
+alone rather than speculatively "fixing" files that aren't actually broken.
+
+Deployed as commit 7af662a, on top of the retry-backoff fix (6cb3663).

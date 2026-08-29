@@ -1,16 +1,36 @@
 // Changed 2026-08-17: deepseek-v4-flash was left as a "TEMP" default from
 // an old 2026-08-11 ling-3.0-flash-free outage, then got admin-disabled
 // itself on 2026-08-17 -- meaning any request that fell through to this
-// default was guaranteed to fail. Using gpt-5.6-luna instead: it's the
-// free-tier model (see FREE_PLAN_MODEL_ID in lib/billing/plans.ts), so it's
-// verified working and always enabled by definition. This is only used as
-// the INITIAL selection when no model has been chosen yet -- if a model a
-// user actually picked turns out to be disabled, resolveChatModelSelection
-// throws a clear error instead of silently substituting this (or any other)
-// default. See that file's docstring for why silent substitution was
-// removed entirely.
-export const DEFAULT_MODEL_ID = "gpt-5.6-luna";
-export const APP_DEFAULT_MODEL_ID = "gpt-5.6-luna";
+// default was guaranteed to fail. Switched to gpt-5.6-luna at the time
+// since it's the free-tier model (see FREE_PLAN_MODEL_ID in
+// lib/billing/plans.ts) and therefore always enabled by definition.
+//
+// Changed AGAIN 2026-08-29: gpt-5.6-luna's upstream FreeModel pool has now
+// gone down multiple separate times (2026-08-21, 2026-08-26, 2026-08-29),
+// each lasting hours. Every brand-new chat/session previously started on
+// this default (both here and via the matching DB column defaults on
+// chats.model_id / user_preferences.default_model_id -- see migration
+// 0054), which meant every new chat silently rode straight into whichever
+// outage was active, with no explicit model choice by the user at all.
+// Switched to gpt-5.6-sol: same provider/pricing tier as Luna, but its own
+// pool has stayed up through every one of Luna's outages so far (confirmed
+// live each time -- see docs/agents/lessons-learned.md). This is STILL
+// only the INITIAL selection when no model has been chosen yet -- if a
+// model a user actually picked turns out to be disabled,
+// resolveChatModelSelection throws a clear error instead of silently
+// substituting this (or any other) default. See that file's docstring for
+// why silent substitution was removed entirely.
+//
+// NOTE: this does NOT change the Free plan's own model restriction --
+// FREE_PLAN_MODEL_ID in lib/billing/plans.ts is still gpt-5.6-luna by
+// deliberate business design (it's Entry's only $0-cost model), so a
+// genuine Free-tier user's chat is still pinned to Luna specifically by
+// the billing gate in app/workflows/chat.ts, independent of this default.
+// If Luna is down, Free-tier users are still affected by design -- only
+// paid/admin users (whose new chats no longer default to Luna) are fixed
+// by this change.
+export const DEFAULT_MODEL_ID = "gpt-5.6-sol";
+export const APP_DEFAULT_MODEL_ID = "gpt-5.6-sol";
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 const TOKENS_PER_MILLION = 1_000_000;
 

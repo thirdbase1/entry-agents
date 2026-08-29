@@ -11,7 +11,7 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     expect(toUserPreferencesData()).toEqual({
-      defaultModelId: "gpt-5.6-luna",
+      defaultModelId: "gpt-5.6-sol",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
       defaultDiffMode: "unified",

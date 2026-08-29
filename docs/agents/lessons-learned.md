@@ -2042,3 +2042,30 @@ running two test files that both mock the dev-server route module together in on
 invocation -- not a real bug, just why this repo's CI uses `pnpm test:isolated` (spawns `bun
 test` once per file) instead of a single `bun test` sweep; always verify test files that mock
 shared modules individually, not just via a multi-file ad-hoc run.
+
+## 2026-08-29: new chats were silently defaulting onto Luna specifically
+
+Owner report: a chat's failed response was attributed to gpt-5.6-luna despite not
+picking a GPT model at all. Root cause: `APP_DEFAULT_MODEL_ID` (in `lib/models.ts`) and
+the matching Postgres column defaults on `chats.model_id` / `user_preferences.default_model_id`
+(migration 0046, 2026-08-19) were all set to `gpt-5.6-luna` -- so *every* brand-new
+chat/session started on Luna specifically, with zero explicit choice by the user, before
+they ever touched the model picker. Combined with Luna's now-recurring FreeModel-pool
+outages (2026-08-21, 2026-08-26, 2026-08-29), this meant new chats had a real chance of
+silently riding straight into an active outage.
+
+Fix: switched the general app-wide default (both the TS constant and the matching DB
+column defaults, migration 0054) from `gpt-5.6-luna` to `gpt-5.6-sol` -- same
+provider/pricing tier as Luna, but its pool has stayed up through every one of Luna's
+outages so far. This does NOT touch `FREE_PLAN_MODEL_ID` in `lib/billing/plans.ts`,
+which is still `gpt-5.6-luna` by deliberate business design (Entry's Free plan is
+hard-restricted to a single $0-cost model, and Luna is that model) -- real Free-tier
+users are therefore still pinned to Luna by the billing gate in
+`resolveChatModelRuntime` (`app/workflows/chat.ts`) regardless of this default, and are
+still affected when Luna is down. Only new chats for paid/admin users (whose chats
+aren't subject to that gate) stop defaulting onto an outage-prone model.
+
+Worth a future call from the owner: if Luna's outages keep recurring, the Free plan's
+single-model design itself may need revisiting (e.g. an automatic health-check-based
+swap among owner-sponsored $0 models) -- deliberately not done here since it's a
+business-tier decision, not a bug fix.

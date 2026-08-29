@@ -379,6 +379,13 @@
       "when": 1787958830172,
       "tag": "0053_add_migration_failure_count",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1788012825356,
+      "tag": "0054_update_default_model_off_luna",
+      "breakpoints": true
     }
   ]
 }

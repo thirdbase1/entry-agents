@@ -145,6 +145,32 @@ export function isSandboxAlreadyExistsError(error: unknown): boolean {
   );
 }
 
+// Found 2026-08-29 debugging a real production incident: a session
+// provisioned in the persistent-default era (before the 2026-08-25 flip
+// to persistent:false) stores a real `snapshotId` in its DB-persisted
+// sandbox state. That field is only ever cleared going forward by
+// VercelSandbox.getState() (which deliberately never re-emits it -- see
+// sandbox.ts), so it self-heals on the *first* successful reconnect --
+// but if the underlying Vercel snapshot is gone by the time that
+// reconnect is attempted (e.g. deleted by the scheduled Entry Sandbox
+// Snapshot Cleanup workflow, which removes anything older than 2 days),
+// every attempt to restore from it 400s with "Cannot resume sandbox: no
+// snapshot available" before ever reaching a successful getState() call
+// -- so the poisoned snapshotId never gets cleared, and the session
+// fails identically forever (confirmed: 4 distinct workflow runs for
+// the same session, all with the same error, within minutes). Detects
+// that specific case so the caller can retry once without the stale
+// restoreSnapshotId, falling back to a genuinely fresh sandbox (git
+// clone from source) instead of wedging the session permanently.
+export function isSnapshotResumeUnavailableError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  return (
+    message.includes("status code 400") &&
+    message.includes("resume") &&
+    message.includes("snapshot")
+  );
+}
+
 // Statuses that mean the sandbox is genuinely, terminally dead -- safe to
 // delete without losing anything in-flight. Deliberately narrower than
 // sandbox.ts's own isStoppedSessionStatus (which also includes "stopping"
@@ -246,6 +272,7 @@ function buildCreateConfig(
 async function createSandboxWithQuotaFallback(
   config: VercelSandboxConfig,
   alreadyRetriedAfterDelete = false,
+  alreadyRetriedWithoutSnapshot = false,
 ): Promise<Sandbox> {
   try {
     return await VercelSandbox.create(config);
@@ -261,7 +288,34 @@ async function createSandboxWithQuotaFallback(
         error,
       );
       await deleteStaleSandboxByName(config.name);
-      return createSandboxWithQuotaFallback(config, true);
+      return createSandboxWithQuotaFallback(
+        config,
+        true,
+        alreadyRetriedWithoutSnapshot,
+      );
+    }
+
+    if (
+      config.restoreSnapshotId &&
+      !alreadyRetriedWithoutSnapshot &&
+      isSnapshotResumeUnavailableError(error)
+    ) {
+      console.warn(
+        "[sandbox] restoreSnapshotId points to a snapshot Vercel no " +
+          "longer has (likely cleaned up as stale) -- retrying create() " +
+          "once as a genuinely fresh sandbox instead of wedging the " +
+          "session.",
+        error,
+      );
+      const {
+        restoreSnapshotId: _restoreSnapshotId,
+        ...configWithoutSnapshot
+      } = config;
+      return createSandboxWithQuotaFallback(
+        configWithoutSnapshot,
+        alreadyRetriedAfterDelete,
+        true,
+      );
     }
 
     if (

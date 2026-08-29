@@ -226,6 +226,16 @@ export const sessions = pgTable(
     lifecycleRunId: text("lifecycle_run_id"),
     sandboxProvisioningRunId: text("sandbox_provisioning_run_id"),
     lifecycleError: text("lifecycle_error"),
+    // Added 2026-08-29: consecutive migration-attempt failure count, so
+    // sandboxLifecycleWorkflow (apps/web/app/workflows/sandbox-lifecycle.ts)
+    // can back off exponentially and eventually give up instead of
+    // hot-retrying performSandboxMigration every
+    // SANDBOX_LIFECYCLE_MIN_SLEEP_MS (5s) forever on a migration that
+    // keeps failing. Reset to 0 on any successful migration or fresh
+    // active-lifecycle state. See lib/sandbox/migration.ts.
+    migrationFailureCount: integer("migration_failure_count")
+      .notNull()
+      .default(0),
     // Added 2026-08-25: durable record of the in-flight bash command (if
     // any) running in this session's sandbox, so a process other than
     // the one that started it (the lifecycle workflow, ahead of the

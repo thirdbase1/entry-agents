@@ -24,6 +24,13 @@ import { canOperateOnSandbox, isSandboxState } from "@/lib/sandbox/utils";
 export interface SandboxMigrationResult {
   action: "skipped" | "migrated" | "failed";
   reason?: string;
+  /**
+   * Consecutive failure count *after* this attempt, only present when
+   * action === "failed". Lets the caller (sandboxLifecycleWorkflow)
+   * apply backoff and eventually give up instead of hot-retrying every
+   * SANDBOX_LIFECYCLE_MIN_SLEEP_MS forever.
+   */
+  failureCount?: number;
 }
 
 async function killActiveCommandBestEffort(
@@ -86,11 +93,13 @@ export async function performSandboxMigration(
     oldSandbox = await connectSandbox(sandboxState);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failureCount = (session.migrationFailureCount ?? 0) + 1;
     await updateSession(sessionId, {
       lifecycleState: "failed",
       lifecycleError: `Migration failed to connect to existing sandbox: ${message}`,
+      migrationFailureCount: failureCount,
     });
-    return { action: "failed", reason: message };
+    return { action: "failed", reason: message, failureCount };
   }
 
   await killActiveCommandBestEffort(
@@ -146,6 +155,7 @@ export async function performSandboxMigration(
       snapshotUrl: null,
       snapshotCreatedAt: null,
       lifecycleVersion: getNextLifecycleVersion(session.lifecycleVersion),
+      migrationFailureCount: 0,
       ...buildActiveLifecycleUpdate(newSandboxState),
     });
 
@@ -155,14 +165,16 @@ export async function performSandboxMigration(
     return { action: "migrated" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failureCount = (session.migrationFailureCount ?? 0) + 1;
     await updateSession(sessionId, {
       lifecycleState: "failed",
       lifecycleError: `Sandbox migration failed: ${message}`,
+      migrationFailureCount: failureCount,
     });
     console.error(
-      `[sandbox-migration] Failed to migrate session ${sessionId}:`,
+      `[sandbox-migration] Failed to migrate session ${sessionId} (consecutive failure #${failureCount}):`,
       error,
     );
-    return { action: "failed", reason: message };
+    return { action: "failed", reason: message, failureCount };
   }
 }

@@ -67,6 +67,34 @@ export const SANDBOX_LIFECYCLE_STALE_RUN_GRACE_MS = 2 * 60 * 1000;
 export const SANDBOX_LIFECYCLE_MIN_SLEEP_MS = 5 * 1000;
 
 /**
+ * Backoff base for retrying a *failed* sandbox migration (30 seconds),
+ * doubled per consecutive failure and capped at
+ * SANDBOX_MIGRATION_RETRY_MAX_MS. Added 2026-08-29: previously a failed
+ * migration just looped back through the same SANDBOX_LIFECYCLE_MIN_SLEEP_MS
+ * (5s) floor as a normal wake-and-recheck tick, meaning a migration that
+ * kept failing (e.g. a transient pack/restore error, or a genuinely
+ * unreachable old sandbox) hot-retried an expensive pack+create+restore
+ * sequence every 5 seconds with no backoff and no limit -- hammering
+ * Vercel's sandbox APIs and burning workflow steps indefinitely. See
+ * lib/sandbox/migration.ts + apps/web/app/workflows/sandbox-lifecycle.ts.
+ */
+export const SANDBOX_MIGRATION_RETRY_BASE_MS = 30 * 1000;
+
+/** Cap on the exponential migration-retry backoff (2 minutes). */
+export const SANDBOX_MIGRATION_RETRY_MAX_MS = 2 * 60 * 1000;
+
+/**
+ * Give up auto-retrying a migration after this many consecutive
+ * failures. At that point the sandbox has almost certainly already hit
+ * its real hard cap anyway (backoff schedule: 30s+60s+120s+120s+120s
+ * ~= 7.5 min, already past the 5-min SANDBOX_MIGRATION_LEAD_MS
+ * headroom) -- further attempts are pointless. The session is left in
+ * lifecycleState "failed" (existing "Connection issue" UI already
+ * handles this) instead of hot-looping forever.
+ */
+export const SANDBOX_MIGRATION_MAX_ATTEMPTS = 5;
+
+/**
  * Default ports to expose from cloud sandboxes.
  * Limited to 5 ports. Covers the most common framework defaults
  * plus the built-in code editor:

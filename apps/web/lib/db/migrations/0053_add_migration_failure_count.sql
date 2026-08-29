@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "migration_failure_count" integer DEFAULT 0 NOT NULL;

@@ -1918,3 +1918,46 @@ except the two already-documented pre-existing issues: `VercelSandbox.exec > pre
 output` (unrelated real failure) and `lifecycle-kick.test.ts`'s "Export named ... not found"
 module-cache flake (the same known sandbox `bun test` quirk documented 2026-08-20, reproduces on a
 clean checkout regardless of code changes, passes fine standalone).
+
+## 2026-08-29: sandbox migration hot-retry-loop fix (no backoff, no attempt cap)
+
+Continued the "check every scenario" audit of the sandbox migration/lifecycle pipeline (see
+2026-08-28 entries above for the hibernate-timing fix and the "already exists" stale-sandbox fix).
+Found a real, already-live bug in `sandboxLifecycleWorkflow`
+(`apps/web/app/workflows/sandbox-lifecycle.ts`): when `performSandboxMigration` failed (e.g. a
+transient pack/restore error, or a genuinely unreachable old sandbox), the workflow's own comment
+said the plan was "the same near-expiry condition just gets re-evaluated on the next MIN_SLEEP
+tick" -- but `SANDBOX_LIFECYCLE_MIN_SLEEP_MS` is only 5 seconds. A migration that kept failing
+would hot-retry an expensive pack+create+restore sequence every 5 seconds, forever, with zero
+backoff and zero attempt cap -- hammering Vercel's sandbox APIs and burning workflow steps
+indefinitely for as long as the failure persisted (bounded in practice only by the old sandbox's
+real hard-expiry eventually making `connectSandbox` fail differently, but that's ~5+ minutes of
+5-second-interval hammering in the worst case, and could hit many sessions at once during a real
+outage).
+
+Fix:
+- Added `sessions.migration_failure_count` (migration `0053_add_migration_failure_count.sql`,
+  generated via `drizzle-kit generate`, not hand-written). Increments on every
+  `performSandboxMigration` failure (both the old-sandbox-connect failure and the general
+  pack/restore catch), resets to 0 on success.
+- `SandboxMigrationResult` now carries an optional `failureCount` back to the caller.
+- New `getMigrationRetryBackoffMs(failureCount)` in `lib/sandbox/lifecycle.ts` (deliberately NOT in
+  the workflow file itself, which has `"use workflow"` and hits the documented local `bun test`
+  module-bundling limitation -- kept in a plain module so it's directly unit-testable): exponential
+  backoff, base 30s, doubling per consecutive failure, capped at 2 min
+  (`SANDBOX_MIGRATION_RETRY_BASE_MS`/`SANDBOX_MIGRATION_RETRY_MAX_MS` in `lib/sandbox/config.ts`).
+- `SANDBOX_MIGRATION_MAX_ATTEMPTS = 5`: after 5 consecutive failures (backoff schedule sums to
+  ~7.5 min, already past the point the old sandbox would have hard-expired anyway), the workflow
+  gives up instead of looping -- clears `lifecycleRunId` and returns, leaving the session in the
+  existing `lifecycleState: "failed"` (the UI's pre-existing "Connection issue" state already
+  handles this, so no new UI work needed).
+
+Added `lib/sandbox/migration.test.ts` (new file, none existed before) covering success-resets-count,
+connect-failure-increments-count, pack-failure-increments-count, first-failure-starts-at-1,
+already-migrating skip, and not-due-yet skip (doesn't touch the counter). Added 4 tests for
+`getMigrationRetryBackoffMs` in `lifecycle.test.ts`. Confirmed the new test file collides with
+`archive-session.test.ts`/`lifecycle-evaluate.test.ts` when run as a full directory glob in one
+`bun test` process (all three independently `mock.module` the same `@open-agents/sandbox` path,
+and Bun's mock registry isn't file-scoped) -- this is exactly why `pnpm test:isolated`
+(`scripts/test-isolated.ts`) spawns one `bun test <file>` process per file; confirmed all pass that
+way (matches CI). Not a real regression, just the same known class of issue.

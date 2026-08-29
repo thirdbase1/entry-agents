@@ -1,9 +1,13 @@
 import { sleep } from "workflow";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
-import { SANDBOX_LIFECYCLE_MIN_SLEEP_MS } from "@/lib/sandbox/config";
+import {
+  SANDBOX_LIFECYCLE_MIN_SLEEP_MS,
+  SANDBOX_MIGRATION_MAX_ATTEMPTS,
+} from "@/lib/sandbox/config";
 import {
   evaluateSandboxLifecycle,
   getLifecycleDueAtMs,
+  getMigrationRetryBackoffMs,
   type SandboxLifecycleEvaluationResult,
   type SandboxLifecycleReason,
 } from "@/lib/sandbox/lifecycle";
@@ -120,14 +124,33 @@ export async function sandboxLifecycleWorkflow(
     const evaluation = await runLifecycleEvaluation(sessionId, reason);
 
     if (evaluation.action === "migration-needed") {
-      // Best-effort: performSandboxMigration handles its own error
-      // recovery (sets lifecycleState "failed" + lifecycleError on
-      // failure). Either way, loop back and recompute the wake
-      // decision fresh -- on success the session now has a brand-new
-      // sandboxExpiresAt far in the future; on failure the same
-      // near-expiry condition just gets re-evaluated on the next
-      // MIN_SLEEP tick, which retries the migration.
-      await runSandboxMigrationStep(sessionId);
+      const migrationResult = await runSandboxMigrationStep(sessionId);
+
+      // Fixed 2026-08-29: a failed migration used to just fall through
+      // to the same MIN_SLEEP (5s) tick as a normal recheck -- an
+      // expensive pack+create+restore sequence hot-retrying every 5
+      // seconds forever with no backoff and no limit whenever it kept
+      // failing. Now: back off exponentially, and give up after
+      // SANDBOX_MIGRATION_MAX_ATTEMPTS so a persistently broken
+      // migration can't hammer Vercel's sandbox APIs or burn workflow
+      // steps indefinitely -- the sandbox will have hit its real hard
+      // cap by then anyway, and the session is left in the existing
+      // "failed" lifecycle state (surfaced in the UI) instead.
+      if (migrationResult.action === "failed") {
+        const failureCount = migrationResult.failureCount ?? 1;
+        if (failureCount >= SANDBOX_MIGRATION_MAX_ATTEMPTS) {
+          await clearLifecycleRunIdIfOwned(sessionId, runId);
+          return { skipped: false, evaluation: migrationResult };
+        }
+        await sleep(
+          new Date(Date.now() + getMigrationRetryBackoffMs(failureCount)),
+        );
+      }
+
+      // On success the session now has a brand-new sandboxExpiresAt
+      // far in the future; on failure (below the retry cap) the
+      // near-expiry condition just gets re-evaluated after the backoff
+      // sleep above.
       continue;
     }
 

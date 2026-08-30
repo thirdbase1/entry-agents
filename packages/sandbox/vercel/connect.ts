@@ -356,12 +356,34 @@ async function connectNamedSandbox(
       resume: options?.resume,
     });
   } catch (error) {
-    if (!options?.createIfMissing || !isSandboxNotFoundError(error)) {
+    if (!options?.createIfMissing) {
       throw error;
     }
-  }
 
-  return createSandboxWithQuotaFallback(buildCreateConfig(state, options));
+    if (isSandboxNotFoundError(error)) {
+      return createSandboxWithQuotaFallback(buildCreateConfig(state, options));
+    }
+
+    // Found 2026-08-30 in production: a session carrying a stale
+    // snapshotId (whose underlying Vercel snapshot was already cleaned
+    // up) fails its resume attempt with 400 "Cannot resume sandbox: no
+    // snapshot available" -- which matches neither isSandboxNotFoundError
+    // nor the create()-time guard below, so it used to be rethrown here
+    // and wedge the session forever (the shipped 2026-08-29 fix only
+    // covered create()-time restore failures; this error comes from
+    // VercelSandboxSDK.get() before create() is ever reached). Recover
+    // like the not-found case, but drop the stale snapshotId first --
+    // buildCreateConfig would otherwise map it straight back into
+    // restoreSnapshotId and 400 on the same dead snapshot again.
+    if (isSnapshotResumeUnavailableError(error)) {
+      const { snapshotId: _staleSnapshotId, ...stateWithoutSnapshot } = state;
+      return createSandboxWithQuotaFallback(
+        buildCreateConfig(stateWithoutSnapshot, options),
+      );
+    }
+
+    throw error;
+  }
 }
 
 /**

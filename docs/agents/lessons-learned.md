@@ -2069,3 +2069,41 @@ Worth a future call from the owner: if Luna's outages keep recurring, the Free p
 single-model design itself may need revisiting (e.g. an automatic health-check-based
 swap among owner-sponsored $0 models) -- deliberately not done here since it's a
 business-tier decision, not a bug fix.
+
+## 2026-08-30: stale snapshotId wedged sessions at *connect* time -- the 2026-08-29 fix only covered create() time
+
+Follow-up to the 2026-08-29 "recover stale snapshot resumes" fix. Production runtime logs
+showed the exact same failure recurring on the deploy that shipped that fix
+(confirmed 2026-08-30T12:02Z on dpl_Yc8bradw1gB51HHXUhCmRzMQEyCk): `runProvisioning`
+failed after 3 retries with `Status code 400 is not ok: Cannot resume sandbox: no
+snapshot available`, then bubbled up through `resolveChatSandboxRuntime` as an
+unhandledRejection that hard-crashed the workflow process (exit status 128).
+
+Root cause: the 2026-08-29 fix wired `isSnapshotResumeUnavailableError` into
+`createSandboxWithQuotaFallback`, which guards `VercelSandbox.create()` -- but the live
+failure is thrown *earlier*, from `connectNamedSandbox`'s `VercelSandbox.connect()` call
+(the SDK's `get({ name, resume })`). That catch only fell through to the fresh-create
+fallback for `isSandboxNotFoundError` (404/410/"not found"/"sandbox is stopped"/probe
+failures); a 400 snapshot-resume error matches none of those, so it was rethrown and the
+create()-time guard was never reached. Result: the poisoned `snapshotId` in DB-persisted
+state (which only self-heals after a *successful* `getState()`, see the 2026-08-29 entry)
+could never be cleared, and every provisioning retry failed identically forever.
+
+Fix: `connectNamedSandbox` now treats the snapshot-resume 400 like the not-found case and
+falls through to the create fallback, but strips `state.snapshotId` before
+`buildCreateConfig` -- otherwise the config would map it straight back into
+`restoreSnapshotId` and 400 on the same dead snapshot again (the create path's own
+without-snapshot retry would eventually catch it, but only after burning an extra doomed
+create() call). Also aligned `isSandboxUnavailableError` in
+`apps/web/lib/sandbox/utils.ts` with the same pattern (the doc comment in connect.ts
+explicitly requires the two stay aligned), so API routes that hit this error clear the
+poisoned state via `clearUnavailableSandboxState` instead of retrying it forever.
+
+Tests: `connect-named-sandbox-fallback.test.ts` (packages/sandbox/vercel) covers the
+connect-path fall-through end-to-end through the exported `connectVercel` with mocked
+collaborators -- including that the fresh create omits `restoreSnapshotId` while a plain
+404 recreate keeps it, and that unrelated 400s and non-`createIfMissing` calls still
+rethrow. `sandbox-unavailable.test.ts` (apps/web/lib/sandbox) covers the app-side
+predicate alignment and that `clearUnavailableSandboxState` drops the stale `snapshotId`
+for this error. Reminder from these tests: `mock.module` state leaks across files in a
+single `bun test` sweep -- verify such files individually via `pnpm test:isolated`.

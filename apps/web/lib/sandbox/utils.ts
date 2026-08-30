@@ -130,7 +130,14 @@ export function isSandboxUnavailableError(message: string): boolean {
     normalized.includes("status code 404") ||
     normalized.includes("sandbox is stopped") ||
     normalized.includes("sandbox not found") ||
-    normalized.includes("sandbox probe failed")
+    normalized.includes("sandbox probe failed") ||
+    // Aligns with packages/sandbox's isSnapshotResumeUnavailableError
+    // (found 2026-08-30): a 400 "Cannot resume sandbox: no snapshot
+    // available" means the stored snapshotId is dead, so callers should
+    // clear the poisoned state instead of retrying it forever.
+    (normalized.includes("status code 400") &&
+      normalized.includes("resume") &&
+      normalized.includes("snapshot"))
   );
 }
 

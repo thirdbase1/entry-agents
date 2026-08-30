@@ -14,7 +14,6 @@ import {
 import { Toaster } from "sonner";
 import { SWRConfig } from "swr";
 import { GitHubReconnectGate } from "@/components/github-reconnect-gate";
-import { FreeModelAnnouncementDialog } from "@/components/free-model-announcement-dialog";
 import { authClient } from "@/lib/auth/client";
 import { FetchError } from "@/lib/swr";
 
@@ -136,9 +135,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {children}
         <Suspense fallback={null}>
           <GitHubReconnectGate />
-        </Suspense>
-        <Suspense fallback={null}>
-          <FreeModelAnnouncementDialog />
         </Suspense>
       </SWRConfig>
       <Toaster theme={resolvedTheme} />

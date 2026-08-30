@@ -2107,3 +2107,51 @@ rethrow. `sandbox-unavailable.test.ts` (apps/web/lib/sandbox) covers the app-sid
 predicate alignment and that `clearUnavailableSandboxState` drops the stale `snapshotId`
 for this error. Reminder from these tests: `mock.module` state leaks across files in a
 single `bun test` sweep -- verify such files individually via `pnpm test:isolated`.
+
+## 2026-08-30: pre-commit sync fatals on `git branch --set-upstream-to`, stranding the stash
+
+Production runtime logs kept showing the auto-commit path failing right after a
+*successful* fetch+reset with:
+
+    fatal: cannot set up tracking information; starting point 'origin/o/2783cd84' is not a branch
+
+Root cause: `resetToFetchedRemoteBranch` persisted the local branch's tracking
+config with `git branch --set-upstream-to=origin/<branch> <branch>`. That
+subcommand resolves the *exact literal* ref `origin/<branch>`, which fatals when
+the sandbox is on a checkout with an unusual ref name (e.g. the `o/...` name
+GitHub produces for a branch ref stored under a detached/packed form), and it
+fired *after* the stash/reset sequence in `syncToRemotePreservingChanges` -- so a
+single tracking-config fatal aborted the whole sync and stranded the user's
+stashed local changes.
+
+Fix: replace the ref-resolving subcommand with two plain `git config` writes
+(`branch.<b>.remote origin` + `branch.<b>.merge refs/heads/<b>`), which is
+exactly what `set-upstream-to` persists under the hood. They involve no ref
+resolution, so they can't hit the same fatal, and they're best-effort anyway
+(missing tracking config is cosmetic for the commit flow; the real sync is the
+`reset --hard origin/<branch>` above). On failure they only `console.warn`, never
+throw -- the stash pop always still runs.
+
+## 2026-08-30: `glm-5.3-flash` missing from context-window table -> auto-compact every turn
+
+Runtime logs for a long chat showed `[auto-compact]` firing on *every* turn,
+reporting the request as ~200% of a "128k" window, which read as "compaction is
+broken" / "it's always compacting". Root cause was the opposite: compaction
+works, but it was mis-thresholded because `glm-5.3-flash` was absent from
+`KNOWN_CONTEXT_WINDOWS`, so it silently fell back to `DEFAULT_CONTEXT_WINDOW`
+(128k). The model's real window is 1,000,000 tokens (B.AI's own model listing,
+the provider this app routes `glm-5.3-flash` through) -- at that size a normal
+long session is only ~26% used, so compaction should essentially never fire on
+the 0.8 threshold.
+
+Fix: added `glm-5.3-flash: 1_000_000` (plus `deepseek-v4-flash-vision-exp:
+1_000_000` and `qwen3.8-flash: 256_000`, both sourced from the same provider
+listings). Also added a post-compaction log line in `auto-compact.ts`
+(`[auto-compact] post-compaction request ~N tokens (~X% of window).`) so runtime
+logs directly show the real per-request footprint compaction produces, instead of
+only the pre-compaction raw-history estimate that kept climbing.
+
+Lesson: a context-window table silently defaulting to the low fallback makes the
+auto-compactor look like it "isn't working" when it's actually just mis-scaled.
+Any new model route needs an explicit entry (with a sourced, honest value), not
+the fallback.

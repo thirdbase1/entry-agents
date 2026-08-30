@@ -61,6 +61,18 @@
  *     unclear public info on whether these specific route names get
  *     DeepSeek's newer 1M-context variant or the older 128k one, so kept
  *     the safe low number rather than guess.
+ *   - glm-5.3-flash: B.AI's own model listing (the provider this app
+ *     routes glm-5.3-flash through) -- 1,000,000. Was missing from this
+ *     table entirely and silently fell back to DEFAULT_CONTEXT_WINDOW
+ *     (128k), which made auto-compaction fire on every single turn of a
+ *     long session at "~200% of 128k" (found 2026-08-30 in production
+ *     runtime logs) even though the real window is ~26% used at that
+ *     size.
+ *   - deepseek-v4-flash-vision-exp: B.AI's own listing for this exact
+ *     route -- 1,000,000 (distinct from deepseek-v4-flash above, whose
+ *     separate ambiguity note still stands).
+ *   - qwen3.8-flash: B.AI's own listing -- 256K native context,
+ *     matching the conservative number already used for qwen3.8-max.
  */
 
 const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
@@ -77,7 +89,9 @@ const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
   "kimi-k3": 256_000,
   "deepseek-v4-flash": 128_000,
   "deepseek-v4-pro": 128_000,
+  "deepseek-v4-flash-vision-exp": 1_000_000,
   "glm-5.2": 200_000,
+  "glm-5.3-flash": 1_000_000,
   hy3: 262_144,
   "grok-4.5": 500_000,
   "mimo-v2-pro": 1_000_000,
@@ -87,6 +101,7 @@ const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
   "qwen3.6-plus": 1_000_000,
   "qwen3.7-max": 1_000_000,
   "qwen3.7-plus": 1_000_000,
+  "qwen3.8-flash": 256_000,
   "qwen3.8-max": 256_000,
   "step-3.7-flash": 256_000,
 };

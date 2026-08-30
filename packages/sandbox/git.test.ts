@@ -6,6 +6,8 @@ const fetchFeatureCommand =
   "GIT_TERMINAL_PROMPT=0 git fetch --force origin feature:refs/remotes/origin/feature";
 const getOriginUrlCommand = "git remote get-url origin";
 const remoteUrl = "https://github.com/octo/repo.git";
+const trackRemoteCommand = "git config branch.feature.remote origin";
+const trackMergeCommand = "git config branch.feature.merge refs/heads/feature";
 
 function result(params: Partial<ExecResult> = {}): ExecResult {
   return {
@@ -69,7 +71,8 @@ describe("syncToRemotePreservingChanges", () => {
       "git rev-parse HEAD",
       "git stash push --include-untracked -m open-agents-pre-commit-sync",
       "git reset --hard origin/feature",
-      "git branch --set-upstream-to=origin/feature feature",
+      trackRemoteCommand,
+      trackMergeCommand,
       "git stash pop",
     ]);
   });
@@ -97,7 +100,8 @@ describe("syncToRemotePreservingChanges", () => {
       "git rev-parse HEAD",
       "git stash push --include-untracked -m open-agents-pre-commit-sync",
       "git reset --hard origin/feature",
-      "git branch --set-upstream-to=origin/feature feature",
+      trackRemoteCommand,
+      trackMergeCommand,
       "git stash pop",
     ]);
   });
@@ -129,6 +133,7 @@ describe("syncToRemotePreservingChanges", () => {
       result(),
       result(),
       result(),
+      result(),
       result({
         success: false,
         exitCode: 1,
@@ -152,10 +157,50 @@ describe("syncToRemotePreservingChanges", () => {
       "git rev-parse HEAD",
       "git stash push --include-untracked -m open-agents-pre-commit-sync",
       "git reset --hard origin/feature",
-      "git branch --set-upstream-to=origin/feature feature",
+      trackRemoteCommand,
+      trackMergeCommand,
       "git stash pop",
       "git reset --hard original-head",
       "git clean -fd",
+      "git stash pop",
+    ]);
+  });
+
+  test("treats tracking-config persistence as best-effort (2026-08-30 regression)", async () => {
+    // Found 2026-08-30 in production: the old `git branch
+    // --set-upstream-to=origin/o/... o/...` step fatals with "starting
+    // point ... is not a branch" right after a successful fetch+reset,
+    // which aborted the whole pre-commit sync AND stranded the user's
+    // stashed local changes. Tracking config is cosmetic for the commit
+    // flow, so a failure here must never block the sync or the stash pop.
+    const sandbox = createSandbox([
+      result({ stdout: "https://github.com/octo/repo.git\n" }),
+      result(),
+      result({ stdout: " M file.ts\n" }),
+      result({ stdout: "original-head\n" }),
+      result(),
+      result(),
+      result({
+        success: false,
+        exitCode: 128,
+        stderr:
+          "fatal: cannot set up tracking information; starting point 'origin/feature' is not a branch",
+      }),
+      result(),
+      result(),
+    ]) as Sandbox & { commands: string[] };
+
+    await syncToRemotePreservingChanges(sandbox, "feature", remoteUrl);
+
+    expect(sandbox.commands).toEqual([
+      getOriginUrlCommand,
+      fetchFeatureCommand,
+      "git status --porcelain",
+      "git rev-parse HEAD",
+      "git stash push --include-untracked -m open-agents-pre-commit-sync",
+      "git reset --hard origin/feature",
+      trackRemoteCommand,
+      trackMergeCommand,
       "git stash pop",
     ]);
   });

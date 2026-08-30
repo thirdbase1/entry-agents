@@ -145,10 +145,26 @@ export function maybeCompactMessages({
     )}% of ${contextWindow}) -- compacting ${pendingCandidates.pendingToolCallKeys.size} tool call(s) and ${pendingCandidates.pendingAnonymousToolResults} anonymous tool result(s) older than the last ${PROTECTED_RECENT_MESSAGES} messages.`,
   );
 
-  return compactToolData({
+  const compacted = compactToolData({
     messages,
     toolCallIndex,
     pendingCandidates,
     compactedToolNotice: COMPACTED_TOOL_NOTICE,
   });
+
+  // The pre-compaction estimate above is of the raw stored history, so
+  // by itself it can't tell you whether compaction actually worked.
+  // Log the post-compaction request size too (found 2026-08-30 while
+  // investigating a session whose pre-compaction estimate kept climbing
+  // every turn) so runtime logs directly show the real per-request
+  // footprint compaction produces.
+  const compactedTokens =
+    estimateMessagesTokens(compacted) + SYSTEM_AND_TOOLS_OVERHEAD_TOKENS;
+  console.warn(
+    `[auto-compact] post-compaction request ~${compactedTokens} tokens (~${Math.round(
+      (compactedTokens / contextWindow) * 100,
+    )}% of ${contextWindow}).`,
+  );
+
+  return compacted;
 }

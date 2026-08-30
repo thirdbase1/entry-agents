@@ -123,14 +123,35 @@ async function resetToFetchedRemoteBranch(
     );
   }
 
-  const upstreamResult = await exec(
+  // Tracking config is written directly via `git config` instead of
+  // `git branch --set-upstream-to`. Found 2026-08-30 in production:
+  // set-upstream-to fatals with "cannot set up tracking information;
+  // starting point 'origin/o/...' is not a branch" right after a
+  // *successful* fetch+reset in real sessions, and because that fatal
+  // fired after the stash/reset sequence in syncToRemotePreservingChanges,
+  // it also stranded the user's stashed local changes in the stash. The
+  // two config keys below are exactly what set-upstream-to persists
+  // under the hood, involve no ref resolution, and are best-effort
+  // anyway: missing tracking config is cosmetic for the commit flow
+  // (the actual sync is the reset --hard above), so it must never block
+  // a commit.
+  const remoteConfigResult = await exec(
     sandbox,
-    `git branch --set-upstream-to=origin/${branch} ${branch}`,
+    `git config branch.${branch}.remote origin`,
     10000,
   );
-  if (!upstreamResult.success) {
-    throw new Error(
-      `Failed to set upstream after remote sync: ${commandOutput(upstreamResult)}`,
+  const mergeConfigResult = await exec(
+    sandbox,
+    `git config branch.${branch}.merge refs/heads/${branch}`,
+    10000,
+  );
+  if (!remoteConfigResult.success || !mergeConfigResult.success) {
+    console.warn(
+      `[sandbox] Could not persist tracking config for branch "${branch}" ` +
+        "(non-fatal) -- " +
+        commandOutput(
+          remoteConfigResult.success ? mergeConfigResult : remoteConfigResult,
+        ),
     );
   }
 }

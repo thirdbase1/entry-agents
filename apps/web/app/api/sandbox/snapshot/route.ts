@@ -24,6 +24,7 @@ import {
   getSessionSandboxName,
   hasRuntimeSandboxState,
   isSandboxNotFoundError,
+  isSandboxUnavailableError,
 } from "@/lib/sandbox/utils";
 
 interface CreateSnapshotRequest {
@@ -256,10 +257,20 @@ export async function PUT(req: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
+    // Found 2026-08-30 in production: a session whose stored sandbox
+    // snapshot has expired or been cleaned up comes back from the
+    // resume attempt as 400 "Cannot resume sandbox: no snapshot
+    // available" -- which is NOT the 404/"not found" shape that
+    // isSandboxNotFoundError matches, so this block used to be skipped
+    // and the request fell through to the generic 500 "Failed to restore
+    // snapshot" below. isSandboxUnavailableError broadens the same
+    // "the saved sandbox is gone" decision to include that 400, so we
+    // clear the dead resume state and surface a friendly "create a new
+    // sandbox" 404 instead of a hard 500 on every retry.
     if (
       persistentSandboxName &&
       !legacySnapshotId &&
-      isSandboxNotFoundError(message)
+      (isSandboxNotFoundError(message) || isSandboxUnavailableError(message))
     ) {
       await updateSession(sessionId, {
         sandboxState: clearSandboxResumeState(sessionRecord.sandboxState),

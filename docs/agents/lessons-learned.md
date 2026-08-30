@@ -2155,3 +2155,29 @@ Lesson: a context-window table silently defaulting to the low fallback makes the
 auto-compactor look like it "isn't working" when it's actually just mis-scaled.
 Any new model route needs an explicit entry (with a sourced, honest value), not
 the fallback.
+
+## 2026-08-30: dead-snapshot resume errors fire through updateNetworkPolicy and snapshot-restore, not just connect()
+
+The same `Cannot resume sandbox: no snapshot available` (400) that the
+2026-08-29/2026-08-30 connect-time fixes addressed also fired through two OTHER
+code paths that a stopped sandbox can reach:
+
+1. `/api/sandbox/snapshot` (PUT restore): its catch block only matched
+   `isSandboxNotFoundError` (404/"sandbox not found"), so the 400
+   "no snapshot available" fell through to a generic 500
+   "Failed to restore snapshot" on every retry, wedging the session. Fix: also
+   match `isSandboxUnavailableError` (which already documents this exact
+   400+resume+snapshot shape), so we clear the dead resume state and return the
+   friendly "Saved sandbox is no longer available" 404 instead.
+2. Credential brokering (`setGitHubAuthToken` / `setVercelAuthToken` ->
+   `syncCredentialBrokering` -> SDK `updateNetworkPolicy`): any SDK method that
+   needs a live session implicitly resumes a stopped sandbox, so on a dead
+   snapshot it also throws the same 400. A dead VM can't carry credentials, so
+   making brokering best-effort (warn, clear the grant, continue) stops a
+   credential injection from hard-failing the chat turn.
+
+Lesson: "resume a stopped sandbox" isn't only triggered by an explicit
+`connect(..., { resume: true })`. Every SDK operation that opens a session
+(updateNetworkPolicy, runCommand on a stopped VM, etc.) can throw the same
+dead-snapshot 400, and each call site that can reach one must handle it (or be
+best-effort) rather than assuming only the connect path can hit it.

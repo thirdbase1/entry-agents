@@ -68,6 +68,28 @@ interface CredentialBrokeringGrants {
   vercel?: string;
 }
 
+// Found 2026-08-30 in production: `updateNetworkPolicy` (and any other SDK
+// method that needs a live session) implicitly resumes a stopped sandbox
+// internally. When that sandbox's stored snapshot has expired or been
+// cleaned up, the resume 400s with "Cannot resume sandbox: no snapshot
+// available". This is the same dead-snapshot condition the connect-time
+// recovery in connect.ts handles -- by the time we're injecting creds here,
+// a failed resume just means the sandbox is gone, and credential brokering
+// on a dead VM is moot. Treat it as best-effort: warn and drop the grant
+// rather than throwing into the chat turn.
+function isDeadSnapshotResumeError(error: unknown): boolean {
+  const raw =
+    error instanceof Error
+      ? `${error.message} ${(error as { text?: unknown }).text ?? ""}`
+      : String(error);
+  const message = raw.toLowerCase();
+  return (
+    message.includes("status code 400") &&
+    message.includes("resume") &&
+    message.includes("snapshot")
+  );
+}
+
 function buildCredentialBrokeringPolicy(
   grants: CredentialBrokeringGrants,
 ): SandboxNetworkPolicy {
@@ -152,8 +174,26 @@ async function syncCredentialBrokering(
     return;
   }
 
-  await updateNetworkPolicy.call(sdk, buildCredentialBrokeringPolicy(next));
-  activeCredentialGrantsBySdk.set(sdk, next);
+  try {
+    await updateNetworkPolicy.call(sdk, buildCredentialBrokeringPolicy(next));
+    activeCredentialGrantsBySdk.set(sdk, next);
+  } catch (error) {
+    if (isDeadSnapshotResumeError(error)) {
+      console.warn(
+        "[VercelSandbox] failed to apply credential brokering: the sandbox " +
+          "snapshot is no longer available (dead resume) -- clearing the " +
+          "credential grant and continuing best-effort.",
+        error,
+      );
+      // The VM is gone, so no grant is meaningful (whether we were setting
+      // or clearing it, nothing is actually applied to a dead sandbox).
+      // Reset the registry so the next sync starts from a clean slate
+      // instead of retrying the same dead-snapshot resume.
+      activeCredentialGrantsBySdk.set(sdk, {});
+      return;
+    }
+    throw error;
+  }
 }
 
 async function syncGitHubCredentialBrokering(

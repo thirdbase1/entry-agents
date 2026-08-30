@@ -42,6 +42,7 @@ const runCommandCalls: MockRunCommandParams[] = [];
 const writeFilesCalls: Array<{ path: string; content: Buffer }[]> = [];
 const snapshotCalls: Array<{ expiration?: number } | undefined> = [];
 let readFileToBufferResult: Buffer | null = Buffer.from("");
+let updateNetworkPolicyError: Error | null = null;
 
 let runCommandMock = async (
   _params?: MockRunCommandParams,
@@ -124,6 +125,9 @@ function createMockSandboxSdk(name: string) {
     },
     updateNetworkPolicy: async (policy: Record<string, unknown>) => {
       updateNetworkPolicyCalls.push(policy);
+      if (updateNetworkPolicyError) {
+        throw updateNetworkPolicyError;
+      }
     },
     writeFiles: async (files: { path: string; content: Buffer }[]) => {
       writeFilesCalls.push(files);
@@ -165,6 +169,7 @@ beforeEach(() => {
   runCommandCalls.length = 0;
   writeFilesCalls.length = 0;
   snapshotCalls.length = 0;
+  updateNetworkPolicyError = null;
   readFileToBufferResult = Buffer.from("");
   portDomains.clear();
   missingPorts.clear();
@@ -505,6 +510,29 @@ describe("GitHub setup credential brokering", () => {
     });
 
     expect(updateNetworkPolicyCalls).toEqual([{ allow: { "*": [] } }]);
+  });
+
+  test("treats credential brokering as best-effort when the sandbox snapshot is dead (2026-08-30)", async () => {
+    // Found 2026-08-30 in production: updateNetworkPolicy implicitly
+    // resumes a stopped sandbox; when the stored snapshot is gone it
+    // throws 400 "Cannot resume sandbox: no snapshot available". A dead
+    // VM can't carry credentials, so brokering must not hard-fail the
+    // chat turn -- it should warn, clear the grant, and continue.
+    updateNetworkPolicyError = new Error(
+      "Status code 400 is not ok: Cannot resume sandbox: no snapshot available.",
+    );
+
+    const sandbox = await sandboxModule.VercelSandbox.connect("session_123", {
+      githubToken: "github-user-token",
+      remainingTimeout: 0,
+    });
+
+    await expect(
+      sandbox.setGitHubAuthToken("github-user-token"),
+    ).resolves.toBeUndefined();
+    await expect(
+      sandbox.setGitHubAuthToken(undefined),
+    ).resolves.toBeUndefined();
   });
 });
 

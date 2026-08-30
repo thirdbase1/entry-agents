@@ -266,6 +266,48 @@ describe("/api/sandbox/snapshot", () => {
     );
   });
 
+  test("PUT clears a dead-snapshot handle after a 400 'no snapshot available' resume", async () => {
+    // Found 2026-08-30 in production: a session whose saved sandbox
+    // snapshot expired/cleaned-up comes back as 400 "Cannot resume sandbox:
+    // no snapshot available", NOT 404. That shape only matched
+    // isSandboxNotFoundError historically, so it fell through to a generic
+    // 500 "Failed to restore snapshot" on every retry. It must be treated
+    // like a gone sandbox: clear the handle and return the friendly 404.
+    const { PUT } = await routeModulePromise;
+
+    sessionRecord = makeSessionRecord({
+      sandboxState: {
+        type: "vercel",
+        sandboxName: "session_session-1",
+      },
+      snapshotUrl: null,
+      lifecycleState: "hibernated",
+      sandboxExpiresAt: null,
+      hibernateAfter: null,
+    });
+    connectSandboxResumeError = new Error(
+      "Status code 400 is not ok: Cannot resume sandbox: no snapshot available.",
+    );
+
+    const response = await PUT(
+      new Request("http://localhost/api/sandbox/snapshot", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "session-1" }),
+      }),
+    );
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(404);
+    expect(payload.error).toContain("Saved sandbox is no longer available");
+    expect(updateCalls[0]).toEqual(
+      expect.objectContaining({
+        sandboxState: { type: "vercel" },
+        lifecycleState: "hibernated",
+      }),
+    );
+  });
+
   test("PUT lazily migrates a legacy snapshot-backed session on first resume", async () => {
     const { PUT } = await routeModulePromise;
 

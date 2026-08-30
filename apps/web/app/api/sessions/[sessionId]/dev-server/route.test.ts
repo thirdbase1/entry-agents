@@ -29,6 +29,7 @@ let runningPids = new Set<string>();
 let lastLaunchCommand: string | null = null;
 let lastLaunchCwd: string | null = null;
 let currentMtimeMs = 1_000;
+let connectSandboxError: Error | null = null;
 
 function successResult(stdout = "") {
   return {
@@ -191,16 +192,23 @@ const execDetachedMock = mock(async (command: string, cwd: string) => {
   return { commandId: "cmd-1" };
 });
 const domainMock = mock((port: number) => `https://sb-${port}.vercel.run`);
-const connectSandboxMock = mock(async () => ({
-  workingDirectory: "/vercel/sandbox",
-  exec: execMock,
-  readFile: readFileMock,
-  writeFile: writeFileMock,
-  stat: statMock,
-  access: accessMock,
-  execDetached: execDetachedMock,
-  domain: domainMock,
-}));
+function buildMockConnectedSandbox() {
+  if (connectSandboxError) {
+    throw connectSandboxError;
+  }
+  return {
+    workingDirectory: "/vercel/sandbox",
+    exec: execMock,
+    readFile: readFileMock,
+    writeFile: writeFileMock,
+    stat: statMock,
+    access: accessMock,
+    execDetached: execDetachedMock,
+    domain: domainMock,
+  };
+}
+
+const connectSandboxMock = mock(async () => buildMockConnectedSandbox());
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: requireAuthenticatedUserMock,
@@ -209,6 +217,10 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox: connectSandboxMock,
+}));
+
+mock.module("@/lib/db/sessions", () => ({
+  updateSession: async () => ({ id: "session-1" }),
 }));
 
 const routeModulePromise = import("./route");
@@ -229,6 +241,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     runningPids = new Set<string>();
     lastLaunchCommand = null;
     lastLaunchCwd = null;
+    connectSandboxError = null;
     currentSessionRecord.sandboxState.expiresAt = Date.now() + 60_000;
     requireAuthenticatedUserMock.mockClear();
     requireOwnedSessionWithSandboxGuardMock.mockClear();
@@ -265,7 +278,11 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     });
     expect(connectSandboxMock).toHaveBeenCalledWith(
       currentSessionRecord.sandboxState,
-      { ports: [3000, 5173, 4321, 8000] },
+      {
+        ports: [3000, 5173, 4321, 8000],
+        resume: true,
+        createIfMissing: true,
+      },
     );
     expect(execDetachedMock).toHaveBeenCalledTimes(1);
     expect(lastLaunchCwd).toBe("/vercel/sandbox/apps/web");
@@ -501,6 +518,31 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       "No supported dev script found in package.json files",
     );
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("returns a friendly 409 and clears dead resume state when the sandbox snapshot is gone (2026-08-30)", async () => {
+    // Found 2026-08-30 in production: clicking "start dev server" returned a
+    // bare 500 because connectSandbox's implicit resume threw 400 "Cannot
+    // resume sandbox: no snapshot available" when the saved snapshot was
+    // cleaned up. The connect fallback (createIfMissing) should provision a
+    // fresh sandbox, and a still-dead sandbox must surface a friendly 409,
+    // not a hard 500 on every retry.
+    const { POST } = await routeModulePromise;
+
+    connectSandboxError = new Error(
+      "Status code 400 is not ok: Cannot resume sandbox: no snapshot available.",
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(409);
+    expect(body.error).toContain("no longer available");
   });
 });
 

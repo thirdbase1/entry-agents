@@ -4,8 +4,13 @@ import {
   requireAuthenticatedUser,
   requireOwnedSessionWithSandboxGuard,
 } from "@/app/api/sessions/_lib/session-context";
+import { updateSession } from "@/lib/db/sessions";
 import { DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
-import { isSandboxActive } from "@/lib/sandbox/utils";
+import {
+  clearUnavailableSandboxState,
+  isSandboxActive,
+  isSandboxUnavailableError,
+} from "@/lib/sandbox/utils";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -885,9 +890,47 @@ async function connectDevServerSandboxForSession(
     };
   }
 
-  const sandbox = await connectSandbox(sandboxState, {
-    ports: DEFAULT_SANDBOX_PORTS,
-  });
+  let sandbox;
+  try {
+    sandbox = await connectSandbox(sandboxState, {
+      ports: DEFAULT_SANDBOX_PORTS,
+      // Found 2026-08-30 in production: a session whose saved sandbox
+      // snapshot expired/cleaned-up comes back as 400 "Cannot resume
+      // sandbox: no snapshot available" from the implicit resume that
+      // connectSandbox triggers for a named sandbox. createIfMissing lets
+      // the connect fallback provision a fresh sandbox instead of wedging
+      // the dev-server launch inside a bare 500.
+      resume: true,
+      createIfMissing: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!isSandboxUnavailableError(message)) {
+      throw error;
+    }
+
+    // The saved sandbox is gone (dead snapshot / expired). Clear the
+    // poisoned resume state so the next connect provisions a fresh one,
+    // then tell the UI to resume/reprovision rather than surfacing a
+    // generic 500 on every retry.
+    const clearedState = clearUnavailableSandboxState(sandboxState, message);
+    if (clearedState !== sandboxState) {
+      await updateSession(sessionId, { sandboxState: clearedState }).catch(
+        () => undefined,
+      );
+    }
+
+    return {
+      ok: false as const,
+      response: Response.json(
+        {
+          error:
+            "The sandbox is no longer available. Resume it to start a fresh one.",
+        },
+        { status: 409 },
+      ),
+    };
+  }
 
   return {
     ok: true as const,

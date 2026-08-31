@@ -273,6 +273,7 @@ async function createSandboxWithQuotaFallback(
   config: VercelSandboxConfig,
   alreadyRetriedAfterDelete = false,
   alreadyRetriedWithoutSnapshot = false,
+  alreadyRetriedWithoutName = false,
 ): Promise<Sandbox> {
   try {
     return await VercelSandbox.create(config);
@@ -282,16 +283,57 @@ async function createSandboxWithQuotaFallback(
       !alreadyRetriedAfterDelete &&
       isSandboxAlreadyExistsError(error)
     ) {
+      try {
+        console.warn(
+          `[sandbox] create() collided with a stale stopped sandbox named ` +
+            `"${config.name}" -- deleting it and retrying create() once.`,
+          error,
+        );
+        await deleteStaleSandboxByName(config.name);
+        return createSandboxWithQuotaFallback(
+          config,
+          true,
+          alreadyRetriedWithoutSnapshot,
+          alreadyRetriedWithoutName,
+        );
+      } catch (deleteError) {
+        // Found 2026-08-30: the stale sandbox may be in a non-terminal
+        // status (e.g. perpetually resumed from a now-dead snapshot), so
+        // deleteStaleSandboxByName correctly refuses (UnsafeToDelete) and
+        // leaves the name held. Do NOT wedge provisioning -- fall through
+        // to the unnamed fallback below.
+        console.warn(
+          `[sandbox] could not delete stale sandbox "${config.name}" before ` +
+            "create -- falling back to an unnamed sandbox instead.",
+          deleteError,
+        );
+      }
+    }
+
+    // Found 2026-08-30: a named sandbox can be permanently un-creatable
+    // when the snapshot it would resume from is gone AND the dead name is
+    // still held on Vercel's side (the resume 400 clears our DB state, but
+    // the Vercel-side object/name is not removed). Rather than wedge the
+    // session forever on a "already exists" 400, retry once WITHOUT the
+    // name -- an unnamed, non-persistent sandbox always provisions, and we
+    // persist whatever real name Vercel assigns so subsequent connects work.
+    if (
+      config.name &&
+      isSandboxAlreadyExistsError(error) &&
+      !alreadyRetriedWithoutName
+    ) {
       console.warn(
-        `[sandbox] create() collided with a stale stopped sandbox named ` +
-          `"${config.name}" -- deleting it and retrying create() once.`,
+        `[sandbox] create() for "${config.name}" still collided after ` +
+          "recovery -- creating an unnamed non-persistent sandbox instead of " +
+          "wedging the session.",
         error,
       );
-      await deleteStaleSandboxByName(config.name);
+      const { name: _name, ...configWithoutName } = config;
       return createSandboxWithQuotaFallback(
-        config,
-        true,
+        { ...configWithoutName, persistent: false },
+        alreadyRetriedAfterDelete,
         alreadyRetriedWithoutSnapshot,
+        true,
       );
     }
 
@@ -315,6 +357,7 @@ async function createSandboxWithQuotaFallback(
         configWithoutSnapshot,
         alreadyRetriedAfterDelete,
         true,
+        alreadyRetriedWithoutName,
       );
     }
 

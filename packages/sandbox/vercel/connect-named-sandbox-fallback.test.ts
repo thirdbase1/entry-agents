@@ -27,6 +27,7 @@ const connectMock = mock(async () => {
 
 const createdSandbox = {} as Sandbox;
 const createMock = mock(async (_config: VercelSandboxConfig) => createdSandbox);
+let createError: Error | null = null;
 
 // connectNamedSandbox is private, so exercise it through the exported
 // connectVercel() with a named sandbox. Both collaborators are mocked:
@@ -40,8 +41,15 @@ const { connectVercel } = await import("./connect.ts");
 beforeEach(() => {
   connectMock.mockClear();
   createMock.mockClear();
+  createError = null;
   connectMock.mockImplementation(async () => {
     throw SNAPSHOT_RESUME_400;
+  });
+  createMock.mockImplementation(async (_config: VercelSandboxConfig) => {
+    if (createError) {
+      throw createError;
+    }
+    return createdSandbox;
   });
 });
 
@@ -107,5 +115,41 @@ describe("connectVercel named-sandbox fallback", () => {
       alreadyExistsError,
     );
     expect(createMock).not.toHaveBeenCalled();
+  });
+
+  test("falls back to an unnamed sandbox when a named create keeps colliding after recovery (2026-08-30)", async () => {
+    // Found 2026-08-30 in production: a session whose saved snapshot is
+    // gone (resume 400) AND whose dead name is still held on Vercel's side
+    // (create 400 "already exists") used to wedge forever -- the resume
+    // fallback cleared DB state, but every re-provision re-collided with
+    // the still-held name. The robust recovery is: after a named create
+    // still collides, retry once WITHOUT the name as a non-persistent
+    // sandbox so provisioning always unblocks.
+    connectMock.mockImplementation(async () => {
+      throw SNAPSHOT_RESUME_400;
+    });
+    createError = new FakeAPIError(400, {
+      text: "A sandbox with the name 'session_test' already exists for this project. Use GET /sandboxes/:name to resume it or delete it first.",
+    });
+    let attempts = 0;
+    createMock.mockImplementation(async (_config: VercelSandboxConfig) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw createError;
+      }
+      return createdSandbox;
+    });
+
+    const sandbox = await connectVercel(baseState, baseOptions);
+
+    expect(sandbox).toBe(createdSandbox);
+    expect(createMock).toHaveBeenCalledTimes(2);
+    const firstConfig = createMock.mock.calls[0]?.[0];
+    const secondConfig = createMock.mock.calls[1]?.[0];
+
+    // First attempt keeps the name; the retry drops it and forces non-persistent.
+    expect(firstConfig).toMatchObject({ name: "session_test" });
+    expect(secondConfig).not.toHaveProperty("name");
+    expect(secondConfig).toMatchObject({ persistent: false });
   });
 });

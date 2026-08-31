@@ -2181,3 +2181,28 @@ Lesson: "resume a stopped sandbox" isn't only triggered by an explicit
 (updateNetworkPolicy, runCommand on a stopped VM, etc.) can throw the same
 dead-snapshot 400, and each call site that can reach one must handle it (or be
 best-effort) rather than assuming only the connect path can hit it.
+
+## 2026-08-30: a named sandbox can require an unnamed fallback to un-wedge provisioning
+
+After clearing a dead-snapshot resume (above), a session could STILL not
+re-provision: `/api/sandbox` create() kept failing with
+`A sandbox with the name 'session_<id>' already exists for this project. Use
+GET /sandboxes/:name to resume it or delete it first.` The resume-side recovery
+cleared our DB handle, but the dead named sandbox object stays on Vercel's side
+and the "delete stale then recreate" path did not reliably reclaim it (delete
+refuses on a non-terminal status, or the dead snapshot never lets a resume
+succeed so the name stays held). The result was a permanent wedge: every fresh
+provision collided with the still-held name.
+
+Fix: in `createSandboxWithQuotaFallback`, if a NAMED create still collides
+("already exists") after the delete-and-retry recovery, retry ONCE WITHOUT the
+name as a non-persistent sandbox. An unnamed sandbox always provisions (no name
+to collide with), and `VercelSandbox.getState()`/the returned sandbox persist
+whatever real name Vercel assigns so subsequent connects target it correctly.
+This makes provisioning unconditionally unblockable in the worst case, instead
+of doomed to wedge on a name Vercel won't release.
+
+Lesson: a session can be wedged by TWO independent pieces of state that must
+both be cleared -- the DB-side snapshot/resume handle AND the Vercel-side named
+sandbox object. Recovering only the DB handle leaves the name collision behind;
+an unnamed-create fallback is the operator-proof escape that always unblocks.

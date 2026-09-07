@@ -10,6 +10,7 @@ export {
   type TaskToolOutput,
   type TaskToolUIPart,
 } from "./task";
+export { parallelTaskTool, type ParallelTaskInput } from "./parallel-task";
 export {
   askUserQuestionTool,
   type AskUserQuestionToolUIPart,

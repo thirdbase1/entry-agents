@@ -1,6 +1,6 @@
 ---
 name: autonomous-engineer
-description: Autonomous implementation workflow for multi-surface engineering work. Use when a task benefits from repository reconnaissance, parallel independent execution, verification, repair, and evidence-based delivery.
+description: Autonomous implementation workflow for multi-surface engineering work. Use when a task benefits from repository reconnaissance, dependency-aware parallel execution, verification, repair, and evidence-based delivery.
 ---
 
 # Autonomous Engineer
@@ -16,7 +16,7 @@ The sandbox is the execution authority. Never claim behavior from reasoning alon
 ## 1. Recon
 
 Before editing, identify:
-- the application/package boundaries
+- application/package boundaries
 - the smallest relevant file set
 - existing implementations and conventions
 - affected tests and verification commands
@@ -29,14 +29,14 @@ Do not redesign working code without evidence.
 Convert the outcome into atomic tasks. Mark each task:
 - `read` — investigation only
 - `write` — may modify files
-- `dependsOn` — must wait for another task
+- `dependsOn` — task ids that must finish first
 - `scope` — exact workspace-relative directories/files it may modify
 
-Only independent tasks may run concurrently.
+Build the dependency graph before editing. A task with no unfinished prerequisites can run in the current wave. A dependent task waits for its prerequisites.
 
 ## 3. Parallelize real independent work
 
-Use the runtime `parallel_task` tool for 2–4 independent tasks when it materially reduces elapsed time.
+Use the runtime `parallel_task` tool for 2–4 tasks when it materially reduces elapsed time.
 
 Typical split:
 - frontend → `apps/web/...`
@@ -44,20 +44,24 @@ Typical split:
 - database/shared → their own non-overlapping paths
 - tests → only when they do not depend on unfinished implementation
 
-Every parallel task MUST declare its write scope. The runtime rejects overlapping scopes before execution.
+Every task MUST declare its write scope. The runtime rejects:
+- duplicate task ids
+- unknown/self dependencies
+- dependency cycles
+- overlapping write scopes
+
+A failed prerequisite blocks its dependents instead of starting work against an incomplete state.
 
 Do not parallelize:
 - edits to the same file
 - migrations sharing mutable database state
 - generated files consumed by another task
-- tasks where one needs another's output
+- tasks requiring another task's output
 - work where concurrent execution could corrupt git state
-
-If tasks become dependent, finish the prerequisite first and then launch the next wave.
 
 ## 4. Execute
 
-Give each worker a concrete goal, constraints, relevant context, and verification criteria. Workers must operate inside the sandbox and respect their declared scope.
+Give each worker a concrete goal, constraints, relevant context, and verification criteria. Workers operate inside the existing sandbox and must respect their declared scope.
 
 Prefer existing subagents:
 - `explorer` for read-only reconnaissance
@@ -65,6 +69,8 @@ Prefer existing subagents:
 - `design` only for intentional frontend design work
 
 Never use a design worker as an excuse to replace an established product aesthetic.
+
+Declared scopes are a coordination contract, **not OS-level filesystem isolation**. Never describe them as a security boundary. Existing sandbox and path-security controls remain authoritative.
 
 ## 5. Integrate and verify
 
@@ -86,6 +92,8 @@ For each failure:
 `Capture failure → trace root cause → patch minimally → rerun → repeat`
 
 Do not hide failures, weaken assertions, remove validation, or declare a pre-existing failure fixed without evidence.
+
+If a worker fails, preserve successful work, diagnose the failed task, and rerun only the smallest necessary repair work.
 
 ## 7. UI protection
 

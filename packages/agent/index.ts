@@ -15,6 +15,7 @@ export type {
   OpenAgentModelInput,
 } from "./open-agent";
 export { defaultModel, defaultModelLabel, openAgent } from "./open-agent";
+// Skills exports
 export { discoverSkills, parseSkillFrontmatter } from "./skills/discovery";
 export { seedBuiltinSkills } from "./skills/builtin/seed";
 export { extractSkillBody, substituteArguments } from "./skills/loader";
@@ -24,7 +25,11 @@ export type {
   SkillOptions,
 } from "./skills/types";
 export { frontmatterToOptions, skillFrontmatterSchema } from "./skills/types";
-export type { SubagentMessageMetadata, SubagentUIMessage } from "./subagents/types";
+// Subagent type exports
+export type {
+  SubagentMessageMetadata,
+  SubagentUIMessage,
+} from "./subagents/types";
 export type { BuildSystemPromptOptions } from "./system-prompt";
 export { buildSystemPrompt } from "./system-prompt";
 export {
@@ -41,7 +46,12 @@ export {
   type McpToolSetResult,
   type McpConnectionFailure,
 } from "./tools/mcp";
-export type { TaskPendingToolCall, TaskToolOutput, TaskToolUIPart } from "./tools/task";
+// Tool exports
+export type {
+  TaskPendingToolCall,
+  TaskToolOutput,
+  TaskToolUIPart,
+} from "./tools/task";
 export { parallelTaskTool, type ParallelTaskInput } from "./tools/parallel-task";
 export type {
   AgentContext,

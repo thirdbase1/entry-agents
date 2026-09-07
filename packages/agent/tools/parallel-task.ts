@@ -15,6 +15,10 @@ const taskSchema = z.object({
     .describe(
       'Workspace-relative paths or directories this task may modify. Use ["read-only"] for explorer tasks.',
     ),
+  dependsOn: z
+    .array(z.string().min(1))
+    .default([])
+    .describe("Task ids that must finish before this task can start"),
 });
 
 const inputSchema = z.object({
@@ -43,6 +47,19 @@ function validateTasks(tasks: ParallelTaskInput["tasks"]): void {
     ids.add(task.id);
   }
 
+  for (const task of tasks) {
+    for (const dependency of task.dependsOn) {
+      if (dependency === task.id) {
+        throw new Error(`Parallel task "${task.id}" cannot depend on itself.`);
+      }
+      if (!ids.has(dependency)) {
+        throw new Error(
+          `Parallel task "${task.id}" depends on unknown task "${dependency}".`,
+        );
+      }
+    }
+  }
+
   for (let i = 0; i < tasks.length; i += 1) {
     for (let j = i + 1; j < tasks.length; j += 1) {
       const left = tasks[i];
@@ -58,22 +75,86 @@ function validateTasks(tasks: ParallelTaskInput["tasks"]): void {
       }
     }
   }
+
+  // Kahn's algorithm: reject dependency cycles before any worker starts.
+  const remaining = new Map(tasks.map((task) => [task.id, new Set(task.dependsOn)]));
+  let resolved = 0;
+  while (remaining.size > 0) {
+    const ready = [...remaining.entries()]
+      .filter(([, dependencies]) => dependencies.size === 0)
+      .map(([id]) => id);
+    if (ready.length === 0) {
+      throw new Error("Parallel task dependency graph contains a cycle.");
+    }
+    for (const id of ready) {
+      remaining.delete(id);
+      for (const dependencies of remaining.values()) dependencies.delete(id);
+      resolved += 1;
+    }
+  }
+
+  if (resolved !== tasks.length) {
+    throw new Error("Parallel task dependency graph could not be resolved.");
+  }
+}
+
+async function runTask(
+  task: ParallelTaskInput["tasks"][number],
+  sandbox: ReturnType<typeof getSandboxContext>["sandbox"],
+  model: Parameters<typeof SUBAGENT_REGISTRY["executor"]["agent"]["stream"]>[0]["options"] extends infer _
+    ? any
+    : never,
+  abortSignal: AbortSignal | undefined,
+) {
+  const subagent = SUBAGENT_REGISTRY[task.subagentType].agent;
+  const result = await subagent.stream({
+    prompt:
+      "Complete this task and return a concise implementation or investigation summary.",
+    options: {
+      task: task.task,
+      instructions: `${task.instructions}\n\n## HARD SCOPE\nYou may only modify files under these declared paths:\n${task.scope
+        .map((scope) => `- ${scope}`)
+        .join("\n")}\nDo not modify files outside this scope.`,
+      sandbox,
+      model,
+    },
+    abortSignal,
+  });
+
+  const response = await result.response;
+  const usage = await result.usage;
+  const lastAssistant = response.messages.findLast(
+    (message: ModelMessage) => message.role === "assistant",
+  );
+  const content = lastAssistant?.content;
+  const summary =
+    typeof content === "string"
+      ? content
+      : content
+        ? content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n")
+        : "Task completed without a text summary.";
+
+  return {
+    id: task.id,
+    subagentType: task.subagentType,
+    status: "completed" as const,
+    summary,
+    usage,
+  };
 }
 
 export const parallelTaskTool = tool({
   needsApproval: false,
-  description: `Run 2–4 independent subagents concurrently in the same sandbox.
+  description: `Run 2–4 independent or dependency-ordered subagents with safe parallel waves.
 
-Use this only when work is genuinely independent. Every task MUST declare the workspace-relative paths/directories it may modify. Overlapping write scopes are rejected before any subagent starts.
+Every task MUST declare workspace-relative write scope. Overlapping write scopes are rejected before execution. Use dependsOn when a task requires another task's output; dependent tasks are started only after their prerequisites complete.
 
-Good uses:
-- frontend, backend, and test work in separate directories
-- independent investigations
-- parallel read-only reconnaissance
+The runtime rejects duplicate ids, unknown dependencies, self-dependencies, and dependency cycles. Failed tasks do not discard successful work, but dependent tasks are not started after a failed prerequisite.
 
-Do NOT parallelize tasks that edit the same file, depend on another task's output, perform migrations against the same mutable state, or share generated artifacts.
-
-The caller remains responsible for integrating and verifying all results after the parallel phase. A failed worker does not discard successful workers; the caller receives per-task status and must decide whether repair or sequential follow-up is required.`,
+The caller remains responsible for integration and verification. Declared scopes are coordination constraints, not OS-level filesystem isolation.`,
   inputSchema,
   execute: async ({ tasks }, { experimental_context, abortSignal }) => {
     validateTasks(tasks);
@@ -83,80 +164,75 @@ The caller remains responsible for integrating and verifying all results after t
       "parallel_task",
     );
     const model = getSubagentModel(experimental_context, "parallel_task");
+    const pending = new Map(tasks.map((task) => [task.id, task]));
+    const completed = new Set<string>();
+    const failed = new Set<string>();
+    const results: Array<Record<string, unknown>> = [];
 
-    const settled = await Promise.allSettled(
-      tasks.map(async (task) => {
-        const subagent = SUBAGENT_REGISTRY[task.subagentType].agent;
-        const result = await subagent.stream({
-          prompt:
-            "Complete this task and return a concise implementation or investigation summary.",
-          options: {
-            task: task.task,
-            instructions: `${task.instructions}\n\n## HARD SCOPE\nYou may only modify files under these declared paths:\n${task.scope
-              .map((scope) => `- ${scope}`)
-              .join("\n")}\nDo not modify files outside this scope.`,
-            sandbox: sandboxContext.sandbox,
-            model,
-          },
-          abortSignal,
-        });
+    while (pending.size > 0) {
+      if (abortSignal?.aborted) throw new Error("Parallel task execution aborted.");
 
-        const response = await result.response;
-        const usage = await result.usage;
-        const lastAssistant = response.messages.findLast(
-          (message: ModelMessage) => message.role === "assistant",
-        );
-        const content = lastAssistant?.content;
-        const summary =
-          typeof content === "string"
-            ? content
-            : content
-              ? content
-                  .filter((part) => part.type === "text")
-                  .map((part) => part.text)
-                  .join("\n")
-              : "Task completed without a text summary.";
-
-        return {
+      const blocked = [...pending.values()].filter((task) =>
+        task.dependsOn.some((dependency) => failed.has(dependency)),
+      );
+      for (const task of blocked) {
+        pending.delete(task.id);
+        failed.add(task.id);
+        results.push({
           id: task.id,
           subagentType: task.subagentType,
-          status: "completed" as const,
-          summary,
-          usage,
-        };
-      }),
-    );
-
-    const results = settled.map((outcome, index) => {
-      const task = tasks[index];
-      if (outcome.status === "fulfilled") {
-        return outcome.value;
+          status: "blocked" as const,
+          summary: "",
+          error: "A dependency failed, so this task was not started.",
+        });
       }
 
-      return {
-        id: task.id,
-        subagentType: task.subagentType,
-        status: "failed" as const,
-        summary: "",
-        error:
-          outcome.reason instanceof Error
-            ? outcome.reason.message
-            : String(outcome.reason),
-      };
-    });
+      const ready = [...pending.values()].filter((task) =>
+        task.dependsOn.every((dependency) => completed.has(dependency)),
+      );
+      if (ready.length === 0) {
+        throw new Error("No executable parallel task remains; dependency graph is inconsistent.");
+      }
+
+      const settled = await Promise.allSettled(
+        ready.map((task) => runTask(task, sandboxContext.sandbox, model, abortSignal)),
+      );
+
+      settled.forEach((outcome, index) => {
+        const task = ready[index];
+        pending.delete(task.id);
+        if (outcome.status === "fulfilled") {
+          completed.add(task.id);
+          results.push(outcome.value);
+        } else {
+          failed.add(task.id);
+          results.push({
+            id: task.id,
+            subagentType: task.subagentType,
+            status: "failed" as const,
+            summary: "",
+            error:
+              outcome.reason instanceof Error
+                ? outcome.reason.message
+                : String(outcome.reason),
+          });
+        }
+      });
+    }
 
     const totalUsage = results.reduce<LanguageModelUsage | undefined>(
       (total, result) =>
-        "usage" in result
-          ? sumLanguageModelUsage(total, result.usage)
+        "usage" in result && result.usage
+          ? sumLanguageModelUsage(total, result.usage as LanguageModelUsage)
           : total,
       undefined,
     );
 
     return {
-      completed: results.filter((result) => result.status === "completed")
-        .length,
-      failed: results.filter((result) => result.status === "failed").length,
+      completed: results.filter((result) => result.status === "completed").length,
+      failed: results.filter(
+        (result) => result.status === "failed" || result.status === "blocked",
+      ).length,
       results,
       totalUsage,
     };

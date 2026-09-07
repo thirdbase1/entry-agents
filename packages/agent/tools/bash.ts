@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import * as path from "path";
 import { getSandbox, reconnectSandboxAfterMigration } from "./utils";
+import { resolveBashWorkingDirectory } from "./cwd-security";
 
 const TIMEOUT_MS = 120_000;
 
@@ -107,7 +107,7 @@ USAGE:
 - Combined stdout/stderr output is truncated after ~50,000 characters
 
 DO NOT USE FOR:
-- File reading (cat, head, tail) - use readFileTool
+- File reading (cat, head, tail) - use readFileTool instead
 - File editing (sed, awk, editors) - use editFileTool / writeFileTool
 - File creation (touch, redirections like >, >>) - use writeFileTool
 - Code search (grep, rg, ag) - use grepTool
@@ -130,13 +130,17 @@ EXAMPLES:
     ) => {
       const sandbox = await getSandbox(experimental_context, "bash");
       const workingDirectory = sandbox.workingDirectory;
+      const workingDir = resolveBashWorkingDirectory(cwd, workingDirectory);
 
-      // Resolve the working directory
-      const workingDir = cwd
-        ? path.isAbsolute(cwd)
-          ? cwd
-          : path.resolve(workingDirectory, cwd)
-        : workingDirectory;
+      if (!workingDir) {
+        return {
+          success: false,
+          exitCode: null,
+          stdout: "",
+          stderr:
+            "Invalid cwd: the bash working directory must be a workspace-relative path inside the sandbox workspace.",
+        };
+      }
 
       // Detached mode: start the command in the background and return immediately
       if (detached) {

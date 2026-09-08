@@ -33,7 +33,7 @@ export function LandingNav({
   }, []);
 
   return (
-    <nav className="fixed left-0 right-0 top-0 z-50">
+    <nav aria-label="Primary navigation" className="fixed left-0 right-0 top-0 z-50">
       <div className="mx-auto max-w-[1320px]">
         <div
           className={`flex h-16 items-center justify-between border-x bg-(--l-bg) pl-6 pr-4 transition-all duration-200 ${
@@ -44,25 +44,20 @@ export function LandingNav({
         >
           <Logo className="h-[17px]" />
 
-          <div
-            className={cn(
-              "flex items-center gap-2 transition-all duration-150 [transition-timing-function:cubic-bezier(0.4,0.04,0.04,1)]",
-              showSignIn
-                ? "opacity-100 blur-none"
-                : "pointer-events-none opacity-0 blur-xs",
-            )}
-          >
-            {!loading && isAuthenticated ? (
-              <>
-                <Button asChild size="sm" variant="ghost">
-                  <Link href="/">Open Entry</Link>
-                </Button>
-                <UserAvatarDropdown />
-              </>
-            ) : (
-              <SignInButton size="sm" />
-            )}
-          </div>
+          {showSignIn && (
+            <div className="flex items-center gap-2">
+              {!loading && isAuthenticated ? (
+                <>
+                  <Button asChild size="sm" variant="ghost">
+                    <Link href="/">Open Entry</Link>
+                  </Button>
+                  <UserAvatarDropdown />
+                </>
+              ) : (
+                <SignInButton size="sm" />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </nav>

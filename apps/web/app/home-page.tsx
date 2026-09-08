@@ -78,7 +78,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <header className="flex items-center justify-between px-6 py-4">
+      <header className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center gap-2 sm:justify-self-start">
           <span className="text-lg font-semibold">Entry Agent</span>
         </div>
@@ -86,7 +86,8 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label={`Open sessions${activeSessionCount > 0 ? ` (${activeSessionCount} active)` : ""}`}
+            className="flex min-h-9 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {loading ? (
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium tabular-nums text-transparent">
@@ -104,8 +105,8 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col items-center px-6 pt-8 sm:pt-16">
-        <h1 className="mb-8 text-3xl font-light text-foreground">
+      <main className="flex flex-1 flex-col items-center px-4 pt-8 sm:px-6 sm:pt-16">
+        <h1 className="mb-8 text-center text-3xl font-light text-foreground">
           What should we ship next?
         </h1>
 

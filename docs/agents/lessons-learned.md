@@ -2220,3 +2220,22 @@ time). Historical mentions left in
 `lessons-learned.md` and entry-gateway's `needs-session-affinity.test.js`
 on purpose -- the affinity test still exercises real function behavior
 with a now-nonexistent model id.
+
+## 2026-09-10: Daily History card on the admin Gateway dashboard (commit 8c7cf0f)
+
+The gateway grew per-day metrics history today (entry-gateway commit c369353:
+`gw_metrics_daily` table, `daily` array in `/metrics`, unbounded retention).
+The entry-agents admin Gateway page (`apps/web/app/settings/gateway` ->
+`components/gateway-dashboard.tsx`) polls `/metrics` every 5s but only
+rendered cumulative counters, so the new history would have been silently
+invisible to the only UI that surfaces gateway metrics.
+
+- Added a `DailyHistoryTable` + "Daily History" card: last 14 UTC days,
+  newest first, requests/2xx/4xx/5xx/upstream-errors/spend per day, with a
+  proportional inline bar for at-a-glance trend.
+- Filters `/metrics` daily rows to `scope === "global"` -- global rows
+  already aggregate all providers/models, and summing scopes would
+  double/triple count.
+- The card hides itself entirely when `daily` is missing or empty (old
+  gateway, in-memory fallback with no recorded days, or a failed DB read) --
+  no layout hole for deployments that haven't caught up.

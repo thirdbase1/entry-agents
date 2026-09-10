@@ -86,7 +86,7 @@ interface CircuitBreakerDetail {
 // retention). Null when the gateway is older than that, running on its
 // in-memory fallback without any recorded days, or the DB read failed.
 interface DailyMetricsRow {
-  day: string; // "YYYY-MM-DD" (UTC)
+  day: string; // "YYYY-MM-DD" in Nigeria local time (12am WAT rollover)
   scope: string; // global | provider | model
   name: string;
   requests: number;
@@ -413,9 +413,11 @@ function UsageBreakdownTable({
 
 // ─── Daily History ────────────────────────────────────────────────────────────
 
-// Last 14 UTC days of global traffic (the gateway's gw_metrics_daily rows
-// with scope="global" already aggregate every provider+model, so summing
-// scopes here would double/triple count). Renders newest day first, with a
+// Last 14 days of global traffic, each day starting at 12am Nigeria
+// time (WAT -- the gateway rolls daily rows at the Lagos-day boundary)
+// (the gateway's gw_metrics_daily rows with scope="global" already
+// aggregate every provider+model, so summing scopes here would
+// double/triple count). Renders newest day first, with a
 // proportional inline bar so the trend is visible at a glance. Retention on
 // the gateway side is unbounded; this view just shows the recent window.
 const DAILY_WINDOW_DAYS = 14;
@@ -440,7 +442,7 @@ function DailyHistoryTable({ rows }: { rows: DailyMetricsRow[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Day (UTC)</TableHead>
+          <TableHead>Day (WAT)</TableHead>
           <TableHead className="text-right">Requests</TableHead>
           <TableHead className="text-right">2xx</TableHead>
           <TableHead className="text-right">4xx</TableHead>
@@ -925,7 +927,8 @@ export function GatewayDashboard() {
                   <Clock className="size-4 text-[#ff8a3d]" />
                   Daily History
                   <span className="ml-auto rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                    last {DAILY_WINDOW_DAYS} days · unbounded retention
+                    last {DAILY_WINDOW_DAYS} days · Nigeria time · unbounded
+                    retention
                   </span>
                 </CardTitle>
               </CardHeader>

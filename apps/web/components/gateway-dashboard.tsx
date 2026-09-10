@@ -426,7 +426,14 @@ function DailyHistoryTable({ rows }: { rows: DailyMetricsRow[] }) {
     .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
     .slice(-DAILY_WINDOW_DAYS)
     .toReversed(); // newest first
-  if (recent.length === 0) return null;
+  if (recent.length === 0) {
+    return (
+      <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+        No history recorded yet — days appear here as requests flow. Retention
+        is unbounded; nothing is ever trimmed.
+      </p>
+    );
+  }
   const maxReq = Math.max(...recent.map((r) => r.requests || 0), 1);
 
   return (
@@ -911,7 +918,7 @@ export function GatewayDashboard() {
           </Card>
 
           {/* ─── Daily History ─── */}
-          {metrics?.daily && metrics.daily.length > 0 && (
+          {Array.isArray(metrics?.daily) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">

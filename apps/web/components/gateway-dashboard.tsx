@@ -81,6 +81,30 @@ interface CircuitBreakerDetail {
   openedAt: number;
 }
 
+// Per-day history rows returned by the gateway's /metrics since
+// 2026-09-10 (gw_metrics_daily -- UTC-day rollups with unbounded
+// retention). Null when the gateway is older than that, running on its
+// in-memory fallback without any recorded days, or the DB read failed.
+interface DailyMetricsRow {
+  day: string; // "YYYY-MM-DD" (UTC)
+  scope: string; // global | provider | model
+  name: string;
+  requests: number;
+  requests2xx: number;
+  requests4xx: number;
+  requests5xx: number;
+  upstreamErrors: number;
+  fallbacks: number;
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    reasoning: number;
+  };
+  estimatedSpend: number;
+}
+
 interface MetricsResponse {
   uptime: number;
   activeRequests: number;
@@ -92,6 +116,7 @@ interface MetricsResponse {
   providers: string[];
   modelCount: number;
   providerCount: number;
+  daily?: DailyMetricsRow[] | null;
 }
 
 interface ModelInfo {
@@ -381,6 +406,75 @@ function UsageBreakdownTable({
             </TableRow>
           );
         })}
+      </TableBody>
+    </Table>
+  );
+}
+
+// ─── Daily History ────────────────────────────────────────────────────────────
+
+// Last 14 UTC days of global traffic (the gateway's gw_metrics_daily rows
+// with scope="global" already aggregate every provider+model, so summing
+// scopes here would double/triple count). Renders newest day first, with a
+// proportional inline bar so the trend is visible at a glance. Retention on
+// the gateway side is unbounded; this view just shows the recent window.
+const DAILY_WINDOW_DAYS = 14;
+
+function DailyHistoryTable({ rows }: { rows: DailyMetricsRow[] }) {
+  const recent = rows
+    .filter((r) => r.scope === "global")
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+    .slice(-DAILY_WINDOW_DAYS)
+    .toReversed(); // newest first
+  if (recent.length === 0) return null;
+  const maxReq = Math.max(...recent.map((r) => r.requests || 0), 1);
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Day (UTC)</TableHead>
+          <TableHead className="text-right">Requests</TableHead>
+          <TableHead className="text-right">2xx</TableHead>
+          <TableHead className="text-right">4xx</TableHead>
+          <TableHead className="text-right">5xx</TableHead>
+          <TableHead className="text-right">Errors</TableHead>
+          <TableHead className="text-right">Spend</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {recent.map((r) => (
+          <TableRow key={r.day}>
+            <TableCell className="font-mono text-xs">{r.day}</TableCell>
+            <TableCell className="text-right font-mono text-xs">
+              <span className="inline-flex items-center justify-end gap-2">
+                <span
+                  className="inline-block h-2 min-w-1 rounded-sm bg-[#ff8a3d]/70"
+                  style={{
+                    width: `${Math.max((r.requests / maxReq) * 48, r.requests > 0 ? 3 : 0)}px`,
+                  }}
+                  title={`${r.requests} requests`}
+                />
+                {formatNumber(r.requests || 0)}
+              </span>
+            </TableCell>
+            <TableCell className="text-right font-mono text-xs text-emerald-400">
+              {formatNumber(r.requests2xx || 0)}
+            </TableCell>
+            <TableCell className="text-right font-mono text-xs text-amber-400">
+              {formatNumber(r.requests4xx || 0)}
+            </TableCell>
+            <TableCell className="text-right font-mono text-xs text-red-400">
+              {formatNumber(r.requests5xx || 0)}
+            </TableCell>
+            <TableCell className="text-right font-mono text-xs">
+              {formatNumber(r.upstreamErrors || 0)}
+            </TableCell>
+            <TableCell className="text-right font-mono text-xs text-[#ff8a3d]">
+              ${(r.estimatedSpend || 0).toFixed(4)}
+            </TableCell>
+          </TableRow>
+        ))}
       </TableBody>
     </Table>
   );
@@ -815,6 +909,24 @@ export function GatewayDashboard() {
               />
             </CardContent>
           </Card>
+
+          {/* ─── Daily History ─── */}
+          {metrics?.daily && metrics.daily.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock className="size-4 text-[#ff8a3d]" />
+                  Daily History
+                  <span className="ml-auto rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                    last {DAILY_WINDOW_DAYS} days · unbounded retention
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto pt-0">
+                <DailyHistoryTable rows={metrics.daily} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* ─── Routes Table ─── */}
           <Card>

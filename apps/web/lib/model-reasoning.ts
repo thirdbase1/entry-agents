@@ -307,14 +307,10 @@ const REASONING_CAPABLE_MODEL_IDS = new Set<string>([
   "claude-sonnet-4-6",
   "claude-sonnet-5",
   "claude-haiku-4-5-20251001",
-  // Added 2026-08-28, all three confirmed via live probe against
-  // api.b.ai (see the MODEL_REASONING_LEVELS entries above for
-  // glm-5.3-flash/qwen3.8-flash's real vocabulary; deepseek-v4-flash-
-  // vision-exp shares deepseek-v4-flash's DEFAULT_LEVELS treatment -- it
-  // technically accepted xhigh/max too in the live probe, same as
-  // deepseek-v4-flash always has, but this codebase's convention is to
-  // keep the DeepSeek family on the plain low/medium/high selector).
-  "deepseek-v4-flash-vision-exp",
+  // Added 2026-08-28, confirmed via live probe against api.b.ai (see
+  // the MODEL_REASONING_LEVELS entries above for each model's real
+  // vocabulary). deepseek-v4-flash-vision-exp was removed from this set
+  // 2026-09-10 when its gateway route was deleted entirely.
   "glm-5.3-flash",
   "qwen3.8-flash",
 ]);

@@ -2206,3 +2206,17 @@ Lesson: a session can be wedged by TWO independent pieces of state that must
 both be cleared -- the DB-side snapshot/resume handle AND the Vercel-side named
 sandbox object. Recovering only the DB handle leaves the name collision behind;
 an unnamed-create fallback is the operator-proof escape that always unblocks.
+
+## 2026-09-10: Removed deepseek-v4-flash-vision-exp from the catalog
+
+Owner asked to remove the model. Its gateway route lived in
+`EXTRA_MODEL_ROUTES_JSON_5` on the entry-gateway Vercel project (one of
+three api.b.ai models added 2026-08-28) -- patched that env var via the
+Vercel API to keep only glm-5.3-flash and qwen3.8-flash, then removed
+its entry from REASONING_CAPABLE_MODEL_IDS in
+`apps/web/lib/model-reasoning.ts`. Env-var changes on serverless
+require a gateway redeploy to take effect (values are baked in at build
+time). Historical mentions left in
+`lessons-learned.md` and entry-gateway's `needs-session-affinity.test.js`
+on purpose -- the affinity test still exercises real function behavior
+with a now-nonexistent model id.

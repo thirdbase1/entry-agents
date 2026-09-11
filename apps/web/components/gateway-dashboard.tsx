@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -326,11 +326,16 @@ function UsageBreakdownTable({
   nameHeader,
   circuitBreakers,
   cbKeyPrefix,
+  providerModels,
 }: {
   buckets: Record<string, MetricsBucket>;
   nameHeader: string;
   circuitBreakers?: Record<string, CircuitBreakerDetail>;
   cbKeyPrefix?: boolean;
+  // Breakers are per-model since the gateway's 2026-09 hardening pass
+  // (keys like "model:<id>:<id>"), so a provider row's health is the worst
+  // state across that provider's models (mapped from the live routes).
+  providerModels?: Map<string, Set<string>>;
 }) {
   const names = Object.keys(buckets);
   if (names.length === 0) {
@@ -359,8 +364,12 @@ function UsageBreakdownTable({
           const b = buckets[name];
           let cbState: string | undefined;
           if (cbKeyPrefix && circuitBreakers) {
-            const cbKey = Object.keys(circuitBreakers).find((k) =>
-              k.startsWith(`${name}:`),
+            const models = providerModels?.get(name);
+            const cbKey = Object.keys(circuitBreakers).find(
+              (k) =>
+                (k.startsWith("model:") && models?.has(k.split(":")[1])) ||
+                // legacy pre-hardening keys ("provider:model")
+                k.startsWith(`${name}:`),
             );
             cbState = cbKey ? circuitBreakers[cbKey].state : "closed";
           }
@@ -524,6 +533,23 @@ export function GatewayDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // provider name -> set of its model ids, from the live routes list. Used
+  // to map per-model circuit-breaker keys ("model:<id>:<id>") back onto
+  // provider rows for the Health column.
+  const providerModels = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const r of routes) {
+      const provider = r.provider || r.upstreamApiKeyEnv || "unknown";
+      let set = map.get(provider);
+      if (!set) {
+        set = new Set<string>();
+        map.set(provider, set);
+      }
+      set.add(r.id);
+    }
+    return map;
+  }, [routes]);
 
   const fetchData = useCallback(async (url: string, key: string) => {
     const headers: Record<string, string> = {};
@@ -915,6 +941,7 @@ export function GatewayDashboard() {
                 nameHeader="Provider"
                 circuitBreakers={metrics?.circuitBreakers}
                 cbKeyPrefix
+                providerModels={providerModels}
               />
             </CardContent>
           </Card>

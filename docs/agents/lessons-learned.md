@@ -2343,3 +2343,40 @@ without React rendering; 8 tests added.
 spinner while `state.running` is true, so brand icons only show on
 settled calls -- that's the existing pattern for every other renderer,
 not something to fight.
+
+## 2026-09-12: vercel_cli was STILL dead even after the earlier "install the CLI" fix
+
+**Found via:** a live session screenshot -- after the earlier same-day
+fix made `vercel` actually installable, the agent tried it for real and
+hit "Invalid token... Must not contain: '-'", then fell back to
+booting the app locally + running the test suite to confirm health
+instead (a reasonable workaround, but not what the tool is for).
+
+**Root cause:** confirmed by downloading the real published `vercel`
+package (59.16.0) and grepping its CLI entrypoint --
+`token.match(/(\W)/g)` rejects ANY non-word character in
+`--token`/`VERCEL_TOKEN` client-side, before the process makes a single
+network call. `VERCEL_CLI_PLACEHOLDER_TOKEN` was
+`"sandboxed-cli-do-not-use"` -- four hyphens, all non-word characters.
+So every `vercel_cli` call died locally inside the CLI's own arg
+parsing; the network-egress credential broker (which swaps in the real
+token at the HTTP layer, see `setVercelAuthToken`) never even got
+invoked, because the request never left the process.
+
+**Fix:** changed the placeholder to `"sandboxed_cli_do_not_use"`
+(underscores are word characters, so `\W` doesn't match). Added
+`vercel-cli-placeholder.test.ts` pinning the exact CLI validation regex
+against both values, so a future edit that reintroduces a
+hyphenated/non-word placeholder gets caught immediately -- couldn't
+wire it through `chat.test.ts` itself since that file already fails to
+even load on clean main (pre-existing, unrelated: missing
+`createMcpToolSet` export in `packages/agent/index.ts`).
+
+**Lesson:** the credential-broker pattern (placeholder value for local
+CLI checks, real value swapped in at the network layer) is sound, but
+any CLI that does its OWN client-side validation on the placeholder
+before touching the network defeats it silently. Worth a quick check
+of `gh`'s equivalent placeholder (`GITHUB_CLI_PLACEHOLDER_TOKEN`, same
+hyphenated string) if GitHub CLI operations ever start failing the same
+way -- no evidence of that yet (gh doesn't appear to do this kind of
+local format validation on `GH_TOKEN`), so left untouched for now.

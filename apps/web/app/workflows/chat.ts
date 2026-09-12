@@ -1218,7 +1218,18 @@ function shellEscapeForVercelEnv(value: string): string {
 // the real token by the sandbox's network-egress credential broker (see
 // setVercelAuthToken), so this placeholder value is never actually
 // presented to Vercel and is harmless even if it leaked.
-const VERCEL_CLI_PLACEHOLDER_TOKEN = "sandboxed-cli-do-not-use";
+//
+// FIXED 2026-09-12: this used to be "sandboxed-cli-do-not-use", which
+// contains hyphens. The real `vercel` CLI validates --token/VERCEL_TOKEN
+// client-side with `token.match(/(\W)/g)` -- ANY non-word character
+// (hyphens included) fails with "Invalid token... Must not contain:
+// '-'" before the process ever makes a network call, so the
+// network-egress broker never got a chance to swap in the real token.
+// Confirmed via a live session: every vercel_cli call was silently
+// dead on arrival despite the broker mechanism being correctly wired.
+// Word-only placeholder (letters/digits/underscore) passes that regex
+// and lets the real request reach the broker.
+const VERCEL_CLI_PLACEHOLDER_TOKEN = "sandboxed_cli_do_not_use";
 
 /**
  * Runs an arbitrary Vercel CLI command for the agent's `vercel_cli` tool

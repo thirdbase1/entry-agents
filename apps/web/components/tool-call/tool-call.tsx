@@ -23,6 +23,7 @@ import { AskUserQuestionRenderer } from "./renderers/ask-user-question-renderer"
 import { FetchRenderer } from "./renderers/fetch-renderer";
 import { SearchRenderer } from "./renderers/search-renderer";
 import { SkillRenderer } from "./renderers/skill-renderer";
+import { BrandToolRenderer } from "./renderers/brand-tool-renderer";
 
 export type ToolCallProps = {
   part: WebAgentUIToolPart;
@@ -79,6 +80,15 @@ export function ToolCall({
       return <SearchRenderer part={part} state={state} {...approvalProps} />;
     case "tool-skill":
       return <SkillRenderer part={part} state={state} {...approvalProps} />;
+    // Owner request 2026-09-12: GitHub/Vercel tool calls show the real
+    // brand icons (via @lobehub/icons, same as the model picker) with a
+    // clean display name + action summary, instead of the raw
+    // "Github_cli"/"Vercel_api" names + JSON blob the DefaultRenderer
+    // showed before.
+    case "tool-github_cli":
+    case "tool-vercel_cli":
+    case "tool-vercel_api":
+      return <BrandToolRenderer part={part} state={state} {...approvalProps} />;
     default:
       return (
         <DefaultRenderer

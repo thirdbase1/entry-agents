@@ -2318,3 +2318,28 @@ for however long the tool existed, silently degrading `vercel_cli` to
 "never actually runs the real binary" the whole time -- worth spot
 grep'ing other `unlike X, base image already includes Y`-style claims
 in this codebase if any show up again.
+
+## 2026-09-12: GitHub/Vercel tool calls now show real brand icons
+
+**Owner request:** whenever the agent uses a GitHub or Vercel tool, the
+chat should show the real brand icon -- not the raw tool names, which
+the DefaultRenderer was capitalizing into "Github_cli" / "Vercel_api"
+with a JSON-blob summary.
+
+**Fix:** new `BrandToolRenderer`
+(`components/tool-call/renderers/brand-tool-renderer.tsx`) wired into
+`ToolCall`'s switch for `tool-github_cli`, `tool-vercel_cli`, and
+`tool-vercel_api`. Uses `@lobehub/icons`' `Github` and `Vercel` brand
+marks (same library already used for model-provider icons in
+`provider-icons.tsx`, per the owner's standing branding instruction)
+via `ToolLayout`'s existing `icon` prop. Display name is a clean
+"GitHub" / "Vercel"; summary is action-aware: commit title for
+commit_and_push, `METHOD path` for the api action/vercel_api, `gh
+<args>` / `vercel <args>` for CLI runs. Display-resolution logic
+extracted into `resolveBrandToolDisplay()` so it's unit-testable
+without React rendering; 8 tests added.
+
+**Gotcha for future renderers:** `ToolLayout` replaces the icon with a
+spinner while `state.running` is true, so brand icons only show on
+settled calls -- that's the existing pattern for every other renderer,
+not something to fight.

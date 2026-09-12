@@ -1235,7 +1235,30 @@ const VERCEL_CLI_PLACEHOLDER_TOKEN = "sandboxed-cli-do-not-use";
  * placeholder value is ever visible there. The network policy is always
  * cleared in a `finally` immediately after the command completes, even
  * on error/timeout.
+ *
+ * FIXED 2026-09-12: this used to assume the `vercel` binary was already
+ * on PATH in the sandbox base image (an old comment near
+ * ENSURE_GH_CLI_INSTALLED below claimed exactly that, contrasting it
+ * with `gh`, which needed its own install guard). Confirmed wrong via a
+ * live session: the sandbox base image only ships node/npm/pnpm/bun/jq,
+ * nothing Vercel-specific, so every vercel_cli call failed with
+ * "command not found" until the agent happened to fall back to
+ * vercel_api instead. Added ENSURE_VERCEL_CLI_INSTALLED, same
+ * lazy-install-once-per-session pattern as ENSURE_GH_CLI_INSTALLED, via
+ * `npm install -g vercel` (npm is always present, so no release-binary
+ * download dance like gh needed).
  */
+// Lazy, one-time-per-sandbox install guard for the `vercel` CLI -- see
+// the FIXED 2026-09-12 note on performAgentVercelCli's docstring above
+// for why this exists (the base sandbox image does NOT ship it, despite
+// an earlier comment near ENSURE_GH_CLI_INSTALLED claiming otherwise).
+// Unlike gh (no package manager guarantee, needs a release-binary
+// download), npm is always available here, so a simple global install
+// is enough. Cheap no-op on every call after the first thanks to
+// `command -v`.
+const ENSURE_VERCEL_CLI_INSTALLED =
+  "command -v vercel >/dev/null 2>&1 || npm install -g vercel >/dev/null 2>&1";
+
 async function performAgentVercelCli(params: {
   userId: string;
   sandboxState: OpenAgentCallOptions["sandbox"]["state"];
@@ -1293,7 +1316,7 @@ async function performAgentVercelCli(params: {
   const scopeFlag = projectLink?.teamSlug
     ? ` --scope=${shellEscapeForVercelEnv(projectLink.teamSlug)}`
     : "";
-  const command = `VERCEL_TOKEN=${shellEscapeForVercelEnv(VERCEL_CLI_PLACEHOLDER_TOKEN)} vercel ${params.args}${scopeFlag}`;
+  const command = `${ENSURE_VERCEL_CLI_INSTALLED}; VERCEL_TOKEN=${shellEscapeForVercelEnv(VERCEL_CLI_PLACEHOLDER_TOKEN)} vercel ${params.args}${scopeFlag}`;
 
   await sandbox.setVercelAuthToken(token);
   try {
@@ -1342,11 +1365,14 @@ async function performAgentVercelCli(params: {
 const GITHUB_CLI_PLACEHOLDER_TOKEN = "sandboxed-cli-do-not-use";
 
 // One-time-per-command install guard for `gh` -- the sandbox base image
-// isn't guaranteed to ship the GitHub CLI (unlike `vercel`, which the
-// base image already includes), so this downloads the static release
-// binary straight from GitHub's own release assets (no apt/sudo
-// dependency, works regardless of the base image's package manager) the
-// first time it's missing, then reuses it for the rest of the session.
+// isn't guaranteed to ship the GitHub CLI (and, as of 2026-09-12, we
+// know it doesn't ship the Vercel CLI either -- see
+// ENSURE_VERCEL_CLI_INSTALLED / performAgentVercelCli's docstring above
+// for that fix; this comment used to claim otherwise, which was wrong),
+// so this downloads the static release binary straight from GitHub's
+// own release assets (no apt/sudo dependency, works regardless of the
+// base image's package manager) the first time it's missing, then
+// reuses it for the rest of the session.
 const ENSURE_GH_CLI_INSTALLED = [
   "command -v gh >/dev/null 2>&1 || {",
   "  GH_VER=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest",

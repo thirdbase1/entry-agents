@@ -2286,3 +2286,35 @@ added "to be safe" needs to be checked against where the calling code
 actually runs. This one likely came from someone extending a
 request-handler-only helper without noticing all of its later callers
 were durable Workflow steps.
+
+## 2026-09-12: vercel_cli tool always failed with "command not found"
+
+**Found via:** a screenshot of a live entry-gateway session -- the agent
+ran `vercel_cli {"args":"whoami"}`, discovered the `vercel` binary
+wasn't on PATH, and self-recovered by falling back to `vercel_api`
+(reading `/v1/user`, `/v10/projects` directly) instead. That fallback
+only covers REST-shaped reads; CLI-only actions (`deploy`, `env pull`,
+`logs <url>`, `link`, `inspect`) have no `vercel_api` equivalent and
+would have just failed outright.
+
+**Root cause:** a comment near `ENSURE_GH_CLI_INSTALLED` in
+`app/workflows/chat.ts` claimed the sandbox base image "already
+includes" the Vercel CLI, unlike `gh` (which got its own install
+guard). That was never actually true -- the base image only ships
+node/npm/pnpm/bun/jq (see the sandbox's own env-description string in
+`packages/sandbox/vercel/sandbox.ts`). Nobody had verified it against a
+real session until now.
+
+**Fix:** added `ENSURE_VERCEL_CLI_INSTALLED`, the exact same
+lazy-install-once-per-sandbox pattern as `ENSURE_GH_CLI_INSTALLED`
+(`command -v vercel || npm install -g vercel`), prefixed onto every
+`vercel_cli` exec in `performAgentVercelCli`. Simpler than `gh`'s
+release-binary download since npm is always present here. Also fixed
+the stale comment that caused this to go unnoticed.
+
+**Lesson:** a comment asserting an environment fact ("the base image
+already includes X") is not the same as testing it. This one sat wrong
+for however long the tool existed, silently degrading `vercel_cli` to
+"never actually runs the real binary" the whole time -- worth spot
+grep'ing other `unlike X, base image already includes Y`-style claims
+in this codebase if any show up again.

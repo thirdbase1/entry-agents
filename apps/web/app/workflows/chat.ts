@@ -1114,9 +1114,11 @@ async function performAgentCommitAndPush(params: {
  * restricted "use workflow" environment even behind a dynamic import()
  * -- the target function itself has to carry the "use step" directive
  * for the bundler to extract it instead of inlining it. Kept separate
- * from performAgentVercelCli (which needs the *real* token, refreshed
- * via next/headers -- request-scoped, so only meaningful right before
- * actually running a CLI command) since this only needs a cheap
+ * from performAgentVercelCli (which needs the *real* token, fetched
+ * fresh right before actually running a CLI command -- better-auth
+ * refreshes it purely from the stored (providerId, userId) refresh
+ * token, no request-scoped headers involved, same as the GitHub token
+ * fetch in lib/github/token.ts) since this only needs a cheap
  * existence check to decide whether to surface the tool at all.
  */
 /**

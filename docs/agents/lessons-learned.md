@@ -2239,3 +2239,50 @@ invisible to the only UI that surfaces gateway metrics.
 - The card hides itself entirely when `daily` is missing or empty (old
   gateway, in-memory fallback with no recorded days, or a failed DB read) --
   no layout hole for deployments that haven't caught up.
+
+## 2026-09-12: Vercel CLI/API tools always reported "not connected" for real users
+
+**Root cause:** `apps/web/lib/vercel/token.ts`'s `getUserVercelToken` and
+`getUserVercelAuthInfo` passed `headers: await headers()` (from
+`next/headers`) into `better-auth`'s `auth.api.getAccessToken()`. That
+only works inside a real Next.js request scope. Both functions are
+called from `"use step"` functions inside the chat Workflow
+(`performAgentVercelCli` / the `vercel_api` equivalent in
+`app/workflows/chat.ts`) -- durable steps have no live incoming request,
+so `headers()` throws there. The throw was silently swallowed by the
+surrounding `try/catch`, so the functions returned `null` and both the
+`vercel_cli` and `vercel_api` tools always reported "No Vercel account
+is connected for this user," even for a user who had genuinely linked
+(or signed in with) Vercel -- confirmed by a user screenshot showing an
+agent session hitting the identical error on both paths despite having
+Vercel connected.
+
+The account-existence check used to decide whether to even *surface*
+the tool (`hasVercelAccountLinked`, a plain DB row lookup with no
+`headers()` call) was unaffected and correctly returned `true` --
+which is why the failure only showed up once a CLI/API call actually
+ran, not when the tool was offered.
+
+**Why this never happened to GitHub:** `lib/github/token.ts`'s
+`getUserGitHubToken` calls the exact same `auth.api.getAccessToken`
+with only `{ body: { providerId, userId } }` -- no `headers()` at all.
+`better-auth` can refresh an access token purely from the stored
+refresh token keyed by `(providerId, userId)`; the request-scoped
+headers were never actually required, they were just extra unnecessary
+plumbing on the Vercel side that broke when called from step scope.
+
+**Fix:** removed `headers: await headers()` from both Vercel token
+functions, mirroring the working GitHub pattern exactly (including the
+"Account not found" expected-error handling). Added
+`apps/web/lib/vercel/token.test.ts`, mirroring the existing
+`lib/github/token.test.ts` -- it mocks `next/headers` to throw if
+called at all, which reproduces the exact original bug against the old
+code and passes clean against the fix (verified both ways before
+committing).
+
+**Lesson:** when mirroring an established working pattern (GitHub's
+provider-token fetch) for a new provider (Vercel), any extra plumbing
+added "to be safe" needs to be checked against where the calling code
+actually runs. This one likely came from someone extending a
+request-handler-only helper without noticing all of its later callers
+were durable Workflow steps.

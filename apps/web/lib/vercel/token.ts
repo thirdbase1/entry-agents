@@ -1,6 +1,5 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db/client";
 import { accounts } from "@/lib/db/schema";
@@ -22,13 +21,11 @@ async function getVercelAccountId(userId: string): Promise<string> {
 
 /**
  * Cheap existence check for whether this user has a linked Vercel
- * account -- a single indexed row lookup, no live token refresh (that
- * needs next/headers() via better-auth, which only works within an
- * actual request context, not durable workflow/step scope). Used by
- * runAgentWorkflow (see app/workflows/chat.ts) to decide whether to
- * surface the vercel_cli tool's `connected` flag to the agent, mirroring
- * how `github.hasRepo` is derived from plain session columns rather than
- * a live GitHub API call.
+ * account -- a single indexed row lookup, no live token fetch/refresh.
+ * Used by runAgentWorkflow (see app/workflows/chat.ts) to decide whether
+ * to surface the vercel_cli tool's `connected` flag to the agent,
+ * mirroring how `github.hasRepo` is derived from plain session columns
+ * rather than a live GitHub API call.
  */
 export async function hasVercelAccountLinked(userId: string): Promise<boolean> {
   try {
@@ -51,7 +48,6 @@ export async function getUserVercelAuthInfo(
     const [result, externalId] = await Promise.all([
       auth.api.getAccessToken({
         body: { providerId: "vercel", userId },
-        headers: await headers(),
       }),
       getVercelAccountId(userId),
     ]);
@@ -82,12 +78,17 @@ export async function getUserVercelToken(
   try {
     const result = await auth.api.getAccessToken({
       body: { providerId: "vercel", userId },
-      headers: await headers(),
     });
 
     return result?.accessToken ?? null;
   } catch (error) {
-    console.error("Error fetching Vercel token:", error);
+    // "Account not found" is expected when the user hasn't linked Vercel --
+    // only log unexpected errors (mirrors lib/github/token.ts).
+    const isExpected =
+      error instanceof Error && error.message === "Account not found";
+    if (!isExpected) {
+      console.error("Error fetching Vercel token:", error);
+    }
     return null;
   }
 }

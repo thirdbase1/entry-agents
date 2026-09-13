@@ -2437,3 +2437,46 @@ local format validation on `GH_TOKEN`), so left untouched for now.
    clean. NOTE: `generate-title/route.test.ts` fails in the local
    sandbox on clean main too (pre-existing `server-only` import issue,
    0/5 pass before and after this change -- not caused by it).
+
+## 2026-09-13 (second pass): unified, strategy-aware retry for both recovery paths
+
+**Owner follow-up: "improve the whole retry process, both retries."** The
+first pass (getHardRetryAction, same day) only fixed the MANUAL Retry
+button. The automatic ("soft") recovery path
+(use-stream-recovery.ts → getStreamRecoveryDecision → retryChatStream
+with strategy "soft") was still resume-only: when the tab regains
+visibility / network comes back and the server turn is already dead
+(204 on resume), it silently did NOTHING -- a turn that died in the
+background never self-healed, the user always had to tap Retry.
+
+**Changes:**
+
+1. `getHardRetryAction` → `getDeadTurnRetryAction(messages, strategy)`
+   in stream-recovery-policy.ts -- ONE shared decision for both paths:
+   real partial work → "continue" (both strategies; continuing never
+   repeats completed work, so auto-recovery may self-heal safely);
+   nothing worth keeping → "regenerate" (manual only) / "none" (auto --
+   never re-runs a full turn without the user asking).
+2. Stacking guard: if the last message is already a failed
+   CONTINUE_AFTER_ERROR_PROMPT (a previous continue attempt errored
+   before producing output), never stack a second continuation message
+   -- soft does nothing, hard resubmits the existing prompt via
+   regenerate(). Verified against the AI SDK source: regenerate() with
+   a trailing USER message keeps it in history and resubmits it (the
+   partial assistant work below survives); resumeStream() with a dead
+   stream (reconnect returns null) leaves status/error untouched.
+3. Error-banner discipline in retryChatStream: manual (hard) retry
+   clears the error immediately for snappy feedback; AUTO recovery no
+   longer clears the error up front at all. The SDK clears the error by
+   itself the moment a stream attaches (makeRequest → setStatus
+   submitted, error: undefined) and keeps it when the turn is dead --
+   the old unconditional clear could wipe the banner with nothing
+   recovered, making a failed turn look silently finished.
+4. try/catch around the whole retry body: resumeStream() throws on
+   transport failures; previously that escaped as an unhandled
+   rejection from the fire-and-forget IIFE. Now logged, error state
+   stays visible, user/auto can retry again.
+
+**Tests:** 33 in stream-recovery-policy.test.ts (8 new: soft self-heal,
+soft no-op cases, stacking guard both strategies, near-miss prompt
+match). Typecheck + oxlint clean.

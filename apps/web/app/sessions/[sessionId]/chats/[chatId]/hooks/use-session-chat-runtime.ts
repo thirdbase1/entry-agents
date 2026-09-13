@@ -21,7 +21,7 @@ import {
 import { cleanupChatRouteOnUnmount } from "@/lib/chat-route-cleanup";
 import {
   CONTINUE_AFTER_ERROR_PROMPT,
-  getHardRetryAction,
+  getDeadTurnRetryAction,
 } from "@/app/sessions/[sessionId]/chats/[chatId]/stream-recovery-policy";
 import {
   clearChatWorkspaceStatus,
@@ -238,10 +238,19 @@ export function useSessionChatRuntime({
               // Ignore stale local stop failures and still attempt reconnect.
             }
             abortChatInstanceTransport(chatId);
+            // Manual retry: clear the error IMMEDIATELY for snappy
+            // feedback while the resume round-trip is in flight.
+            chat.clearError();
           }
-
-          // Clear the error so the chat UI becomes visible again.
-          chat.clearError();
+          // Auto ("soft") recovery deliberately does NOT clear the error
+          // up front. The SDK clears it by itself the moment a stream
+          // actually attaches (makeRequest sets status submitted with
+          // error: undefined -- verified in the AI SDK source), and
+          // leaves it untouched when the turn is dead -- so a background
+          // recovery that can't do anything keeps the error banner
+          // visible for the user instead of silently wiping it (the old
+          // behavior cleared it unconditionally, which could make a
+          // failed turn look silently finished).
 
           // Snapshot before resuming so we can tell whether resumeStream()
           // actually attached to anything.
@@ -258,11 +267,7 @@ export function useSessionChatRuntime({
           // which is exactly what made the manual Retry button look like
           // it does nothing no matter how many times it's clicked (2026-08-19,
           // confirmed live via repeated 204s on /api/chat/:id/stream in
-          // Vercel runtime logs during a real failed turn). Only a manual
-          // ("hard") retry falls back to regenerate — auto/soft recovery
-          // (visibility/online events, iOS stop-glitch) must stay
-          // resume-only so it never resubmits a turn the user didn't ask
-          // to retry.
+          // Vercel runtime logs during a real failed turn).
           await chat.resumeStream();
 
           const messagesAfterResume = chatInstance.messages;
@@ -274,25 +279,44 @@ export function useSessionChatRuntime({
             chatInstance.status !== "streaming" &&
             chatInstance.status !== "submitted";
 
-          if (strategy === "hard" && resumeAttachedToNothing) {
-            // The turn is dead server-side. If it died mid-response with
-            // real partial work (tool calls, data parts, non-error text),
-            // CONTINUE from it instead of regenerating -- regenerate
-            // deletes the partial assistant message and re-runs the
-            // entire turn from the last user message, which visibly
-            // repeats everything the agent already said/did and dies the
-            // same way if the gateway error is still live (owner-reported
-            // 2026-09-13). With nothing worth keeping, regenerate stays
-            // the right call (drops the error notice, clean re-run).
-            const retryAction = getHardRetryAction(messagesBeforeResume);
+          if (resumeAttachedToNothing) {
+            // The turn is dead server-side. ONE shared, strategy-aware
+            // decision for both the manual Retry button and auto
+            // recovery (2026-09-13, owner: "improve the whole retry
+            // process, both retries"):
+            // - real partial work -> CONTINUE from it (keeps the partial
+            //   response in history; auto-recovery may self-heal too,
+            //   since continuing never repeats completed work)
+            // - nothing worth keeping -> hard: REGENERATE (drops the
+            //   error notice, clean re-run); soft: do nothing and keep
+            //   the error visible (never re-runs a full turn without the
+            //   user asking)
+            const retryAction = getDeadTurnRetryAction(
+              messagesBeforeResume,
+              strategy,
+            );
             if (retryAction === "continue") {
               await chat.sendMessage({
                 text: CONTINUE_AFTER_ERROR_PROMPT,
               });
-            } else {
+            } else if (retryAction === "regenerate") {
               await chat.regenerate();
             }
+            // "none": dead turn with nothing worth continuing in auto
+            // recovery -- intentionally do nothing.
           }
+        } catch (error) {
+          // resumeStream() throws on transport-level failures (network
+          // down, non-2xx probe response). Never let that escape as an
+          // unhandled rejection from this fire-and-forget IIFE -- log it
+          // and leave the chat's error state visible; the user can tap
+          // Retry (or auto recovery re-fires on the next
+          // visibility/online event).
+          console.error("[chat-runtime] retryChatStream failed", {
+            chatId,
+            strategy,
+            error,
+          });
         } finally {
           retryInFlightRef.current = false;
         }

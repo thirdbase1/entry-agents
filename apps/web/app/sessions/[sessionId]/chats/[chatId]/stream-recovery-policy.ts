@@ -107,7 +107,7 @@ export function isChatStreamingProbeResponse(
   );
 }
 
-// --- Hard-retry action (continue vs regenerate) -------------------------
+// --- Dead-turn retry action (continue / regenerate / none) ---------------
 //
 // Owner-reported bug (2026-09-13): when a turn dies from a gateway error
 // mid-response and the user hits the Retry button, the old behavior
@@ -118,39 +118,74 @@ export function isChatStreamingProbeResponse(
 // gateway error is still live it dies the exact same way -- so retrying
 // "doesn't continue" either.
 //
-// Instead: if the failed turn left real partial work in the last
-// assistant message (completed tool calls, data parts, or real text that
-// isn't just the friendly error notice), CONTINUE -- send a continuation
-// user prompt that keeps the partial response in history. The server
+// Second pass, same day (owner: "improve the whole retry process, both
+// retries"): the decision is now strategy-aware and shared by BOTH the
+// manual Retry button ("hard") and automatic recovery ("soft" --
+// visibility/focus/online events, the stall watchdog). The server
 // already sanitizes dangling tool calls (convertMessages runs with
-// ignoreIncompleteToolCalls: true) and persists the client's assistant
+// ignoreIncompleteToolErrors) and persists the client's assistant
 // messages (persistAssistantMessagesWithToolResults in POST
-// /api/chat), so the model picks up where it stopped.
+// /api/chat), so a continued turn picks up mid-task cleanly.
 //
-// Only when there is nothing worth keeping (turn died before any output,
-// or the last assistant message is just the persisted error notice) do we
-// keep the old regenerate behavior, which drops the useless error
-// message and re-runs the turn cleanly.
+// Action semantics:
+// - "continue": the dead turn left real partial work (completed tool
+//   calls, data parts, or real text that isn't just the friendly error
+//   notice) -- send CONTINUE_AFTER_ERROR_PROMPT so the model picks up
+//   where it stopped. Safe for BOTH strategies: continuing never
+//   repeats completed work, so auto-recovery may self-heal a dead turn
+//   without the user asking (e.g. a mobile network blip while the tab
+//   was backgrounded).
+// - "regenerate": nothing worth keeping (turn died before any output,
+//   or the last assistant message is just the persisted error notice) --
+//   drop the dead turn and re-run it. MANUAL ONLY: a full re-run spends
+//   the user's tokens again, so automatic recovery must never fire this
+//   on its own.
+// - "none": dead turn, nothing worth continuing, and we're in auto
+//   recovery -- do nothing and keep the error visible for the user.
+//
+// Stacking guard: if the LAST message is already a failed
+// CONTINUE_AFTER_ERROR_PROMPT (a previous continue attempt errored out
+// before producing any new assistant message), never stack a second
+// continuation message on top of it. Soft does nothing (the user can
+// still tap Retry); hard resubmits the existing prompt via
+// `regenerate()`, which for a trailing user message keeps it in
+// history and re-submits it (verified against the SDK's regenerate()
+// implementation) -- so the partial assistant work below it survives.
 
 export const CONTINUE_AFTER_ERROR_PROMPT =
   "Continue from exactly where you left off. Do not repeat any completed work, tool calls, or text you already produced -- just carry the task forward.";
 
-export type HardRetryAction = "continue" | "regenerate";
+export type RetryStrategy = "hard" | "soft";
+
+export type DeadTurnRetryAction = "continue" | "regenerate" | "none";
 
 /**
- * Decides what a manual ("hard") retry should do once we know the
- * server-side stream is dead (resumeStream() 204'd / attached to
- * nothing): continue from the partial assistant response if there is
- * one, otherwise regenerate the turn.
+ * Decides what to do once we know the server-side stream for the
+ * current turn is dead (resumeStream() attached to nothing). See the
+ * block comment above for the full action semantics.
  */
-export function getHardRetryAction(
+export function getDeadTurnRetryAction(
   messages: WebAgentUIMessage[],
-): HardRetryAction {
+  strategy: RetryStrategy,
+): DeadTurnRetryAction {
   const last = messages[messages.length - 1];
+
+  // A previous continue attempt already failed -- never stack another
+  // continuation prompt on top of the existing one.
+  if (
+    last?.role === "user" &&
+    last.parts.some(
+      (part) =>
+        part.type === "text" && part.text === CONTINUE_AFTER_ERROR_PROMPT,
+    )
+  ) {
+    return strategy === "hard" ? "regenerate" : "none";
+  }
+
+  // No assistant response at all (turn died before any output) -- a
+  // continuation prompt would have nothing to continue from.
   if (!last || last.role !== "assistant") {
-    // No assistant response at all (turn died before any output) -- a
-    // continuation prompt would have nothing to continue from.
-    return "regenerate";
+    return strategy === "hard" ? "regenerate" : "none";
   }
 
   const hasRealPartialWork = last.parts.some((part) => {
@@ -175,5 +210,8 @@ export function getHardRetryAction(
     return false;
   });
 
-  return hasRealPartialWork ? "continue" : "regenerate";
+  if (hasRealPartialWork) {
+    return "continue";
+  }
+  return strategy === "hard" ? "regenerate" : "none";
 }

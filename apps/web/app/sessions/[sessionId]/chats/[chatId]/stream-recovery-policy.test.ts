@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type { WebAgentUIMessage } from "@/app/types";
 import {
   CONTINUE_AFTER_ERROR_PROMPT,
   STREAM_RECOVERY_MIN_INTERVAL_MS,
   STREAM_RECOVERY_STALL_MS,
-  getHardRetryAction,
+  getDeadTurnRetryAction,
   getStreamRecoveryDecision,
   getStreamRecoveryDelayMs,
   isChatStreamingProbeResponse,
@@ -235,32 +236,35 @@ describe("isChatStreamingProbeResponse", () => {
   });
 });
 
-describe("getHardRetryAction", () => {
+describe("getDeadTurnRetryAction (hard strategy)", () => {
   test("regenerates when the last message is a user message (no output yet)", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("regenerate");
   });
 
   test("regenerates when the last assistant message is empty", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       { id: "a1", role: "assistant", parts: [] },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("regenerate");
   });
 
   test("regenerates when the last assistant message is only step-start parts", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       { id: "a1", role: "assistant", parts: [{ type: "step-start" }] },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("regenerate");
   });
 
   test("regenerates when the last assistant message is only the friendly error notice", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       {
         id: "a1",
@@ -272,12 +276,13 @@ describe("getHardRetryAction", () => {
           },
         ],
       },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("regenerate");
   });
 
   test("regenerates for a friendly error notice with the repeat-failure suffix", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       {
         id: "a1",
@@ -289,12 +294,13 @@ describe("getHardRetryAction", () => {
           },
         ],
       },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("regenerate");
   });
 
   test("continues when the last assistant message has completed tool calls", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       {
         id: "a1",
@@ -315,12 +321,13 @@ describe("getHardRetryAction", () => {
           },
         ],
       },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("continue");
   });
 
   test("continues when the last assistant message has real partial text", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       {
         id: "a1",
@@ -329,12 +336,13 @@ describe("getHardRetryAction", () => {
           { type: "text", text: "Let me look at your project files first." },
         ],
       },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("continue");
   });
 
   test("continues when the last assistant message has data parts", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       {
         id: "a1",
@@ -347,12 +355,13 @@ describe("getHardRetryAction", () => {
           },
         ],
       },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("continue");
   });
 
   test("continues when an error notice coexists with real work", () => {
-    const action = getHardRetryAction([
+    const action = getDeadTurnRetryAction([
       { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
       {
         id: "a1",
@@ -376,8 +385,131 @@ describe("getHardRetryAction", () => {
           },
         ],
       },
-    ]);
+    ],
+      "hard");
     expect(action).toBe("continue");
+  });
+});
+
+describe("getDeadTurnRetryAction (soft strategy / auto recovery)", () => {
+  const partialWorkMessages: WebAgentUIMessage[] = [
+    { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+    {
+      id: "a1",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-bash",
+          toolCallId: "tc1",
+          state: "output-available",
+          input: { command: "ls" },
+          output: { success: true, exitCode: 0, stdout: "f", stderr: "" },
+        },
+      ],
+    },
+  ];
+
+  test("self-heals by continuing a dead turn with partial work", () => {
+    expect(getDeadTurnRetryAction(partialWorkMessages, "soft")).toBe("continue");
+  });
+
+  test("does nothing when the dead turn has no partial work", () => {
+    expect(
+      getDeadTurnRetryAction(
+        [
+          { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+          { id: "a1", role: "assistant", parts: [] },
+        ],
+        "soft",
+      ),
+    ).toBe("none");
+  });
+
+  test("does nothing when the last message is the friendly error notice", () => {
+    expect(
+      getDeadTurnRetryAction(
+        [
+          { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [
+              {
+                type: "text",
+                text: "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models.",
+              },
+            ],
+          },
+        ],
+        "soft",
+      ),
+    ).toBe("none");
+  });
+
+  test("never auto-regenerates a turn with no output at all", () => {
+    expect(
+      getDeadTurnRetryAction(
+        [{ id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] }],
+        "soft",
+      ),
+    ).toBe("none");
+  });
+});
+
+describe("getDeadTurnRetryAction (stacking guard)", () => {
+  const messagesAfterFailedContinue: WebAgentUIMessage[] = [
+    { id: "u1", role: "user", parts: [{ type: "text", text: "build it" }] },
+    {
+      id: "a1",
+      role: "assistant",
+      parts: [{ type: "text", text: "I have started building." }],
+    },
+    {
+      id: "u2",
+      role: "user",
+      parts: [{ type: "text", text: CONTINUE_AFTER_ERROR_PROMPT }],
+    },
+  ];
+
+  test("soft does not stack a second continuation prompt", () => {
+    expect(
+      getDeadTurnRetryAction(messagesAfterFailedContinue, "soft"),
+    ).toBe("none");
+  });
+
+  test("hard resubmits the existing continuation prompt instead of stacking", () => {
+    // regenerate() with a trailing user message keeps it and resubmits it
+    // (verified against the AI SDK implementation), so the partial
+    // assistant work below it stays in history.
+    expect(
+      getDeadTurnRetryAction(messagesAfterFailedContinue, "hard"),
+    ).toBe("regenerate");
+  });
+
+  test("a user message that merely looks similar is not treated as the prompt", () => {
+    expect(
+      getDeadTurnRetryAction(
+        [
+          { id: "u1", role: "user", parts: [{ type: "text", text: "build it" }] },
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [{ type: "text", text: "I have started building." }],
+          },
+          {
+            id: "u2",
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: "Continue from exactly where you left off, but also add tests",
+              },
+            ],
+          },
+        ],
+        "soft",
+      ),
+    ).toBe("none");
   });
 });
 

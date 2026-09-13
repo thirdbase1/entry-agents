@@ -8,7 +8,11 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import * as realAiModule from "ai";
 import * as realAgentModule from "@open-agents/agent";
 
-const generateTextCalls: Array<{ prompt: string }> = [];
+const generateTextCalls: Array<{
+  prompt: string;
+  model: string;
+  hasAbortSignal: boolean;
+}> = [];
 
 let currentSession: { user: { id: string } } | null = {
   user: { id: "user-1" },
@@ -20,8 +24,16 @@ let generateTextResult: { text: string } | Error = {
 
 mock.module("ai", () => ({
   ...realAiModule,
-  generateText: async (input: { prompt: string }) => {
-    generateTextCalls.push(input);
+  generateText: async (input: {
+    prompt: string;
+    model: string;
+    abortSignal?: AbortSignal;
+  }) => {
+    generateTextCalls.push({
+      prompt: input.prompt,
+      model: input.model,
+      hasAbortSignal: input.abortSignal instanceof AbortSignal,
+    });
 
     if (generateTextResult instanceof Error) {
       throw generateTextResult;
@@ -121,6 +133,12 @@ describe("/api/generate-title", () => {
     expect(body.title).toBe("Fix API Validation");
     expect(generateTextCalls).toHaveLength(1);
     expect(generateTextCalls[0]?.prompt).toContain("hello world");
+    // Owner request 2026-09-13: titles go through the cheap fast
+    // qwen3.8-flash model (api.b.ai via gateway), NOT the app default
+    // -- and always with a hard abort signal so a hung upstream call
+    // can never pin a serverless slot.
+    expect(generateTextCalls[0]?.model).toBe("qwen3.8-flash");
+    expect(generateTextCalls[0]?.hasAbortSignal).toBe(true);
   });
 
   test("returns 500 when title generation fails", async () => {

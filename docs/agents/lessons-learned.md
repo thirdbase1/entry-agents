@@ -2380,3 +2380,60 @@ of `gh`'s equivalent placeholder (`GITHUB_CLI_PLACEHOLDER_TOKEN`, same
 hyphenated string) if GitHub CLI operations ever start failing the same
 way -- no evidence of that yet (gh doesn't appear to do this kind of
 local format validation on `GH_TOKEN`), so left untouched for now.
+
+## 2026-09-13: Retry button repeated the whole dead turn + titles burned the default model
+
+**Owner-reported (2 bugs, same day):**
+
+1. When a chat turn died mid-response from a gateway error, clicking the
+   Retry button made the agent *repeat everything it had already said and
+   done* before the error, then often die the same way again (and
+   sometimes not continue at all).
+
+**Root cause (bug 1):** `retryChatStream()`'s hard path (stream already
+   dead server-side, `resumeStream()` 204'd) always fell back to
+   `chat.regenerate()`. `regenerate()` **deletes the last assistant
+   message** and re-submits from the last user message, so the entire
+   turn re-runs: same tool calls, same tokens, same text -- visibly
+   repeating everything, and dying the identical way if the gateway
+   error was still live.
+
+**Fix (bug 1):** new `getHardRetryAction()` in
+   `app/sessions/[sessionId]/chats/[chatId]/stream-recovery-policy.ts`.
+   If the dead turn left real partial work in the last assistant message
+   (tool parts, data parts, or real text that isn't just the friendly
+   error notice), Retry now sends a continuation user prompt
+   (`CONTINUE_AFTER_ERROR_PROMPT`) that *keeps* the partial response in
+   history, so the model picks up where it stopped. Nothing worth
+   keeping (turn died before output, or last message is just the
+   setup-error notice) still regenerates -- dropping the useless error
+   message and re-running cleanly is right in that case.
+   `isFriendlyChatErrorText()` (new export in `lib/chat/friendly-error.ts`)
+   distinguishes the workflow's persisted setup-error notice from real
+   partial text. Safe because the server already sanitizes dangling
+   tool calls on the next turn (`convertMessages` runs with
+   `ignoreIncompleteToolCalls: true`) and POST /api/chat persists
+   client-sent assistant messages, so the partial response survives the
+   retry round-trip.
+
+2. Chat title generation used `gateway(APP_DEFAULT_MODEL_ID)` -- a
+   premium model for a 5-word string, with **no timeout** on the
+   `generateText` call. Every default-model outage (ling-3.0,
+   deepseek-v4-flash, gpt-5.6-luna, gpt-5.6-sol...) silently killed
+   title generation too, and a hung call could pin a serverless slot
+   up to Vercel's 300s function timeout -- once per new chat.
+
+**Fix (bug 2):** owner picked `qwen3.8-flash` (api.b.ai via the gateway)
+   as the title model (`TITLE_MODEL_ID` in
+   `app/api/generate-title/route.ts`) + hard
+   `AbortSignal.timeout(15_000)` (`TITLE_GENERATION_TIMEOUT_MS`). On
+   timeout/failure the title just falls back to the client's optimistic
+   truncation of the user's message. This also decouples titles from
+   the default model's fate entirely.
+
+**Tests:** 10 new tests for `getHardRetryAction`/prompt, 6 for
+   `isFriendlyChatErrorText`, 2 new assertions in the generate-title
+   route test (model id + abort signal present). Typecheck + oxlint
+   clean. NOTE: `generate-title/route.test.ts` fails in the local
+   sandbox on clean main too (pre-existing `server-only` import issue,
+   0/5 pass before and after this change -- not caused by it).

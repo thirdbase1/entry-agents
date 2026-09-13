@@ -1,4 +1,6 @@
+import type { WebAgentUIMessage } from "@/app/types";
 import type { ChatUiStatus } from "@/lib/chat-streaming-state";
+import { isFriendlyChatErrorText } from "@/lib/chat/friendly-error";
 
 export const STREAM_RECOVERY_STALL_MS = 4_000;
 export const STREAM_RECOVERY_MIN_INTERVAL_MS = 8_000;
@@ -103,4 +105,75 @@ export function isChatStreamingProbeResponse(
       typeof chat["id"] === "string" &&
       typeof chat["isStreaming"] === "boolean",
   );
+}
+
+// --- Hard-retry action (continue vs regenerate) -------------------------
+//
+// Owner-reported bug (2026-09-13): when a turn dies from a gateway error
+// mid-response and the user hits the Retry button, the old behavior
+// always called `chat.regenerate()` -- which DELETES the partial
+// assistant message and re-runs the whole turn from the last user
+// message. Result: the agent visibly repeats everything it had already
+// said/done (burning the same tool calls and tokens again), and if the
+// gateway error is still live it dies the exact same way -- so retrying
+// "doesn't continue" either.
+//
+// Instead: if the failed turn left real partial work in the last
+// assistant message (completed tool calls, data parts, or real text that
+// isn't just the friendly error notice), CONTINUE -- send a continuation
+// user prompt that keeps the partial response in history. The server
+// already sanitizes dangling tool calls (convertMessages runs with
+// ignoreIncompleteToolCalls: true) and persists the client's assistant
+// messages (persistAssistantMessagesWithToolResults in POST
+// /api/chat), so the model picks up where it stopped.
+//
+// Only when there is nothing worth keeping (turn died before any output,
+// or the last assistant message is just the persisted error notice) do we
+// keep the old regenerate behavior, which drops the useless error
+// message and re-runs the turn cleanly.
+
+export const CONTINUE_AFTER_ERROR_PROMPT =
+  "Continue from exactly where you left off. Do not repeat any completed work, tool calls, or text you already produced -- just carry the task forward.";
+
+export type HardRetryAction = "continue" | "regenerate";
+
+/**
+ * Decides what a manual ("hard") retry should do once we know the
+ * server-side stream is dead (resumeStream() 204'd / attached to
+ * nothing): continue from the partial assistant response if there is
+ * one, otherwise regenerate the turn.
+ */
+export function getHardRetryAction(
+  messages: WebAgentUIMessage[],
+): HardRetryAction {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant") {
+    // No assistant response at all (turn died before any output) -- a
+    // continuation prompt would have nothing to continue from.
+    return "regenerate";
+  }
+
+  const hasRealPartialWork = last.parts.some((part) => {
+    // Completed (or in-flight) tool calls, data parts, files, sources,
+    // and reasoning all represent real work worth keeping.
+    if (
+      part.type.startsWith("tool-") ||
+      part.type.startsWith("data-") ||
+      part.type.startsWith("source-") ||
+      part.type === "file" ||
+      part.type === "reasoning"
+    ) {
+      return true;
+    }
+    if (part.type === "text") {
+      const text = part.text.trim();
+      // Real partial text counts; the workflow's setup-error notice
+      // (a friendly-error string) does NOT -- continuing from an
+      // error-only message would keep the useless notice in history.
+      return text.length > 0 && !isFriendlyChatErrorText(text);
+    }
+    return false;
+  });
+
+  return hasRealPartialWork ? "continue" : "regenerate";
 }

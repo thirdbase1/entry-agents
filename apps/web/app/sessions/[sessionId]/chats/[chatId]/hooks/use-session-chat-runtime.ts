@@ -20,6 +20,10 @@ import {
 } from "@/lib/chat-instance-manager";
 import { cleanupChatRouteOnUnmount } from "@/lib/chat-route-cleanup";
 import {
+  CONTINUE_AFTER_ERROR_PROMPT,
+  getHardRetryAction,
+} from "@/app/sessions/[sessionId]/chats/[chatId]/stream-recovery-policy";
+import {
   clearChatWorkspaceStatus,
   getChatWorkspaceStatusSnapshot,
   setChatWorkspaceStatus,
@@ -271,7 +275,23 @@ export function useSessionChatRuntime({
             chatInstance.status !== "submitted";
 
           if (strategy === "hard" && resumeAttachedToNothing) {
-            await chat.regenerate();
+            // The turn is dead server-side. If it died mid-response with
+            // real partial work (tool calls, data parts, non-error text),
+            // CONTINUE from it instead of regenerating -- regenerate
+            // deletes the partial assistant message and re-runs the
+            // entire turn from the last user message, which visibly
+            // repeats everything the agent already said/did and dies the
+            // same way if the gateway error is still live (owner-reported
+            // 2026-09-13). With nothing worth keeping, regenerate stays
+            // the right call (drops the error notice, clean re-run).
+            const retryAction = getHardRetryAction(messagesBeforeResume);
+            if (retryAction === "continue") {
+              await chat.sendMessage({
+                text: CONTINUE_AFTER_ERROR_PROMPT,
+              });
+            } else {
+              await chat.regenerate();
+            }
           }
         } finally {
           retryInFlightRef.current = false;

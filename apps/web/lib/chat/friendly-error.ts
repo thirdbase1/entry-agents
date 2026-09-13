@@ -272,3 +272,28 @@ export function serializeErrorForDiagnostics(
   }
   return text.slice(0, maxLen);
 }
+
+/**
+ * True when the given text is one of the fixed friendly error strings
+ * this module produces (optionally with the repeat-failure suffix
+ * appended). Used by the client's hard-retry flow to distinguish an
+ * assistant message that is ONLY an error notice -- e.g. the workflow's
+ * setup-error message persisted when a turn dies before producing any
+ * real output, which has nothing worth continuing from -- from a real
+ * partial response the agent should pick up from instead of
+ * regenerating.
+ *
+ * Admin-configured SAFE_CHAT_ERROR custom messages won't match; for
+ * those, callers keep their default (regenerate) behavior, which is
+ * safe: at worst we re-run a turn that produced nothing but an error
+ * notice.
+ */
+export function isFriendlyChatErrorText(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  return Object.values(CATEGORY_MESSAGES).some(
+    (message) => trimmed === message || trimmed.startsWith(message),
+  );
+}

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CONTINUE_AFTER_ERROR_PROMPT,
   STREAM_RECOVERY_MIN_INTERVAL_MS,
   STREAM_RECOVERY_STALL_MS,
+  getHardRetryAction,
   getStreamRecoveryDecision,
   getStreamRecoveryDelayMs,
   isChatStreamingProbeResponse,
@@ -230,5 +232,158 @@ describe("isChatStreamingProbeResponse", () => {
         chats: [{ id: "chat-1", isStreaming: "yes" }],
       }),
     ).toBe(false);
+  });
+});
+
+describe("getHardRetryAction", () => {
+  test("regenerates when the last message is a user message (no output yet)", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+    ]);
+    expect(action).toBe("regenerate");
+  });
+
+  test("regenerates when the last assistant message is empty", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      { id: "a1", role: "assistant", parts: [] },
+    ]);
+    expect(action).toBe("regenerate");
+  });
+
+  test("regenerates when the last assistant message is only step-start parts", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      { id: "a1", role: "assistant", parts: [{ type: "step-start" }] },
+    ]);
+    expect(action).toBe("regenerate");
+  });
+
+  test("regenerates when the last assistant message is only the friendly error notice", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "The AI provider is temporarily unavailable. Please try again in a moment.",
+          },
+        ],
+      },
+    ]);
+    expect(action).toBe("regenerate");
+  });
+
+  test("regenerates for a friendly error notice with the repeat-failure suffix", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "The request took too long and timed out. Please try again. This looks like a repeating issue rather than a one-off, so retrying probably won't help -- try switching models, or let us know if it keeps happening.",
+          },
+        ],
+      },
+    ]);
+    expect(action).toBe("regenerate");
+  });
+
+  test("continues when the last assistant message has completed tool calls", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "step-start" },
+          {
+            type: "tool-bash",
+            toolCallId: "tc1",
+            state: "output-available",
+            input: { command: "ls" },
+            output: {
+              success: true,
+              exitCode: 0,
+              stdout: "file.txt",
+              stderr: "",
+            },
+          },
+        ],
+      },
+    ]);
+    expect(action).toBe("continue");
+  });
+
+  test("continues when the last assistant message has real partial text", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "text", text: "Let me look at your project files first." },
+        ],
+      },
+    ]);
+    expect(action).toBe("continue");
+  });
+
+  test("continues when the last assistant message has data parts", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-workspace-status",
+            id: "d1",
+            data: { status: "setting-up", message: "Preparing workspace" },
+          },
+        ],
+      },
+    ]);
+    expect(action).toBe("continue");
+  });
+
+  test("continues when an error notice coexists with real work", () => {
+    const action = getHardRetryAction([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-bash",
+            toolCallId: "tc1",
+            state: "output-available",
+            input: { command: "ls" },
+            output: {
+              success: true,
+              exitCode: 0,
+              stdout: "file.txt",
+              stderr: "",
+            },
+          },
+          {
+            type: "text",
+            text: "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models.",
+          },
+        ],
+      },
+    ]);
+    expect(action).toBe("continue");
+  });
+});
+
+describe("CONTINUE_AFTER_ERROR_PROMPT", () => {
+  test("is a non-empty instruction that mentions not repeating", () => {
+    expect(CONTINUE_AFTER_ERROR_PROMPT.length).toBeGreaterThan(20);
+    expect(CONTINUE_AFTER_ERROR_PROMPT.toLowerCase()).toContain("repeat");
   });
 });

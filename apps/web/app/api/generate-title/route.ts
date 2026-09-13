@@ -1,10 +1,32 @@
 import { checkBotProtection } from "@/lib/botid";
 import { generateText } from "ai";
 import { gateway } from "@open-agents/agent";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { z } from "zod";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getServerSession } from "@/lib/session/get-server-session";
+
+/**
+ * Model used for title generation. Owner request (2026-09-13): use
+ * qwen3.8-flash (routed via api.b.ai through the gateway) -- title
+ * generation is a tiny, low-stakes task, so it goes to a cheap, fast
+ * model instead of burning the premium app-default model on a 5-word
+ * string. Also decouples titles from the default model's fate: the app
+ * default has gone through multiple outage/disable cycles (ling-3.0,
+ * deepseek-v4-flash, gpt-5.6-luna, gpt-5.6-sol), and every time it did,
+ * every new chat's title generation silently died with it.
+ */
+const TITLE_MODEL_ID = "qwen3.8-flash";
+
+/**
+ * Hard cap on the title-generation call. generateText has no timeout of
+ * its own -- a slow or hung gateway/upstream call would otherwise pin a
+ * serverless function slot until Vercel's 300s function timeout, and
+ * enough of those stacked up (one fires on every new chat's first
+ * message) can starve the app's limited serverless concurrency entirely.
+ * On timeout the title just falls back to the client's optimistic
+ * truncation of the user's message.
+ */
+const TITLE_GENERATION_TIMEOUT_MS = 15_000;
 
 /**
  * Generates a short, descriptive session title from a user message using AI.
@@ -20,7 +42,8 @@ export async function generateSessionTitle(
 
   try {
     const result = await generateText({
-      model: gateway(APP_DEFAULT_MODEL_ID),
+      model: gateway(TITLE_MODEL_ID),
+      abortSignal: AbortSignal.timeout(TITLE_GENERATION_TIMEOUT_MS),
       prompt: `You are a developer tool that names coding sessions. Generate a concise title (max 5 words) for a coding session based on the user's first message below. The title should help the user quickly identify what this session is about at a glance. Do NOT use quotes or punctuation around the title. Respond with ONLY the title, nothing else.
 
 User message:

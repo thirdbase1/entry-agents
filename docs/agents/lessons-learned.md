@@ -2590,3 +2590,22 @@ Ladder after this: Plus $5->$10 (2x), GOAT $10->$50 (5x), Pro $20->$100
 (5x), Max $40->$180 (4.5x). GOAT stays the best value-per-dollar hook;
 GOAT and Pro now tie on multiplier (5x) but Pro still grants 2x the
 absolute credit for 2x the price.
+
+## 2026-09-15 (final): Entry Windows shipped (commit db82751)
+
+Owner lifted the earlier "Not now" for GOAT only: GOAT now paces usage
+over rolling windows on top of the plain balance check -- $10 per
+trailing 5 hours, $25 per trailing 7 days, $50 per trailing 30 days
+(20%/50%/100% of the $50 grant, CC-GOAT ratios). Architecture:
+(1) PlanUsageWindows on PlanDefinition (plans.ts), GOAT-only;
+(2) getUsageWindowTotals() in credit-ledger.ts sums usage_debit rows in
+ONE indexed aggregate query (single scan of rows >= 30d cutoff);
+(3) pre-turn gate in resolveChatModelRuntime right after the
+balance<=0 check -- non-admin only, admins skip; friendly per-window
+error via toSafeChatError. Mid-turn overspend is bounded to one turn's
+spend (debits are summed on the NEXT turn) -- same bound class as
+CC's estimator. Public copy brands it "Entry Windows" and explicitly
+says no other Entry plan works this way. Gotcha: findExceededUsageWindow
+initially lived in credit-ledger.ts whose `import "server-only"` breaks
+bun test imports -- pure plan policy belongs in plans.ts, which has no
+server-only guard. 7 tests in lib/billing/usage-windows.test.ts.

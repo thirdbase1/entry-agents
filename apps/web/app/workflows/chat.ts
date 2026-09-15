@@ -9,6 +9,7 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
+import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
   type GithubApiResult,
@@ -110,9 +111,12 @@ type ChatModelRuntime = {
    * every model step and abort mid-turn on exhaustion. See the block
    * above that computes it for why admins get a value too. */
   startingBalanceCents: number;
-  /** True when startingBalanceCents was capped by a rolling usage
-   * window (Entry plan) rather than the plain balance. */
-  windowBudgetCapped: boolean;
+  /** Remaining allowance of the tightest Entry-plan usage window at
+   * turn start (5h/weekly/monthly), enforced mid-turn via its own
+   * in-memory counter -- null when the plan has no windows. Applies to
+   * admins too (owner request 2026-09-15: the admin account on the
+   * Entry plan behaves like a normal subscriber for windows). */
+  windowBudgetCents: number | null;
   /** True for non-admins -- controls whether runAgentStep is allowed to
    * abort the stream when the running balance hits zero. Admins are
    * still billed (see runAgentStep) but never blocked. */
@@ -448,7 +452,8 @@ async function resolveChatModelRuntime(params: {
   // discovering the overspend in one lump sum after the whole turn
   // finishes (see the old chat-post-finish.ts behavior this replaces).
   let startingBalanceCents = 0;
-  let windowBudgetCapped = false;
+  let windowBudgetCents: number | null = null;
+  let planUsageWindows: PlanUsageWindows | null = null;
   if (!isAdminUser) {
     const { getUserBillingState, claimUserBillingTurn } =
       await import("@/lib/billing/credit-ledger");
@@ -479,6 +484,7 @@ async function resolveChatModelRuntime(params: {
 
     const billingState = await getUserBillingState(params.userId);
     const plan = getPlanDefinition(billingState?.plan);
+    planUsageWindows = plan.usageWindows ?? null;
     const balanceCents = billingState?.creditBalanceCents ?? 0;
     startingBalanceCents = balanceCents;
 
@@ -501,68 +507,64 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    // Entry Windows (2026-09-15): GOAT paces usage over rolling
-    // 5-hour / weekly / monthly windows, on top of the plain balance
-    // check above. Checked once per turn at this pre-turn gate --
-    // mid-turn overspend is bounded to one turn's spend, and debits
-    // land in credit_transactions as usage_debit rows which this
-    // check sums on the NEXT turn. Admins skip this gate entirely.
-    if (plan.usageWindows) {
-      const { getUsageWindowTotals } = await import(
-        "@/lib/billing/credit-ledger"
-      );
-      const { findExceededUsageWindow } = await import("@/lib/billing/plans");
-      const totals = await getUsageWindowTotals(params.userId);
-      const exceeded = findExceededUsageWindow(totals, plan.usageWindows);
-
-      // Accuracy (2026-09-15, owner request): even when no window is
-      // exceeded yet, cap this turn's spend budget to the tightest
-      // remaining window allowance. runAgentStep aborts the instant
-      // the in-memory budget hits zero, so the turn now stops exactly
-      // at the window edge mid-turn instead of overshooting by up to a
-      // whole turn before the NEXT pre-turn gate notices.
-      const windowRemainingCents = Math.min(
-        plan.usageWindows.fiveHourLimitCents - totals.last5HoursCents,
-        plan.usageWindows.weeklyLimitCents - totals.last7DaysCents,
-        plan.usageWindows.monthlyLimitCents - totals.last30DaysCents,
-      );
-      if (windowRemainingCents > startingBalanceCents) {
-        // Balance is the binding constraint -- behave exactly as before.
-        windowBudgetCapped = false;
-      } else if (windowRemainingCents <= 0) {
-        // Guard: findExceededUsageWindow should have thrown already.
-        throw toSafeChatError(
-          "Your Entry plan's usage window is full -- it refills continuously as your oldest usage slides out; try again in a little while.",
-        );
-      } else {
-        startingBalanceCents = windowRemainingCents;
-        windowBudgetCapped = true;
-      }
-
-      if (exceeded) {
-        const limitCents =
-          exceeded === "fiveHour"
-            ? plan.usageWindows.fiveHourLimitCents
-            : exceeded === "weekly"
-              ? plan.usageWindows.weeklyLimitCents
-              : plan.usageWindows.monthlyLimitCents;
-        const limitUsd = (limitCents / 100).toFixed(0);
-        throw toSafeChatError(
-          exceeded === "fiveHour"
-            ? `Your Entry plan's 5-hour usage window is full -- $${limitUsd} of usage per rolling 5 hours. It refills continuously as your oldest usage slides out; try again in a little while.`
-            : exceeded === "weekly"
-              ? `Your Entry plan's weekly usage window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
-              : `Your Entry plan's monthly usage window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
-        );
-      }
-    }
   } else {
-    // Admins are never blocked, but their usage is still billed (see
-    // runAgentStep) -- fetch their balance too so it stays accurate,
-    // just without any gating decision riding on it.
+    // Admins are never blocked on BALANCE, but their usage is still
+    // billed (see runAgentStep) -- fetch their balance too so it stays
+    // accurate, just without any gating decision riding on it. Usage
+    // WINDOWS still apply (owner request 2026-09-15: "yes normal") --
+    // an admin on the Entry plan is treated like a normal subscriber
+    // for windows; only the balance gate stays admin-exempt.
     const { getUserBillingState } = await import("@/lib/billing/credit-ledger");
+    const { getPlanDefinition } = await import("@/lib/billing/plans");
     const billingState = await getUserBillingState(params.userId);
     startingBalanceCents = billingState?.creditBalanceCents ?? 0;
+    planUsageWindows = getPlanDefinition(billingState?.plan).usageWindows ?? null;
+  }
+
+  // Entry Windows (2026-09-15, shared gate): rolling 5-hour / weekly /
+  // monthly usage pacing for plans that define windows (only the Entry
+  // plan today), enforced for admins and non-admins alike. Debits land
+  // in credit_transactions as usage_debit rows in real time (see
+  // runAgentStep), so this pre-turn sum is always complete. The
+  // mid-turn budget below is a SEPARATE counter from the balance
+  // budget, so a window trip and a balance trip are distinguishable
+  // (refill-soon vs top-up wording) and an admin's balance privileges
+  // don't accidentally re-enable a balance block they're exempt from.
+  if (planUsageWindows) {
+    const { getUsageWindowTotals } = await import(
+      "@/lib/billing/credit-ledger"
+    );
+    const { findExceededUsageWindow } = await import("@/lib/billing/plans");
+    const totals = await getUsageWindowTotals(params.userId);
+    const exceeded = findExceededUsageWindow(totals, planUsageWindows);
+    if (exceeded) {
+      const limitCents =
+        exceeded === "fiveHour"
+          ? planUsageWindows.fiveHourLimitCents
+          : exceeded === "weekly"
+            ? planUsageWindows.weeklyLimitCents
+            : planUsageWindows.monthlyLimitCents;
+      const limitUsd = (limitCents / 100).toFixed(0);
+      throw toSafeChatError(
+        exceeded === "fiveHour"
+          ? `Your Entry plan's 5-hour usage window is full -- $${limitUsd} of usage per rolling 5 hours. It refills continuously as your oldest usage slides out; try again in a little while.`
+          : exceeded === "weekly"
+            ? `Your Entry plan's weekly usage window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
+            : `Your Entry plan's monthly usage window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
+      );
+    }
+
+    // Accuracy (2026-09-15): the turn's window budget is the tightest
+    // REMAINING allowance across all windows. runAgentStep decrements
+    // it after every model step and aborts the instant it hits zero, so
+    // a turn stops exactly at the window edge mid-turn instead of
+    // overshooting by up to one whole turn before the next pre-turn
+    // gate notices.
+    windowBudgetCents = Math.min(
+      planUsageWindows.fiveHourLimitCents - totals.last5HoursCents,
+      planUsageWindows.weeklyLimitCents - totals.last7DaysCents,
+      planUsageWindows.monthlyLimitCents - totals.last30DaysCents,
+    );
   }
   const [mainModelSelection, subagentModelSelection] = await Promise.all([
     resolveChatModelSelection({
@@ -613,7 +615,7 @@ async function resolveChatModelRuntime(params: {
     autoCommitEnabled,
     autoCreatePrEnabled,
     startingBalanceCents,
-    windowBudgetCapped,
+    windowBudgetCents,
     enforceCreditBlock: !isAdminUser,
     guidedFrontendWorkflowEnabled:
       preferences?.guidedFrontendWorkflowEnabled ?? false,
@@ -1814,7 +1816,9 @@ export async function runAgentWorkflow(options: Options) {
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
     let remainingBalanceCents = modelRuntime.startingBalanceCents;
+    let remainingWindowBudgetCents = modelRuntime.windowBudgetCents;
     let creditExhausted = false;
+    let windowExhausted = false;
     let turnSpendCapped = false;
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
@@ -1904,6 +1908,7 @@ export async function runAgentWorkflow(options: Options) {
           modelCostCatalog,
           remainingBalanceCents,
           modelRuntime.enforceCreditBlock,
+          remainingWindowBudgetCents,
         );
       } catch (error) {
         if (isStepTimingError(error)) {
@@ -1927,7 +1932,9 @@ export async function runAgentWorkflow(options: Options) {
       wasAborted = wasAborted || result.stepWasAborted;
       finalFinishReason = result.finishReason;
       remainingBalanceCents = result.remainingBalanceCents;
+      remainingWindowBudgetCents = result.remainingWindowBudgetCents;
       creditExhausted = creditExhausted || result.creditExhausted;
+      windowExhausted = windowExhausted || result.windowExhausted;
       turnSpendCapped = turnSpendCapped || result.turnSpendCapped;
 
       if (result.stepUsage) {
@@ -1936,12 +1943,12 @@ export async function runAgentWorkflow(options: Options) {
           : result.stepUsage;
       }
 
-      if (creditExhausted || turnSpendCapped) {
+      if (creditExhausted || windowExhausted || turnSpendCapped) {
         // Real-time billing (see runAgentStep) already aborted the
-        // in-flight model call -- either the running balance hit zero,
-        // or this turn alone crossed MAX_TURN_SPEND_CENTS. Either way,
-        // stop the outer step loop too instead of starting another
-        // step.
+        // in-flight model call -- the running balance hit zero, an
+        // Entry-plan usage window filled, or this turn alone crossed
+        // MAX_TURN_SPEND_CENTS. Either way, stop the outer step loop
+        // too instead of starting another step.
         break;
       }
 
@@ -1981,19 +1988,25 @@ export async function runAgentWorkflow(options: Options) {
       // generic "The request was stopped." abort text -- real-time
       // billing in runAgentStep already stopped generation the instant
       // the balance hit zero.
-      //
-      // Accuracy (2026-09-15): when the turn's budget was capped by an
-      // Entry-plan usage window (windowBudgetCapped), the balance is
-      // NOT exhausted -- saying "top up" would be wrong. Surface
-      // windowExhausted instead so the client explains the window.
-      const wasWindowCapped = modelRuntime.windowBudgetCapped;
       pendingAssistantResponse = {
         ...pendingAssistantResponse,
         metadata: {
           ...pendingAssistantResponse.metadata,
-          ...(wasWindowCapped
-            ? { windowExhausted: true }
-            : { creditExhausted: true }),
+          creditExhausted: true,
+        },
+      };
+    }
+
+    if (windowExhausted) {
+      // Distinct from creditExhausted: an Entry-plan usage window
+      // filled mid-turn. The account may still have balance, so
+      // telling the user to top up would be wrong -- the client
+      // explains that the window refills continuously instead.
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        metadata: {
+          ...pendingAssistantResponse.metadata,
+          windowExhausted: true,
         },
       };
     }
@@ -2275,6 +2288,7 @@ const runAgentStep = async (
   modelCostCatalog: AvailableModel[],
   startingBalanceCents: number,
   enforceCreditBlock: boolean,
+  windowBudgetCents: number | null,
 ) => {
   "use step";
 
@@ -2296,7 +2310,9 @@ const runAgentStep = async (
   // Promise.all before this step function returns, so they're still
   // durably committed before any workflow checkpoint.
   let remainingBalanceCents = startingBalanceCents;
+  let remainingWindowBudgetCents = windowBudgetCents;
   let creditExhausted = false;
+  let windowExhausted = false;
   // Tripped when this turn's cumulative cost (totalMessageCost, which
   // persists across outer-loop step calls via message metadata -- see
   // the assignment below) crosses MAX_TURN_SPEND_CENTS, regardless of
@@ -2656,6 +2672,20 @@ const runAgentStep = async (
                 }
               }
 
+              // Entry-plan rolling usage windows: a SEPARATE in-memory
+              // counter, decremented for windowed users regardless of
+              // admin (owner request 2026-09-15) -- admins are exempt
+              // from the balance block above but NOT from windows.
+              // Aborting here marks windowExhausted so the client says
+              // "window refills continuously", never "top up".
+              if (remainingWindowBudgetCents !== null && !windowExhausted) {
+                remainingWindowBudgetCents -= stepCostCents;
+                if (remainingWindowBudgetCents <= 0) {
+                  windowExhausted = true;
+                  abortController.abort();
+                }
+              }
+
               // Per-turn cost circuit-breaker: independent of the
               // account-balance check above, never let one turn spend
               // past MAX_TURN_SPEND_CENTS. totalMessageCost already
@@ -2865,7 +2895,9 @@ const runAgentStep = async (
       stepCost: stepsCost,
       stepWasAborted: false,
       remainingBalanceCents,
+      remainingWindowBudgetCents,
       creditExhausted,
+      windowExhausted,
       turnSpendCapped,
       stepTiming: buildStepTiming(
         stepNumber,
@@ -2889,7 +2921,9 @@ const runAgentStep = async (
         stepCost: undefined,
         stepWasAborted: true,
         remainingBalanceCents,
+        remainingWindowBudgetCents,
         creditExhausted,
+        windowExhausted,
         turnSpendCapped,
         stepTiming: buildStepTiming(
           stepNumber,

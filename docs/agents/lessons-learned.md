@@ -2480,3 +2480,38 @@ background never self-healed, the user always had to tap Retry.
 **Tests:** 33 in stream-recovery-policy.test.ts (8 new: soft self-heal,
 soft no-op cases, stacking guard both strategies, near-miss prompt
 match). Typecheck + oxlint clean.
+
+## 2026-09-15: Chats permanently wedged by output-error tool parts with truncated rawInput
+
+Real incident (2026-09-14/15, chat 8372eec6, qwen3.8-flash): a turn died
+mid-stream on an upstream error while a bash tool call was still streaming
+its arguments. The persisted tool part had `state: "output-error"`,
+`rawInput` = a TRUNCATED invalid JSON string
+(`{"command": "ls -la && cat package.json 2`), and NO `input` field --
+`input` only materializes once the args finish parsing. The AI SDK's
+convertToModelMessages sends `part.input ?? part.rawInput` for output-error
+parts (ai/dist/index.js line ~8628), so every request/retry re-sent a
+tool-call whose arguments were not valid JSON. The upstream OneAPI-family
+provider rejected it deterministically with 400
+`The "***.arguments" parameter of the code model must be in JSON format.`
+-- Workflow SDK step retries all failed identically, turn died with
+AI_NoOutputGeneratedError, and the chat was permanently wedged because
+retrying rebuilt the same poisoned history every time.
+
+Fix (commit 75c839f): new `sanitizeMessageToolInputs` in
+apps/web/lib/chat/sanitize-tool-inputs.ts, wired into convertMessages'
+map chain before convertToModelMessages. For any tool part whose effective
+input (input ?? rawInput, rawInput also tried as a JSON string) is not a
+plain object, it substitutes valid JSON `{}`. The model still sees the
+call + errorText, so it can continue; it just can't be poisoned. 7 unit
+tests, typecheck clean. Also repaired the two poisoned parts directly in
+the production DB row (input={} for the truncated bash part, promoted the
+parsed rawInput object for the todo_write part) so the affected chat
+unwedges without waiting for a new turn.
+
+Lesson: `rawInput` on a tool part is NOT guaranteed to be parseable --
+anything that re-sends persisted parts to a provider must validate inputs
+itself; the AI SDK will happily forward truncated stream garbage. And a
+deterministic 400 that survives ALL Workflow SDK retries is always a
+poisoned-payload bug, not a transient upstream issue -- look at the exact
+responseBody before assuming provider flakiness.

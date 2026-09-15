@@ -93,6 +93,13 @@ const callOptionsSchema = z.object({
   // that injects the Guided Frontend Workflow section into the system
   // prompt. See system-prompt.ts's GUIDED_FRONTEND_WORKFLOW_PROMPT.
   guidedFrontendWorkflow: z.boolean().optional(),
+  // Per-call output-token cap (apps/web real-time billing, 2026-09-15:
+  // "make Entry-window usage real time so users can't drain more than
+  // their allowance"). apps/web computes what the user's remaining
+  // window/balance can afford and passes it here; the model physically
+  // cannot generate past it, so worst-case output spend fits the
+  // budget. Undefined = no cap (ordinary turns).
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -198,6 +205,7 @@ export const openAgent = new ToolLoopAgent({
     return {
       ...settings,
       model: callModel,
+      maxOutputTokens: options.maxOutputTokens,
       tools: addCacheControl({
         tools: options.extraTools
           ? { ...(settings.tools ?? tools), ...options.extraTools }

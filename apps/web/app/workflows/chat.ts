@@ -23,6 +23,10 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { estimateStepCost } from "./gateway-metadata";
+import {
+  computeRealtimeSpendCap,
+  estimateNextStepInputTokens,
+} from "@/lib/chat/realtime-spend-cap";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -2354,6 +2358,49 @@ const runAgentStep = async (
     let totalMessageUsage = existingTotalMessageUsage;
     let totalMessageCost = existingTotalMessageCost;
 
+    // REAL-TIME SPEND CAPPING (owner 2026-09-15: "make the usage for
+    // the entry plan real time so it doesn't miscalculate -- user can
+    // drain more than their usage"). The finish-step handler below only
+    // reacts AFTER a step finishes; a step starting just under the limit
+    // could overshoot it by its full cost. Here, BEFORE the model call:
+    //  1. if even the estimated INPUT doesn't fit the remaining
+    //     window/balance budget, abort this step without spending
+    //     (the AbortError path below returns the same exhausted flags
+    //     the reactive path sets, so the outer loop + client notice
+    //     stay identical);
+    //  2. otherwise clamp the model's maxOutputTokens so the worst-case
+    //     OUTPUT fits what's left. Residual overshoot shrinks from one
+    //     whole step to input-estimate error (cents).
+    const lastStepBreakdown = existingStepBreakdown.at(-1);
+    const estimatedInputTokens = estimateNextStepInputTokens(
+      lastStepBreakdown?.usage,
+      JSON.stringify(messages).length,
+    );
+    const spendCap = computeRealtimeSpendCap({
+      remainingWindowBudgetCents,
+      remainingBalanceCents,
+      enforceCreditBlock,
+      estimatedInputTokens,
+      lastStepUsage: lastStepBreakdown?.usage,
+      cost: modelCostCatalog.find((m) => m.id === modelId)?.cost,
+    });
+    if (spendCap.blockReason === "window") {
+      windowExhausted = true;
+      abortController.abort();
+      throw new DOMException(
+        "Entry usage window exhausted before step start",
+        "AbortError",
+      );
+    }
+    if (spendCap.blockReason === "credit") {
+      creditExhausted = true;
+      abortController.abort();
+      throw new DOMException(
+        "Credit balance exhausted before step start",
+        "AbortError",
+      );
+    }
+
     // Rebuild the real `commitAndPush` closure here, inside the step --
     // it was intentionally left out of `agentOptions` (see
     // WorkflowAgentOptions) because functions cannot cross the
@@ -2610,7 +2657,9 @@ const runAgentStep = async (
 
     const result = await webAgent.stream({
       messages,
-      options: fullAgentOptions,
+      options: spendCap.maxOutputTokens
+        ? { ...fullAgentOptions, maxOutputTokens: spendCap.maxOutputTokens }
+        : fullAgentOptions,
       abortSignal: abortController.signal,
     });
 

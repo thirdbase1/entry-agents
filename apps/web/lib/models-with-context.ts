@@ -258,7 +258,56 @@ const gatewayModelsResponseSchema = z.object({
  * gateway (GATEWAY env vars in its own dashboard), and this app picks it
  * up automatically on the next fetch, no redeploy needed.
  */
+// PERF 2026-09-15: the gateway model list used to be fetched live on
+// EVERY chat turn (per-turn cost catalog, chat.ts fetchModelCostCatalogStep)
+// and on every /api/models picker load. That put a gateway HTTP
+// round-trip on the critical path of every turn, before the model even
+// started. The list only changes when someone edits GATEWAY env vars on
+// the gateway's own dashboard, so a 60s in-process TTL cache makes the
+// first call per serverless instance pay the round-trip and everyone
+// else in the window reuse it. Note this caches the RAW list only --
+// filterDisabledModels (the admin kill-switch) runs after the cache on
+// every call, so disabling a model stays immediate for pickers, and
+// cost-catalog consumers deliberately skip the filter anyway (see
+// fetchModelCostCatalog's 2026-08-17 comment).
+const GATEWAY_MODELS_CACHE_TTL_MS = 60_000;
+let gatewayModelsCache: {
+  promise: Promise<GatewayModel[]>;
+  expiresAt: number;
+} | null = null;
+
+/**
+ * Test-only hook: drops the gateway-models TTL cache. Tests re-mock
+ * globalThis.fetch per case (see app/api/models/route.test.ts) and
+ * need each call to see the fresh mock, not a cached earlier response.
+ * Production code must never call this.
+ */
+export function __resetGatewayModelsCacheForTests(): void {
+  gatewayModelsCache = null;
+}
+
 async function fetchGatewayModels(): Promise<GatewayModel[]> {
+  const now = Date.now();
+  if (gatewayModelsCache && gatewayModelsCache.expiresAt > now) {
+    return gatewayModelsCache.promise;
+  }
+  const promise = fetchGatewayModelsUncached();
+  gatewayModelsCache = {
+    promise,
+    expiresAt: now + GATEWAY_MODELS_CACHE_TTL_MS,
+  };
+  // A failed fetch must not be cached for the full TTL -- drop the
+  // entry so the next call retries immediately (callers all have
+  // .catch fallbacks, so this only controls retry timing).
+  promise.catch(() => {
+    if (gatewayModelsCache?.promise === promise) {
+      gatewayModelsCache = null;
+    }
+  });
+  return promise;
+}
+
+async function fetchGatewayModelsUncached(): Promise<GatewayModel[]> {
   const baseURL = process.env.GATEWAY_BASE_URL;
   const apiKey = process.env.GATEWAY_API_KEY;
 

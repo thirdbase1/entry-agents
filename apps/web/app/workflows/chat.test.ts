@@ -417,14 +417,17 @@ mock.module("@/lib/vercel/token", () => ({
 // failure so this was harmless, just noisy; mocked cleanly instead.
 mock.module("@/lib/models-with-context", () => ({
   fetchAvailableLanguageModels: mock(() => Promise.resolve([])),
+  // fetchModelCostCatalogStep switched to the unfiltered pricing catalog
+  // on 2026-09-15 (PERF + 2026-08-17 pricing lesson).
+  fetchModelCostCatalog: mock(() => Promise.resolve([])),
 }));
 
 mock.module("@/lib/model-availability", () => ({
   isModelDisabled: mock(() => Promise.resolve(false)),
-  // fetchModelCostCatalogStep's fetchAvailableLanguageModels() also pulls
-  // this in to filter the pricing catalog -- caught/defaulted to [] on
-  // failure either way, but mocked properly here so that path doesn't
-  // spam a SyntaxError into every test's console output.
+  // Keep filterDisabledModels mocked for any picker-path callers --
+  // caught/defaulted to [] on failure either way, but mocked properly
+  // here so that path doesn't spam a SyntaxError into every test's
+  // console output.
   filterDisabledModels: mock(<T extends { id: string }>(models: T[]) =>
     Promise.resolve(models),
   ),

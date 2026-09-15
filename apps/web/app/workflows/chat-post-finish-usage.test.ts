@@ -97,6 +97,9 @@ mock.module("@/lib/billing/credit-ledger", () => ({
 // test run.
 mock.module("@/lib/models-with-context", () => ({
   fetchAvailableLanguageModels: mock(() => Promise.resolve([])),
+  // chat-post-finish.ts switched its billing-catalog lookup to the
+  // unfiltered pricing catalog on 2026-09-15.
+  fetchModelCostCatalog: mock(() => Promise.resolve([])),
 }));
 
 const { recordWorkflowUsage } = await import("./chat-post-finish");

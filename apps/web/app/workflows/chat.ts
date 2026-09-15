@@ -1126,24 +1126,31 @@ async function performAgentCommitAndPush(params: {
 /**
  * Fetches the live model/pricing catalog for the per-turn cost pill, as
  * its own step -- same reasoning as checkVercelConnectedStep just below:
- * lib/models-with-context.ts's fetchAvailableLanguageModels() filters
- * out disabled models via lib/model-availability.ts's admin kill-switch
- * check, which now touches the drizzle db client ("postgres", a Node
- * built-in) through lib/db/model-overrides.ts. That's a Node module the
- * Workflow SDK's bundler refuses to include in the restricted
- * "use workflow" environment when reached via a static top-of-file
- * import -- even though the actual live-pricing HTTP call itself
- * (fetchGatewayModels, via the workflow-safe hoisted `fetch`) is fine on
- * its own. Loaded via dynamic import() inside this "use step" function
- * instead, same fix as every other DB/Node-module touchpoint in this
- * file.
+ * lib/models-with-context.ts's catalog functions can touch the drizzle
+ * db client ("postgres", a Node built-in) through
+ * lib/db/model-overrides.ts, a Node module the Workflow SDK's bundler
+ * refuses to include in the restricted "use workflow" environment when
+ * reached via a static top-of-file import -- even though the actual
+ * live-pricing HTTP call itself (fetchGatewayModels, via the
+ * workflow-safe hoisted `fetch`) is fine on its own. Loaded via dynamic
+ * import() inside this "use step" function instead, same fix as every
+ * other DB/Node-module touchpoint in this file.
+ *
+ * PERF + PRICING FIX 2026-09-15: this step used to call
+ * fetchAvailableLanguageModels(), which (a) ran the admin kill-switch DB
+ * query (filterDisabledModels -> model-overrides) on EVERY turn's
+ * critical path just to price usage, and (b) per the 2026-08-17 pricing
+ * lesson, using the filtered catalog for cost lookup is wrong anyway --
+ * an admin disabling a model mid-conversation would silently stop its
+ * usage from being priced/debited. Switched to fetchModelCostCatalog()
+ * (pricing-only, unfiltered, kill-switch-free), which is both cheaper
+ * per turn and correct.
  */
 async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
   "use step";
 
-  const { fetchAvailableLanguageModels } =
-    await import("@/lib/models-with-context");
-  return fetchAvailableLanguageModels();
+  const { fetchModelCostCatalog } = await import("@/lib/models-with-context");
+  return fetchModelCostCatalog();
 }
 
 async function checkVercelConnectedStep(userId: string): Promise<boolean> {

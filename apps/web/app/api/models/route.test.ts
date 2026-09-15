@@ -77,6 +77,15 @@ const GATEWAY_BASE_URL = "https://entry-gateway.test";
 
 const routeModulePromise = import("./route");
 
+// models-with-context.ts caches the gateway /models response for 60s in
+// process (PERF 2026-09-15). Tests re-mock globalThis.fetch per case,
+// so the cache must be dropped between cases or every test after the
+// first would see the first test's gateway response.
+beforeEach(async () => {
+  const modelsModule = await import("@/lib/models-with-context");
+  modelsModule.__resetGatewayModelsCacheForTests();
+});
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
   process.env.GATEWAY_BASE_URL = originalGatewayBaseUrl;

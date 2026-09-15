@@ -438,11 +438,17 @@ export async function recordWorkflowUsage(
     // removed on 2026-08-17. recordUsage below is unrelated to the
     // credit ledger (it's the separate usage_events analytics table) and
     // still runs for both main and subagent usage as before.
-    const { fetchAvailableLanguageModels } =
+    // PRICING FIX 2026-09-15: was fetchAvailableLanguageModels() (the
+    // admin-filtered picker catalog). Per the 2026-08-17 pricing lesson,
+    // billing/cost lookup must use the UNFILTERED catalog -- an admin
+    // disabling a model must never stop that model's already-happening
+    // usage from being priced and debited. Also saves the per-turn
+    // kill-switch DB query.
+    const { fetchModelCostCatalog } =
       await import("@/lib/models-with-context");
     const { debitUsage } = await import("@/lib/billing/credit-ledger");
     const { estimateModelUsageCost } = await import("@/lib/models");
-    const billingCatalog = await fetchAvailableLanguageModels().catch(
+    const billingCatalog = await fetchModelCostCatalog().catch(
       (error) => {
         console.error(
           "[workflow] Failed to fetch pricing catalog for billing debit:",

@@ -20,7 +20,11 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    optimizePackageImports: ["lucide-react"],
+    // PERF 2026-09-15: @lobehub/icons added -- the model picker's
+    // provider icons and the brand tool renderer import ~15 icons from
+    // the package root; without this directive the whole icon index
+    // (hundreds of brand marks) can be pulled into the client bundle.
+    optimizePackageImports: ["lucide-react", "@lobehub/icons"],
   },
   // SECURITY FIX (2026-08-27, pentest finding): the app shipped with
   // zero security-response headers at all (no CSP, no X-Frame-Options,

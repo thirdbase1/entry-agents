@@ -2781,3 +2781,39 @@ the Free tier. New mechanism (commits this date, migration 0055):
   could self-clear activeStreamId rows whose chat.updatedAt is older
   than ~15 min so a never-reopened stuck chat can't drive 3s polling
   forever.
+
+## 2026-09-15 (final): real-time Entry window/balance spend capping
+
+Owner: "make the usage for the entry plan real time so it doesn't
+miscalculate -- user can drain more than their usage." Until now the
+window/balance gates only reacted AFTER a step finished (finish-step
+handler debits, decrements counters, aborts) -- a step starting just
+under the $10/5h limit could overshoot it by its full cost.
+Two-part fix (commit 9ec7948, same pricing source as real debits):
+- BEFORE each model step (runAgentStep): estimate the step's input
+  cost (last step's real inputTokens x1.2, priced with the last
+  step's real cache-read ratio; first-step fallback chars/4 + 8k
+  overhead). If it doesn't fit the remaining window/balance budget,
+  abort the step WITHOUT any model call (DOMException AbortError ->
+  the existing aborted-result path carries windowExhausted /
+  creditExhausted, so client wording is unchanged: "window refills"
+  vs "top up").
+- Otherwise clamp the model's maxOutputTokens so worst-case OUTPUT
+  fits the budget (98% margin; skip clamp >= 32k tokens = comfortable
+  budget; block below 200 affordable tokens = can't do useful work).
+  Required a new per-call maxOutputTokens option on the workspace
+  framework (packages/agent/open-agent.ts callOptionsSchema ->
+  prepareCall -- the AI SDK ToolLoopAgent prepareCall accepts it).
+  PRICING: cap and debit both use modelCostCatalog from
+  fetchModelCostCatalog() (UNFILTERED, gateway-live -- the
+  2026-08-17 lesson) and the same estimateModelUsageCost tier math,
+  so the cap can never diverge from the ledger.
+- Pure policy in lib/chat/realtime-spend-cap.ts (10 tests).
+  Cache-read reads inputTokenDetails.cacheReadTokens with
+  cachedInputTokens fallback (same order as estimateStepCost --
+  the deprecated flat field is 0 on current adapters).
+- Known bound: SUBAGENT spend still isn't clamped mid-turn (no hook
+  inside the task tool); it's debited at chat-post-finish and counted
+  by the next turn's window sums, and MAX_TURN_SPEND caps the whole
+  turn. If that ever needs closing, the task tool needs a per-call
+  budget hook in the framework.

@@ -2628,3 +2628,26 @@ note); sidebar badge for the goat plan got an emerald style (previously
 fell back to the muted free style). Windows remain enforced ONLY for
 this plan: the pre-turn gate keys on plan.usageWindows which only the
 goat entry defines.
+
+## 2026-09-15 (final +2): window billing accuracy + owner promoted (commits bc20d2a+0721030)
+
+Accuracy pass on Entry Windows (owner: "improve the billing to be more
+accurate"): the pre-turn gate alone allowed a turn to overshoot a
+window by up to one full turn's spend. Fix: when no window is exceeded
+yet, cap the turn's spend budget (startingBalanceCents) to the tightest
+REMAINING window allowance. runAgentStep already aborts the instant
+the in-memory budget hits zero, so turns now stop exactly at the window
+edge mid-turn with zero new machinery. When the window (not the
+balance) is the binding constraint that trips the abort, the assistant
+message gets metadata windowExhausted (NOT creditExhausted -- telling a
+user with balance to "top up" would be wrong), and the client renders
+"Your Entry plan's usage window filled up mid-response... try again in
+a little while." types.ts gained windowExhausted?: boolean.
+
+Owner's admin account (zhH76ze7c4IVrRem7MWY1 / miraclethirdbase1@gmail.com)
+promoted to the Entry plan via the same temp secret-gated admin route
+pattern as 2026-08-28 (route deployed bc20d2a, called, deleted 0721030
+-- secret dead with it). $50 grant applied (subscription_grant), plan
+column now "goat". Note: admins skip the pre-turn billing gate by
+existing policy, so the owner's OWN chats are never window-blocked;
+their windows still show live in the billing UI.

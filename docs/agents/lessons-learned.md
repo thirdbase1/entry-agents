@@ -2672,3 +2672,24 @@ abort-catch paths; outer loop breaks on windowExhausted too. Gotcha:
 inserting an import after the first line of a multi-line import
 statement silently corrupts the file (tsc catches it) -- always anchor
 on a single-line import or the closing `} from "..."`.
+
+## 2026-09-15 (final +4): billing page showed no plan after Entry promotion (commit a1e147f)
+
+Owner reported: after promoting their admin account to the Entry plan,
+the billing page no longer showed ANY current plan (it had shown Plus
+fine before). Root cause was NOT the promotion: /api/billing/me runs
+getUsageWindowTotals for plans with usage windows -- Plus/Pro/Max never
+take that path, so only Entry-plan users hit it. The raw sql`` template
+in getUsageWindowTotals passed Date objects as params; the Neon
+serverless driver serializes those via Date.prototype.toString()
+("Tue Sep 15 2026 07:25:59 GMT+0000..."), which Postgres cannot parse,
+so the query failed and 500'd the whole me route -> me=null -> the
+billing page and sidebar badge rendered nothing ("defaults"). Drizzle's
+typed gte() serializes Date correctly (ISO) -- only raw sql`` template
+params are affected. Fix: pass ISO strings with an explicit
+::timestamptz cast (matches the existing pattern in admin-activity.ts /
+admin-usage.ts, which already used .toISOString()). Diagnosed via a
+temp secret-gated route that caught and returned the raw failed query
++ params live. Also note: this same broken query would have failed
+every Entry-plan chat turn at the window gate once admin enforcement
+(d7a25be) rolled out -- fixing it fixed both surfaces at once.

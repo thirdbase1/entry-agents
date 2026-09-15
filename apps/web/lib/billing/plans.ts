@@ -17,12 +17,14 @@
  *   to upgrade from Plus). Still a single spendable balance: no
  *   Command-Code-style 5h/weekly sub-windows -- Entry's existing
  *   per-turn spend cap and hard stop-at-zero already bound worst-case
- *   exposure to the same class as the Max tier ($70/mo).
+ *   exposure to the same class as the Max tier.
  * - Plus/GOAT/Pro/Max: paid, full access to every model in the live catalog
  *   (including all FreeModel-sourced GPT-5.6 + Claude models once those
  *   routes are enabled on the gateway). They differ only by price and
- *   how much credit each renewal grants -- a flat 2x bonus on every
- *   tier ("pay $X, get $2X to spend"). If a paid user's balance hits
+ *   how much credit each renewal grants. Retuned 2026-09-15 (owner
+ *   approved): GOAT's 7x bonus broke the old flat-2x rule -- the ladder
+ *   is now Plus $5->$10 (2x), GOAT $10->$70 (7x), Pro $20->$100 (5x),
+ *   Max $40->$180 (4.5x), strictly increasing in absolute credit. If a paid user's balance hits
  *   zero mid-cycle, they are hard-blocked exactly like the free plan
  *   (composer locked, "You're out of credit") until they top up
  *   ($1 = $1) or the next renewal grants fresh credit. Soft-cutoff
@@ -77,16 +79,19 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
   pro: {
     id: "pro",
     name: "Pro",
-    priceUsdCents: 1500, // $15/mo
-    creditGrantCents: 3000, // $30 credit (2x)
+    priceUsdCents: 2000, // $20/mo
+    creditGrantCents: 10000, // $100 credit (5x) -- retuned 2026-09-15 so the
+    // ladder stays ordered above GOAT ($10 buys $70); the old 2x $30 grant
+    // was strictly dominated by GOAT at two-thirds of the price.
     modelAccess: "all",
     paystackPlanCode: null,
   },
   max: {
     id: "max",
     name: "Max",
-    priceUsdCents: 3500, // $35/mo
-    creditGrantCents: 7000, // $70 credit (2x)
+    priceUsdCents: 4000, // $40/mo
+    creditGrantCents: 18000, // $180 credit (4.5x) -- retuned 2026-09-15,
+    // same reason as Pro: the old $70 grant at $35 was matched by GOAT at $10.
     modelAccess: "all",
     paystackPlanCode: null,
   },

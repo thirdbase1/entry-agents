@@ -2718,3 +2718,31 @@ are still possible (Paystack retries, but a permanently missed event
 means a paid plan survives) -- if we ever want a sweeper cron that
 reverts plans whose billingCycleAnchor is older than ~40 days without
 a renewal charge, that's a separate hardening pass.
+
+## 2026-09-15 (final +6): own plan-expiry enforcement (no Paystack reliance)
+
+Owner: "finish fixing that downgrade logic for users who don't renew
+-- no need to rely on paystack build our own." The subscription.disable
+webhook handler (e1a9813) still depended on webhook delivery; a
+permanently missed event meant a lapsed subscriber kept paid perks
+forever. New, delivery-independent layer:
+- shouldAutoRevertToFree + PLAN_EXPIRY_GRACE_MS (pure policy, plans.ts,
+  same bun-test/server-only split as the other policies): a paid plan
+  reverts to Free when billingCycleAnchor -- refreshed by EVERY
+  successful subscription charge via grantSubscriptionRenewal -- is
+  strictly older than 35 days (one monthly cycle + a few days of
+  Paystack retry slack). NULL anchor = no-op (never saw a renewal
+  charge; can't interpret the data -- disable webhook covers that
+  case). Free plan = no-op. Exactly-at-grace does not revert.
+- enforcePlanExpiry (credit-ledger): reads state, applies the policy,
+  downgrades in place, returns the UPDATED state so callers keep
+  flowing with Free semantics immediately. Admins exempt (hand-set
+  plans, not charge-driven -- the owner's own goat account has a
+  stale anchor by design of the manual promotion). Balance preserved.
+- Wired into BOTH the chat pre-turn gate (chat.ts non-admin branch:
+  the lapsed user's very next chat turn runs as Free) and
+  /api/billing/me (billing page self-heals on visit). No cron needed --
+  enforcement rides the existing hot paths, so it cannot be missed or
+  forgotten.
+- 6 policy tests. Combined with the disable-webhook downgrade, the
+  expiry surface is now covered twice, by two independent mechanisms.

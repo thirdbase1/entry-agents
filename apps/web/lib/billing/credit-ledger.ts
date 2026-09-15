@@ -139,14 +139,24 @@ export async function getUsageWindowTotals(
   userId: string,
 ): Promise<UsageWindowTotals> {
   const now = Date.now();
-  const cutoff5h = new Date(now - 5 * 60 * 60 * 1000);
-  const cutoff7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  // Pass ISO strings + an explicit ::timestamptz cast, NOT Date objects.
+  // Raw sql`` template params are serialized by the driver, and on the
+  // production Neon serverless driver a Date param stringifies via
+  // Date.prototype.toString() ("Tue Sep 15 2026 07:25:59 GMT+0000...")
+  // -- a format Postgres can't parse, which failed the whole query
+  // (found live 2026-09-15: it 500'd /api/billing/me for Entry-plan
+  // users, so the billing page showed no current plan at all, while
+  // Plus/Pro/Max users never hit this path and looked fine).
+  // Drizzle's typed gte() below serializes Date correctly (ISO), so
+  // only the raw-template params needed the change.
+  const cutoff5hIso = new Date(now - 5 * 60 * 60 * 1000).toISOString();
+  const cutoff7dIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   const cutoff30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
   const [row] = await db
     .select({
-      last5HoursCents: sql<number>`coalesce(sum(case when ${creditTransactions.createdAt} >= ${cutoff5h} then -${creditTransactions.amountCents} else 0 end), 0)::int`,
-      last7DaysCents: sql<number>`coalesce(sum(case when ${creditTransactions.createdAt} >= ${cutoff7d} then -${creditTransactions.amountCents} else 0 end), 0)::int`,
+      last5HoursCents: sql<number>`coalesce(sum(case when ${creditTransactions.createdAt} >= ${cutoff5hIso}::timestamptz then -${creditTransactions.amountCents} else 0 end), 0)::int`,
+      last7DaysCents: sql<number>`coalesce(sum(case when ${creditTransactions.createdAt} >= ${cutoff7dIso}::timestamptz then -${creditTransactions.amountCents} else 0 end), 0)::int`,
       last30DaysCents: sql<number>`coalesce(sum(-${creditTransactions.amountCents}), 0)::int`,
     })
     .from(creditTransactions)

@@ -520,10 +520,10 @@ async function resolveChatModelRuntime(params: {
         const limitUsd = (limitCents / 100).toFixed(0);
         throw toSafeChatError(
           exceeded === "fiveHour"
-            ? `GOAT's Entry Window is full -- $${limitUsd} of usage per rolling 5 hours. The window refills continuously as your oldest usage slides out; try again in a little while.`
+            ? `Your Entry plan's 5-hour usage window is full -- $${limitUsd} of usage per rolling 5 hours. It refills continuously as your oldest usage slides out; try again in a little while.`
             : exceeded === "weekly"
-              ? `GOAT's weekly Entry Window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
-              : `GOAT's monthly Entry Window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
+              ? `Your Entry plan's weekly usage window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
+              : `Your Entry plan's monthly usage window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
         );
       }
     }

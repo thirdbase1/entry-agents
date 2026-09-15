@@ -10,7 +10,9 @@
  *   upgrade your account to use Entry") -- see resolveChatModelRuntime in
  *   app/workflows/chat.ts, which reuses the existing free-tier-gate error
  *   marker/UI for this.
- * - GOAT (added 2026-09-15, owner request): the Command Code GOAT-plan
+ * - GOAT (added 2026-09-15, owner request; publicly NAMED "Entry" since
+ *   same-day owner request -- the id stays "goat" forever): the Command
+ *   Code GOAT-plan
  *   model integrated into Entry -- a $10/mo tier that grants $50 of
  *   credit per renewal (a 5x bonus, deliberately breaking the flat 2x
  *   rule the other tiers use; it's the volume bait tier that gets users
@@ -18,7 +20,7 @@
  *   Command-Code-style 5h/weekly sub-windows -- Entry's existing
  *   per-turn spend cap and hard stop-at-zero already bound worst-case
  *   exposure to the same class as the Max tier.
- * - Plus/GOAT/Pro/Max: paid, full access to every model in the live catalog
+ * - Plus/GOAT("Entry")/Pro/Max: paid, full access to every model in the live catalog
  *   (including all FreeModel-sourced GPT-5.6 + Claude models once those
  *   routes are enabled on the gateway). They differ only by price and
  *   how much credit each renewal grants. Retuned 2026-09-15 (owner
@@ -35,7 +37,8 @@
 export type PlanId = "free" | "plus" | "goat" | "pro" | "max";
 
 /**
- * Rolling usage windows, Entry-GOAT-exclusive (owner request 2026-09-15).
+ * Rolling usage windows -- exclusive to the "Entry" plan, id goat
+ * (owner request 2026-09-15).
  * A plan with usageWindows can spend at most
  * fiveHourLimitCents in any trailing 5-hour stretch, weeklyLimitCents in
  * any trailing 7 days, and monthlyLimitCents in any trailing 30 days --
@@ -101,10 +104,10 @@ export interface PlanDefinition {
   modelAccess: "luna-only" | "all";
   /**
    * Optional rolling usage windows (see PlanUsageWindows). Currently
-   * GOAT-only: every other plan keeps simple stop-at-zero balance
-   * billing; GOAT additionally paces usage over sliding 5-hour /
-   * weekly / monthly windows -- the limit style that makes GOAT
-   * different from the rest of the Entry plans.
+   * Entry-plan-only (id "goat"): every other plan keeps simple
+   * stop-at-zero balance billing; the Entry plan additionally paces
+   * usage over sliding 5-hour / weekly / monthly windows -- the limit
+   * style that makes it different from every other plan.
    */
   usageWindows?: PlanUsageWindows;
   /**
@@ -134,7 +137,11 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
   },
   goat: {
     id: "goat",
-    name: "GOAT",
+    // Owner request 2026-09-15: this plan is publicly named "Entry"
+    // (the flagship plan of the app). The internal id stays "goat"
+    // forever -- users.plan rows in the DB, Paystack plan codes and the
+    // checkout flow all key on the id, never the display name.
+    name: "Entry",
     priceUsdCents: 1000, // $10/mo
     creditGrantCents: 5000, // $50 credit (5x) -- Command Code GOAT-style
     // tier; grant tuned from $70 (7x) to $50 on owner request 2026-09-15

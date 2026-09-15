@@ -13,17 +13,29 @@ interface PlanRow {
   priceNgnKobo: number;
 }
 
+interface WindowUsage {
+  usedCents: number;
+  limitCents: number;
+}
+
 interface BillingMeResponse {
   plan: string;
   planName: string;
   creditBalanceCents: number;
   creditGrantCents: number;
+  /** Live rolling-window usage; non-null ONLY for plans with windows
+   * (the Entry plan). */
+  usageWindows: {
+    fiveHour: WindowUsage;
+    weekly: WindowUsage;
+    monthly: WindowUsage;
+  } | null;
 }
 
 const PLAN_BLURB: Record<string, string> = {
   free: "Try Entry with GPT-5.6 Luna. $1 trial credit, no card required.",
   plus: "Full model access. $10 of credit every month.",
-  goat: "Best value tier. $10 buys $50 of credit (5x) every month. GOAT alone runs on Entry Windows -- usage paced over rolling 5-hour ($10), weekly ($25), and monthly ($50) limits, a limit style no other Entry plan uses.",
+  goat: "The flagship plan. $10 buys $50 of credit (5x) every month. Runs on Entry Windows -- usage paced over rolling 5-hour ($10), weekly ($25), and monthly ($50) limits, a limit style no other plan uses.",
   pro: "$100 of credit every month for heavy builders.",
   max: "$180 of credit. Our biggest monthly pool.",
 };
@@ -34,6 +46,68 @@ function formatUsd(cents: number) {
 
 function formatNgn(kobo: number) {
   return `₦${Math.round(kobo / 100).toLocaleString("en-NG")}`;
+}
+
+/**
+ * Live status card for the Entry plan's rolling usage windows, rendered
+ * on the billing page under the current-plan banner. Exclusive to the
+ * Entry plan -- /api/billing/me returns usageWindows only for it, so
+ * every other plan (Free/Plus/Pro/Max) never sees this card. Each bar
+ * shows spend against its window limit; windows refill continuously as
+ * the oldest usage slides out, so there is no fixed reset timestamp to
+ * display.
+ */
+function EntryWindowsCard({
+  windows,
+}: {
+  windows: NonNullable<BillingMeResponse["usageWindows"]>;
+}) {
+  const rows = [
+    { key: "5 hours", ...windows.fiveHour },
+    { key: "7 days", ...windows.weekly },
+    { key: "30 days", ...windows.monthly },
+  ] as const;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-(--l-border) bg-(--l-fg)/[0.04] px-5 py-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-(--l-fg)">
+          Entry Windows
+        </p>
+        <p className="text-xs text-(--l-fg-3)">
+          Refill continuously as oldest usage slides out
+        </p>
+      </div>
+      <div className="mt-3 flex flex-col gap-3">
+        {rows.map((row) => {
+          const pct = Math.min(
+            100,
+            Math.round((row.usedCents / Math.max(1, row.limitCents)) * 100),
+          );
+          const full = row.usedCents >= row.limitCents;
+          return (
+            <div key={row.key}>
+              <div className="flex items-center justify-between text-xs text-(--l-fg-2)">
+                <span>Rolling {row.key}</span>
+                <span className={full ? "font-semibold text-red-500" : ""}>
+                  {formatUsd(row.usedCents)} of {formatUsd(row.limitCents)}
+                  {full ? " -- full, refills as usage slides out" : ""}
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-(--l-border)">
+                <div
+                  className={`h-full rounded-full ${
+                    full ? "bg-red-500" : "bg-emerald-500"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function BillingPlansPage() {
@@ -114,7 +188,7 @@ export default function BillingPlansPage() {
             )}
 
             {me && (
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-(--l-border) bg-(--l-fg)/[0.04] px-5 py-4">
+              <div className="mt-6 rounded-2xl border border-(--l-border) bg-(--l-fg)/[0.04] px-5 py-4">
                 <p className="text-sm text-(--l-fg-2)">
                   You&apos;re on the{" "}
                   <span className="font-semibold text-(--l-fg)">
@@ -122,6 +196,7 @@ export default function BillingPlansPage() {
                   </span>{" "}
                   plan -- {formatUsd(me.creditBalanceCents)} credit remaining.
                 </p>
+                {me.usageWindows && <EntryWindowsCard windows={me.usageWindows} />}
               </div>
             )}
 

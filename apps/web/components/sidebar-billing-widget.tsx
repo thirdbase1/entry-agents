@@ -35,6 +35,11 @@ const PLAN_STYLES: Record<string, { badge: string }> = {
   plus: {
     badge: "bg-blue-500/15 text-blue-400",
   },
+  goat: {
+    // The flagship "Entry" plan -- emerald so it reads distinct from
+    // Plus/Pro/Max instead of falling back to the muted free style.
+    badge: "bg-emerald-500/15 text-emerald-400",
+  },
   pro: {
     badge: "bg-violet-500/15 text-violet-400",
   },

@@ -85,6 +85,10 @@ describe("findExceededUsageWindow", () => {
     expect(windows.monthlyLimitCents).toBe(5000);
   });
 
+  test("the windowed plan is publicly named Entry (id stays goat)", () => {
+    expect(PLAN_CATALOG.goat.name).toBe("Entry");
+  });
+
   test("only the GOAT plan has usage windows", () => {
     for (const [planId, plan] of Object.entries(PLAN_CATALOG)) {
       if (planId === "goat") {

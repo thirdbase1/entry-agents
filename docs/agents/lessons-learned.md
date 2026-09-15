@@ -2538,3 +2538,30 @@ Pro is now $20/mo -> $100 credit (5x) and Max is $40/mo -> $180 credit
 (4.5x), so the ladder strictly increases in absolute credit
 ($10 / $70 / $100 / $180) while GOAT keeps the best value-per-dollar
 hook. Pricing-page blurbs updated to match.
+
+## 2026-09-15: Per-turn perf pass (commit df2d1b4)
+
+Owner asked to "improve performance anywhere". Biggest finding: EVERY
+chat turn paid a live gateway HTTP round-trip (GATEWAY_BASE_URL/models)
+plus an admin kill-switch DB query before the model even started --
+fetchModelCostCatalogStep called fetchAvailableLanguageModels(), the
+filtered picker catalog, for PRICING. Fixes shipped:
+(1) 60s in-process TTL cache on fetchGatewayModels() in
+    models-with-context.ts -- caches the RAW list only;
+    filterDisabledModels still runs after the cache per call, so the
+    admin kill-switch stays immediate for pickers. Failed fetches are
+    evicted immediately (callers all have .catch fallbacks).
+(2) Pricing call sites now use the UNFILTERED catalog
+    (fetchModelCostCatalog): chat.ts's step and chat-post-finish.ts's
+    subagent debit. This is also the correct behavior per the 2026-08-17
+    pricing lesson (a disabled model must never stop being priced) AND
+    removes the per-turn model-overrides DB query entirely.
+(3) @lobehub/icons added to next.config.ts optimizePackageImports --
+    provider-icons.tsx imports ~15 brand marks from the package root;
+    without the directive the whole icon index can land in the client
+    bundle.
+Test gotcha: the TTL cache made /api/models/route.test.ts's
+re-mocked-globalThis.fetch cases see each other's responses; added
+__resetGatewayModelsCacheForTests() (test-only export, called in
+beforeEach). chat.test.ts fails on clean main too (pre-existing
+'createMcpToolSet' module-resolution error), NOT from this change.

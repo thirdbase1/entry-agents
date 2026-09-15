@@ -1,8 +1,9 @@
 import { getServerSession } from "@/lib/session/get-server-session";
 import {
-  getUserBillingState,
+  enforcePlanExpiry,
   getUsageWindowTotals,
 } from "@/lib/billing/credit-ledger";
+import { isUserAdmin } from "@/lib/db/users";
 import { getPlanDefinition } from "@/lib/billing/plans";
 
 /**
@@ -18,7 +19,11 @@ export async function GET() {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const state = await getUserBillingState(session.user.id);
+  // OWN expiry enforcement (see enforcePlanExpiry): a lapsed
+  // subscriber's plan reverts to Free on their next billing-page visit,
+  // not just on their next chat turn. Admins are exempt.
+  const isAdmin = await isUserAdmin(session.user.id).catch(() => false);
+  const state = await enforcePlanExpiry(session.user.id, { isAdmin });
   if (!state) {
     return Response.json({ error: "User not found" }, { status: 404 });
   }

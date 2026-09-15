@@ -78,6 +78,45 @@ export interface UsageWindowTotals {
  * the error message matches the soonest refill.
  */
 /**
+ * OWN plan-expiry enforcement (owner 2026-09-15: "no need to rely on
+ * paystack build our own"): paid plans revert to Free when the last
+ * successful renewal charge is older than this grace. grantSubscriptionRenewal
+ * refreshes users.billingCycleAnchor on EVERY successful subscription
+ * charge, so a healthy monthly subscriber's anchor is never older than
+ * ~31 days. 35 days = one cycle + a few days of Paystack retry slack.
+ * Independent of webhook delivery entirely -- enforced inline at the
+ * chat pre-turn gate and /api/billing/me, so it cannot be missed.
+ */
+export const PLAN_EXPIRY_GRACE_MS = 35 * 24 * 60 * 60 * 1000;
+
+/**
+ * Should this paid plan auto-revert to Free? Pure policy (bun-testable,
+ * same server-only split as the other billing policies).
+ * - Free (or no plan) never reverts -- nothing to revert.
+ * - A NULL anchor means we never saw a renewal charge for this plan
+ *   (manually set, or pre-feature data) -- do NOT act on data we
+ *   can't interpret; the disable webhook covers Paystack-known ends.
+ * - Strictly older than the grace reverts; exactly-at-grace does not.
+ */
+export function shouldAutoRevertToFree(
+  planId: string | null | undefined,
+  billingCycleAnchor: Date | string | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!planId || planId === "free") {
+    return false;
+  }
+  if (!billingCycleAnchor) {
+    return false;
+  }
+  const anchorMs = new Date(billingCycleAnchor).getTime();
+  if (Number.isNaN(anchorMs)) {
+    return false;
+  }
+  return nowMs - anchorMs > PLAN_EXPIRY_GRACE_MS;
+}
+
+/**
  * Pure policy for the subscription.disable webhook: should this user be
  * downgraded to Free? Lives here (not credit-ledger) so it's testable
  * in bun -- credit-ledger has a server-only import that breaks bun

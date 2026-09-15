@@ -455,7 +455,7 @@ async function resolveChatModelRuntime(params: {
   let windowBudgetCents: number | null = null;
   let planUsageWindows: PlanUsageWindows | null = null;
   if (!isAdminUser) {
-    const { getUserBillingState, claimUserBillingTurn } =
+    const { enforcePlanExpiry, claimUserBillingTurn } =
       await import("@/lib/billing/credit-ledger");
     const {
       getPlanDefinition,
@@ -482,7 +482,12 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    const billingState = await getUserBillingState(params.userId);
+    // OWN expiry enforcement (owner 2026-09-15: don't rely on
+    // Paystack): if the paid plan's last renewal is older than the
+    // grace window, this downgrades to Free RIGHT HERE and returns the
+    // updated state -- the turn below then runs as a Free user. No
+    // webhook delivery involved; it cannot be missed.
+    const billingState = await enforcePlanExpiry(params.userId);
     const plan = getPlanDefinition(billingState?.plan);
     planUsageWindows = plan.usageWindows ?? null;
     const balanceCents = billingState?.creditBalanceCents ?? 0;

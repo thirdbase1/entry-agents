@@ -45,6 +45,48 @@ export async function getUserBillingState(
   };
 }
 
+/**
+ * OWN plan-expiry enforcement, independent of webhook delivery (owner
+ * 2026-09-15: "build our own"): reads the billing state, and if the
+ * paid plan's last renewal (billingCycleAnchor, refreshed by every
+ * successful subscription charge) is older than
+ * PLAN_EXPIRY_GRACE_MS, downgrades the user to Free right here and
+ * returns the updated state. Call before any plan-dependent decision:
+ * the chat pre-turn gate and /api/billing/me both use this, so a
+ * lapsed subscriber reverts on their very next touch -- no Paystack
+ * event can be missed. Admins are exempt (their plans are set by
+ * hand, not by subscription charges). Balance is preserved: credit is
+ * prepaid value; only plan perks revert.
+ */
+export async function enforcePlanExpiry(
+  userId: string,
+  opts: { isAdmin?: boolean } = {},
+): Promise<UserBillingState | null> {
+  const state = await getUserBillingState(userId);
+  if (!state) {
+    return null;
+  }
+  if (opts.isAdmin) {
+    return state;
+  }
+  const { shouldAutoRevertToFree, PLAN_EXPIRY_GRACE_MS } = await import(
+    "@/lib/billing/plans"
+  );
+  if (!shouldAutoRevertToFree(state.plan, state.billingCycleAnchor)) {
+    return state;
+  }
+  const previousPlan = state.plan;
+  await db
+    .update(users)
+    .set({ plan: "free" })
+    .where(eq(users.id, userId));
+  console.info(
+    `[billing] auto-revert to free: no renewal within ${PLAN_EXPIRY_GRACE_MS / 86400000}d grace`,
+    { userId, previousPlan },
+  );
+  return { ...state, plan: "free" };
+}
+
 export type CreditTransactionType =
   | "signup_trial"
   | "subscription_grant"

@@ -1,10 +1,14 @@
 import "server-only";
 
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import { creditTransactions, users } from "@/lib/db/schema";
-import { getPlanDefinition, type PlanId } from "./plans";
+import {
+  getPlanDefinition,
+  type PlanId,
+  type UsageWindowTotals,
+} from "./plans";
 
 export interface UserBillingState {
   plan: PlanId;
@@ -124,6 +128,42 @@ async function applyLedgerEntry(
 // can be stolen by a new turn. Generous relative to a normal turn's
 // length so it never fires on a merely-slow-but-alive turn.
 const BILLING_TURN_LOCK_STALE_MS = 15 * 60 * 1000;
+
+/**
+ * Sums usage_debit rows in the trailing 5h / 7d / 30d windows in ONE
+ * indexed query (only rows newer than the 30d cutoff are scanned).
+ * Used by the pre-turn billing gate in resolveChatModelRuntime to
+ * enforce a plan's rolling usage windows (GOAT's Entry Windows).
+ */
+export async function getUsageWindowTotals(
+  userId: string,
+): Promise<UsageWindowTotals> {
+  const now = Date.now();
+  const cutoff5h = new Date(now - 5 * 60 * 60 * 1000);
+  const cutoff7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const cutoff30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+  const [row] = await db
+    .select({
+      last5HoursCents: sql<number>`coalesce(sum(case when ${creditTransactions.createdAt} >= ${cutoff5h} then -${creditTransactions.amountCents} else 0 end), 0)::int`,
+      last7DaysCents: sql<number>`coalesce(sum(case when ${creditTransactions.createdAt} >= ${cutoff7d} then -${creditTransactions.amountCents} else 0 end), 0)::int`,
+      last30DaysCents: sql<number>`coalesce(sum(-${creditTransactions.amountCents}), 0)::int`,
+    })
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.userId, userId),
+        eq(creditTransactions.type, "usage_debit"),
+        gte(creditTransactions.createdAt, cutoff30d),
+      ),
+    );
+
+  return {
+    last5HoursCents: row?.last5HoursCents ?? 0,
+    last7DaysCents: row?.last7DaysCents ?? 0,
+    last30DaysCents: row?.last30DaysCents ?? 0,
+  };
+}
 
 export async function claimUserBillingTurn(
   userId: string,

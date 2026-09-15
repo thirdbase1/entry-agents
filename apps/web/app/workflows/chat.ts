@@ -496,6 +496,37 @@ async function resolveChatModelRuntime(params: {
           : "You're out of credit -- add more to keep chatting.",
       );
     }
+
+    // Entry Windows (2026-09-15): GOAT paces usage over rolling
+    // 5-hour / weekly / monthly windows, on top of the plain balance
+    // check above. Checked once per turn at this pre-turn gate --
+    // mid-turn overspend is bounded to one turn's spend, and debits
+    // land in credit_transactions as usage_debit rows which this
+    // check sums on the NEXT turn. Admins skip this gate entirely.
+    if (plan.usageWindows) {
+      const { getUsageWindowTotals } = await import(
+        "@/lib/billing/credit-ledger"
+      );
+      const { findExceededUsageWindow } = await import("@/lib/billing/plans");
+      const totals = await getUsageWindowTotals(params.userId);
+      const exceeded = findExceededUsageWindow(totals, plan.usageWindows);
+      if (exceeded) {
+        const limitCents =
+          exceeded === "fiveHour"
+            ? plan.usageWindows.fiveHourLimitCents
+            : exceeded === "weekly"
+              ? plan.usageWindows.weeklyLimitCents
+              : plan.usageWindows.monthlyLimitCents;
+        const limitUsd = (limitCents / 100).toFixed(0);
+        throw toSafeChatError(
+          exceeded === "fiveHour"
+            ? `GOAT's Entry Window is full -- $${limitUsd} of usage per rolling 5 hours. The window refills continuously as your oldest usage slides out; try again in a little while.`
+            : exceeded === "weekly"
+              ? `GOAT's weekly Entry Window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
+              : `GOAT's monthly Entry Window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
+        );
+      }
+    }
   } else {
     // Admins are never blocked, but their usage is still billed (see
     // runAgentStep) -- fetch their balance too so it stays accurate,

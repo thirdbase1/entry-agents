@@ -34,6 +34,62 @@
 
 export type PlanId = "free" | "plus" | "goat" | "pro" | "max";
 
+/**
+ * Rolling usage windows, Entry-GOAT-exclusive (owner request 2026-09-15).
+ * A plan with usageWindows can spend at most
+ * fiveHourLimitCents in any trailing 5-hour stretch, weeklyLimitCents in
+ * any trailing 7 days, and monthlyLimitCents in any trailing 30 days --
+ * enforced at the pre-turn billing gate in resolveChatModelRuntime by
+ * summing usage_debit rows from credit_transactions (one indexed
+ * aggregate query). The monthly window equals the plan's grant, so a
+ * fresh cycle always starts clean; the 5h/weekly windows pace the spend
+ * at 20%/50% of the grant.
+ */
+export interface PlanUsageWindows {
+  /** Max spend in any trailing 5-hour window, USD cents. */
+  fiveHourLimitCents: number;
+  /** Max spend in any trailing 7-day window, USD cents. */
+  weeklyLimitCents: number;
+  /** Max spend in any trailing 30-day window, USD cents. */
+  monthlyLimitCents: number;
+}
+
+export type ExceededUsageWindow = "fiveHour" | "weekly" | "monthly" | null;
+
+/**
+ * Sums of trailing usage_debit spend, produced by
+ * getUsageWindowTotals() in credit-ledger.ts.
+ */
+export interface UsageWindowTotals {
+  /** Total usage_debit spend in the trailing 5 hours, USD cents. */
+  last5HoursCents: number;
+  /** Total usage_debit spend in the trailing 7 days, USD cents. */
+  last7DaysCents: number;
+  /** Total usage_debit spend in the trailing 30 days, USD cents. */
+  last30DaysCents: number;
+}
+
+/**
+ * Pure decision helper for the pre-turn gate: returns which (if any)
+ * rolling window is already at its limit, nearest-reset window first so
+ * the error message matches the soonest refill.
+ */
+export function findExceededUsageWindow(
+  totals: UsageWindowTotals,
+  windows: PlanUsageWindows,
+): ExceededUsageWindow {
+  if (totals.last5HoursCents >= windows.fiveHourLimitCents) {
+    return "fiveHour";
+  }
+  if (totals.last7DaysCents >= windows.weeklyLimitCents) {
+    return "weekly";
+  }
+  if (totals.last30DaysCents >= windows.monthlyLimitCents) {
+    return "monthly";
+  }
+  return null;
+}
+
 export interface PlanDefinition {
   id: PlanId;
   name: string;
@@ -43,6 +99,14 @@ export interface PlanDefinition {
   creditGrantCents: number;
   /** "luna-only" hard-restricts to FREE_PLAN_MODEL_ID; "all" is unrestricted. */
   modelAccess: "luna-only" | "all";
+  /**
+   * Optional rolling usage windows (see PlanUsageWindows). Currently
+   * GOAT-only: every other plan keeps simple stop-at-zero balance
+   * billing; GOAT additionally paces usage over sliding 5-hour /
+   * weekly / monthly windows -- the limit style that makes GOAT
+   * different from the rest of the Entry plans.
+   */
+  usageWindows?: PlanUsageWindows;
   /**
    * Paystack plan code, created once via lib/billing/paystack.ts's
    * ensurePaystackPlans() and then pinned here. Null until that's run
@@ -75,6 +139,13 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     creditGrantCents: 5000, // $50 credit (5x) -- Command Code GOAT-style
     // tier; grant tuned from $70 (7x) to $50 on owner request 2026-09-15
     modelAccess: "all",
+    // Entry Windows (2026-09-15, owner request): rolling usage pacing,
+    // GOAT-exclusive. 20% / 50% / 100% of the $50 grant.
+    usageWindows: {
+      fiveHourLimitCents: 1000, // $10 per trailing 5 hours
+      weeklyLimitCents: 2500, // $25 per trailing 7 days
+      monthlyLimitCents: 5000, // $50 per trailing 30 days
+    },
     paystackPlanCode: null,
   },
   pro: {

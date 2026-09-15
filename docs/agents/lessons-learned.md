@@ -2651,3 +2651,24 @@ pattern as 2026-08-28 (route deployed bc20d2a, called, deleted 0721030
 column now "goat". Note: admins skip the pre-turn billing gate by
 existing policy, so the owner's OWN chats are never window-blocked;
 their windows still show live in the billing UI.
+
+## 2026-09-15 (final +3): windows enforced for admins (commit d7a25be)
+
+Owner ("yes normal"): the admin account on the Entry plan is now
+treated like a normal subscriber for usage windows. The window gate
+(exceeded-check + mid-turn budget) moved out of the !isAdminUser branch
+into shared code that runs for everyone; only the BALANCE gate stays
+admin-exempt (admins can still spend into negative balance).
+Restructure while at it: the window budget is now a SEPARATE in-memory
+counter in runAgentStep (windowBudgetCents -> remainingWindowBudgetCents
+-> result flow, same pattern as remainingBalanceCents) instead of
+capping startingBalanceCents. This makes a window trip and a balance
+trip distinguishable (windowExhausted vs creditExhausted metadata --
+correct "refills continuously" vs "top up" wording) and, critically,
+keeps an admin's window abort from accidentally tripping the
+admin-exempt balance block. runAgentStep returns
+remainingWindowBudgetCents/windowExhausted through both the success and
+abort-catch paths; outer loop breaks on windowExhausted too. Gotcha:
+inserting an import after the first line of a multi-line import
+statement silently corrupts the file (tsc catches it) -- always anchor
+on a single-line import or the closing `} from "..."`.

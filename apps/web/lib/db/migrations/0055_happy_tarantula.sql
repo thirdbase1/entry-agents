@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "plan_grant_balance_cents" integer DEFAULT 0 NOT NULL;

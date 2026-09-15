@@ -98,6 +98,36 @@ export const PLAN_EXPIRY_GRACE_MS = 35 * 24 * 60 * 60 * 1000;
  *   can't interpret; the disable webhook covers Paystack-known ends.
  * - Strictly older than the grace reverts; exactly-at-grace does not.
  */
+/**
+ * Grant-pool math (owner 2026-09-15: "when monthly subscription
+ * expires, user credit expires along with it"). The pool tracks
+ * unspent subscription-grant credit; usage consumes it FIRST, and when
+ * a plan ends whatever remains of it is removed from the balance.
+ * Paid top-up credit is never touched. Pure math, bun-testable.
+ */
+export function consumedFromGrantPool(
+  costCents: number,
+  grantPoolCents: number,
+): number {
+  if (costCents <= 0 || grantPoolCents <= 0) {
+    return 0;
+  }
+  return Math.min(costCents, grantPoolCents);
+}
+
+/** How much credit to remove from the balance when a plan ends. */
+export function expiredGrantCentsOnPlanEnd(
+  balanceCents: number,
+  grantPoolCents: number,
+): number {
+  if (grantPoolCents <= 0 || balanceCents <= 0) {
+    return 0;
+  }
+  // Defensive min(): balance can briefly go negative (usage debits
+  // don't block), so never remove more than actually exists.
+  return Math.min(balanceCents, grantPoolCents);
+}
+
 export function shouldAutoRevertToFree(
   planId: string | null | undefined,
   billingCycleAnchor: Date | string | null | undefined,

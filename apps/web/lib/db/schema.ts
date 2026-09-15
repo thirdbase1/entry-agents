@@ -34,6 +34,17 @@ export const users = pgTable("users", {
   // Free-plan users get a small one-time trial grant here; paid plans get
   // their creditGrantCents re-topped-up on each successful renewal.
   creditBalanceCents: integer("credit_balance_cents").notNull().default(100),
+  // Subscription-grant pool (2026-09-15, owner: "when monthly
+  // subscription expires, user credit expires along with it"). Tracks
+  // how much of the balance is unspent plan-grant credit. Usage debits
+  // consume the pool FIRST, so this is always exactly the unspent
+  // grant. When a subscription ends (expiry sweeper or disable
+  // webhook) this amount is removed from the balance -- paid top-ups
+  // survive. Pre-existing balances are grandfathered (pool starts at
+  // 0; only grants after this column ships enter it).
+  planGrantBalanceCents: integer("plan_grant_balance_cents")
+    .notNull()
+    .default(0),
   // When the current paid billing cycle renews/re-grants credit. Null for
   // free-plan users (no recurring cycle).
   billingCycleAnchor: timestamp("billing_cycle_anchor"),
@@ -569,6 +580,7 @@ export const creditTransactions = pgTable(
         "subscription_grant",
         "topup",
         "usage_debit",
+        "grant_expiry",
         "refund",
         "admin_adjustment",
       ],

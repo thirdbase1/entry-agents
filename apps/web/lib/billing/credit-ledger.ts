@@ -13,6 +13,7 @@ import {
 export interface UserBillingState {
   plan: PlanId;
   creditBalanceCents: number;
+  planGrantBalanceCents: number;
   billingCycleAnchor: Date | null;
   paystackCustomerCode: string | null;
   paystackSubscriptionCode: string | null;
@@ -25,6 +26,7 @@ export async function getUserBillingState(
     .select({
       plan: users.plan,
       creditBalanceCents: users.creditBalanceCents,
+      planGrantBalanceCents: users.planGrantBalanceCents,
       billingCycleAnchor: users.billingCycleAnchor,
       paystackCustomerCode: users.paystackCustomerCode,
       paystackSubscriptionCode: users.paystackSubscriptionCode,
@@ -39,10 +41,61 @@ export async function getUserBillingState(
   return {
     plan: (row.plan as PlanId) ?? "free",
     creditBalanceCents: row.creditBalanceCents,
+    planGrantBalanceCents: row.planGrantBalanceCents,
     billingCycleAnchor: row.billingCycleAnchor,
     paystackCustomerCode: row.paystackCustomerCode,
     paystackSubscriptionCode: row.paystackSubscriptionCode,
   };
+}
+
+/**
+ * Removes unspent subscription-grant credit when a plan ends (owner
+ * 2026-09-15: "user credit expires along with the subscription").
+ * Uses expiredGrantCentsOnPlanEnd policy; writes a grant_expiry ledger
+ * row for auditability; zeroes the pool. Paid top-up credit survives.
+ */
+export async function expireGrantPoolOnPlanEnd(
+  userId: string,
+): Promise<{ expiredCents: number; balanceAfterCents: number }> {
+  const { expiredGrantCentsOnPlanEnd } = await import("@/lib/billing/plans");
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        balance: users.creditBalanceCents,
+        pool: users.planGrantBalanceCents,
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    if (!row) {
+      return { expiredCents: 0, balanceAfterCents: 0 };
+    }
+
+    const expired = expiredGrantCentsOnPlanEnd(row.balance, row.pool);
+    if (expired <= 0) {
+      return { expiredCents: 0, balanceAfterCents: row.balance };
+    }
+
+    const [updated] = await tx
+      .update(users)
+      .set({
+        creditBalanceCents: sql`${users.creditBalanceCents} - ${expired}`,
+        planGrantBalanceCents: 0,
+      })
+      .where(eq(users.id, userId))
+      .returning({ creditBalanceCents: users.creditBalanceCents });
+
+    await tx.insert(creditTransactions).values({
+      id: nanoid(),
+      userId,
+      type: "grant_expiry",
+      amountCents: -expired,
+      balanceAfterCents: updated.creditBalanceCents,
+      description: "Subscription ended - unused plan credit expired",
+    });
+
+    return { expiredCents: expired, balanceAfterCents: updated.creditBalanceCents };
+  });
 }
 
 /**
@@ -80,11 +133,19 @@ export async function enforcePlanExpiry(
     .update(users)
     .set({ plan: "free" })
     .where(eq(users.id, userId));
+  // Subscription credit expires with the plan (owner 2026-09-15);
+  // paid top-ups survive.
+  const pool = await expireGrantPoolOnPlanEnd(userId);
   console.info(
     `[billing] auto-revert to free: no renewal within ${PLAN_EXPIRY_GRACE_MS / 86400000}d grace`,
-    { userId, previousPlan },
+    { userId, previousPlan, expiredGrantCents: pool.expiredCents },
   );
-  return { ...state, plan: "free" };
+  return {
+    ...state,
+    plan: "free",
+    creditBalanceCents: pool.balanceAfterCents,
+    planGrantBalanceCents: 0,
+  };
 }
 
 export type CreditTransactionType =
@@ -93,7 +154,8 @@ export type CreditTransactionType =
   | "topup"
   | "usage_debit"
   | "refund"
-  | "admin_adjustment";
+  | "admin_adjustment"
+  | "grant_expiry";
 
 interface LedgerEntryOptions {
   description?: string;
@@ -113,10 +175,22 @@ async function applyLedgerEntry(
   opts: LedgerEntryOptions = {},
 ): Promise<number> {
   return db.transaction(async (tx) => {
+    // Usage debits consume the subscription-grant pool FIRST (see
+    // planGrantBalanceCents on users): unspent grant credit is what
+    // dies with the subscription, so it must be spent before top-up
+    // money. Other entry types leave the pool alone (grants grow it,
+    // expiry zeroes it, top-ups/refunds never touch it).
+    const grantPoolConsumed =
+      type === "usage_debit" && amountCents < 0
+        ? sql`LEAST(${-amountCents}, ${users.planGrantBalanceCents})`
+        : sql`0`;
+
     const [updated] = await tx
       .update(users)
       .set({
         creditBalanceCents: sql`${users.creditBalanceCents} + ${amountCents}`,
+        planGrantBalanceCents:
+          sql`${users.planGrantBalanceCents} - ${grantPoolConsumed}`,
       })
       .where(eq(users.id, userId))
       .returning({ creditBalanceCents: users.creditBalanceCents });
@@ -330,6 +404,8 @@ export async function grantSubscriptionRenewal(
         plan: planId,
         billingCycleAnchor: new Date(),
         creditBalanceCents: sql`${users.creditBalanceCents} + ${plan.creditGrantCents}`,
+        planGrantBalanceCents:
+          sql`${users.planGrantBalanceCents} + ${plan.creditGrantCents}`,
       })
       .where(eq(users.id, userId))
       .returning({ creditBalanceCents: users.creditBalanceCents });
@@ -456,6 +532,17 @@ export async function downgradeToFreeOnSubscriptionEnd(
       paystackSubscriptionCode: null,
     })
     .where(eq(users.id, row.id));
+
+  // Subscription credit expires with the plan (owner 2026-09-15);
+  // paid top-ups survive. Run after the plan flip so a concurrent
+  // sweeper pass sees a Free user and no-ops.
+  const pool = await expireGrantPoolOnPlanEnd(row.id);
+  if (pool.expiredCents > 0) {
+    console.info("[billing] subscription ended: expired unused grant credit", {
+      userId: row.id,
+      expiredCents: pool.expiredCents,
+    });
+  }
 
   return { downgraded: true, userId: row.id };
 }

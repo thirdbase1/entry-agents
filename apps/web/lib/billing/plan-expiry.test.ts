@@ -37,3 +37,36 @@ describe("shouldAutoRevertToFree (own expiry enforcement, no Paystack reliance)"
     expect(shouldAutoRevertToFree("plus", "not-a-date", NOW)).toBe(false);
   });
 });
+
+import {
+  consumedFromGrantPool,
+  expiredGrantCentsOnPlanEnd,
+} from "./plans";
+
+describe("grant pool: consumption + expiry math (credit dies with the plan)", () => {
+  test("usage consumes the pool first, capped at the pool", () => {
+    expect(consumedFromGrantPool(300, 5000)).toBe(300);
+    expect(consumedFromGrantPool(5000, 300)).toBe(300);
+    expect(consumedFromGrantPool(5000, 5000)).toBe(5000);
+  });
+
+  test("zero cost or empty pool -> nothing consumed", () => {
+    expect(consumedFromGrantPool(0, 5000)).toBe(0);
+    expect(consumedFromGrantPool(300, 0)).toBe(0);
+    expect(consumedFromGrantPool(-5, 5000)).toBe(0);
+  });
+
+  test("on plan end: the unspent grant is removed", () => {
+    expect(expiredGrantCentsOnPlanEnd(4200, 1000)).toBe(1000);
+  });
+
+  test("on plan end: never remove more than the balance (negative-balance defense)", () => {
+    expect(expiredGrantCentsOnPlanEnd(50, 1000)).toBe(50);
+    expect(expiredGrantCentsOnPlanEnd(0, 1000)).toBe(0);
+    expect(expiredGrantCentsOnPlanEnd(-200, 1000)).toBe(0);
+  });
+
+  test("on plan end: pure top-up user (empty pool) keeps everything", () => {
+    expect(expiredGrantCentsOnPlanEnd(4200, 0)).toBe(0);
+  });
+});

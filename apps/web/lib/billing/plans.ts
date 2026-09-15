@@ -10,7 +10,15 @@
  *   upgrade your account to use Entry") -- see resolveChatModelRuntime in
  *   app/workflows/chat.ts, which reuses the existing free-tier-gate error
  *   marker/UI for this.
- * - Plus/Pro/Max: paid, full access to every model in the live catalog
+ * - GOAT (added 2026-09-15, owner request): the Command Code GOAT-plan
+ *   model integrated into Entry -- a $10/mo tier that grants $70 of
+ *   credit per renewal (a 7x bonus, deliberately breaking the flat 2x
+ *   rule the other tiers use; it's the volume bait tier that gets users
+ *   to upgrade from Plus). Still a single spendable balance: no
+ *   Command-Code-style 5h/weekly sub-windows -- Entry's existing
+ *   per-turn spend cap and hard stop-at-zero already bound worst-case
+ *   exposure to the same class as the Max tier ($70/mo).
+ * - Plus/GOAT/Pro/Max: paid, full access to every model in the live catalog
  *   (including all FreeModel-sourced GPT-5.6 + Claude models once those
  *   routes are enabled on the gateway). They differ only by price and
  *   how much credit each renewal grants -- a flat 2x bonus on every
@@ -22,7 +30,7 @@
  *   blocking) was REMOVED per owner instruction on 2026-08-17.
  */
 
-export type PlanId = "free" | "plus" | "pro" | "max";
+export type PlanId = "free" | "plus" | "goat" | "pro" | "max";
 
 export interface PlanDefinition {
   id: PlanId;
@@ -55,6 +63,14 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     name: "Plus",
     priceUsdCents: 500, // $5/mo
     creditGrantCents: 1000, // $10 credit (2x)
+    modelAccess: "all",
+    paystackPlanCode: null,
+  },
+  goat: {
+    id: "goat",
+    name: "GOAT",
+    priceUsdCents: 1000, // $10/mo
+    creditGrantCents: 7000, // $70 credit (7x) -- Command Code GOAT-style tier
     modelAccess: "all",
     paystackPlanCode: null,
   },

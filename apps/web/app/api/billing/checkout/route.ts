@@ -5,7 +5,7 @@ import { PLAN_CATALOG, isPlanId } from "@/lib/billing/plans";
 import { usdCentsToNgnKobo } from "@/lib/billing/fx";
 
 interface CheckoutRequest {
-  /** One of "plus" | "pro" | "max" for a subscription checkout. */
+  /** One of "plus" | "goat" | "pro" | "max" for a subscription checkout. */
   planId?: string;
   /** For a one-off wallet top-up instead of a subscription. $1 = $1, so this is the exact credit granted. */
   topupAmountCents?: number;
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
 
     if (!isPlanId(body.planId) || body.planId === "free") {
       return Response.json(
-        { error: "planId must be one of plus, pro, max" },
+        { error: "planId must be one of plus, goat, pro, max" },
         { status: 400 },
       );
     }

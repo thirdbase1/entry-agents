@@ -25,9 +25,9 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
   // --- Billing (Paystack-backed credit plans) ---
-  // "free" | "plus" | "pro" | "max" -- see lib/billing/plans.ts for the
+  // "free" | "plus" | "goat" | "pro" | "max" -- see lib/billing/plans.ts for the
   // catalog (price, credit grant, model access) each id maps to.
-  plan: text("plan", { enum: ["free", "plus", "pro", "max"] })
+  plan: text("plan", { enum: ["free", "plus", "goat", "pro", "max"] })
     .notNull()
     .default("free"),
   // Spendable balance, in USD cents, against the live model cost catalog.

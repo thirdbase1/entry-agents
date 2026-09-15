@@ -3,6 +3,7 @@ import {
   type AvailableModelCost,
 } from "@/lib/models";
 import type { LanguageModelUsage } from "ai";
+import type { SubagentBudgetGuard } from "@open-agents/agent";
 
 /**
  * REAL-TIME window/balance spend capping (owner 2026-09-15: "make the
@@ -66,7 +67,15 @@ const OUTPUT_BUDGET_MARGIN = 0.98;
 
 export function estimateNextStepInputTokens(
   lastStepUsage: LanguageModelUsage | undefined,
-  serializedMessagesCharCount: number,
+  /**
+   * LAZY on purpose (perf, owner 2026-09-15: "make sure all these
+   * checks don't make the agent response slow"): serializing the full
+   * conversation costs ~5-15ms per step on large contexts, and it's
+   * only needed on the FIRST step of a turn (no measured baseline
+   * yet). Pass a getter, not a number -- on every later step the
+   * getter is never invoked and this whole function stays O(1).
+   */
+  getSerializedMessagesCharCount: () => number,
 ): number {
   if (lastStepUsage?.inputTokens) {
     // The next step's prompt is the last one plus the tool results and
@@ -77,7 +86,97 @@ export function estimateNextStepInputTokens(
   // First step of a turn: no measured baseline. Rough heuristic -- 4
   // chars/token for the conversation plus a flat 8k for the system
   // prompt + tool schemas.
-  return Math.ceil(serializedMessagesCharCount / 4) + 8_000;
+  return Math.ceil(getSerializedMessagesCharCount() / 4) + 8_000;
+}
+
+/**
+ * Shared affordable-output math for both the main-model cap and the
+ * subagent guard: given a budget in cents and a model's pricing, how
+ * many output tokens fit (with the same 98% margin), or should the
+ * call be blocked (< MIN_USEFUL_OUTPUT_TOKENS)? Comfortable budgets get
+ * no clamp at all (CLAMP_CEILING_TOKENS).
+ */
+export function computeAffordableOutputTokens(
+  budgetCents: number,
+  cost: AvailableModelCost | undefined,
+): { stop: boolean; maxOutputTokens?: number } {
+  if (!cost) {
+    return { stop: false };
+  }
+  const millionOutputCostUsd = estimateModelUsageCost(
+    { inputTokens: 0, cachedInputTokens: 0, outputTokens: 1_000_000 },
+    cost,
+  );
+  if (millionOutputCostUsd === undefined || millionOutputCostUsd <= 0) {
+    return { stop: false };
+  }
+  const centsPerOutputToken = (millionOutputCostUsd * 100) / 1_000_000;
+  const affordableOutputTokens = Math.floor(
+    (budgetCents * OUTPUT_BUDGET_MARGIN) / centsPerOutputToken,
+  );
+  if (affordableOutputTokens < MIN_USEFUL_OUTPUT_TOKENS) {
+    return { stop: true };
+  }
+  if (affordableOutputTokens >= CLAMP_CEILING_TOKENS) {
+    return { stop: false };
+  }
+  return { stop: false, maxOutputTokens: affordableOutputTokens };
+}
+
+/**
+ * Apply a spend to the in-memory window/balance budgets -- the SAME
+ * mutation the main-model finish-step handler performs, extracted so
+ * the subagent guard (which also spends from these budgets) can share
+ * one tested code path. Pure: returns the new counters + whether the
+ * spend exhausted a budget and which one.
+ */
+export function applySpendToBudgets(input: {
+  remainingWindowBudgetCents: number | null;
+  remainingBalanceCents: number;
+  enforceCreditBlock: boolean;
+  costCents: number;
+}): {
+  remainingWindowBudgetCents: number | null;
+  remainingBalanceCents: number;
+  exhaustedReason: "window" | "credit" | null;
+} {
+  const {
+    remainingWindowBudgetCents,
+    remainingBalanceCents,
+    enforceCreditBlock,
+    costCents,
+  } = input;
+
+  let windowBudget = remainingWindowBudgetCents;
+  if (windowBudget !== null) {
+    windowBudget -= costCents;
+  }
+
+  let balance = remainingBalanceCents;
+  if (enforceCreditBlock) {
+    balance -= costCents;
+  }
+
+  // Which budget binds FIRST (smallest after spend) decides the
+  // wording the user sees: "window refills" vs "top up".
+  const candidates: Array<{ cents: number; reason: "window" | "credit" }> = [];
+  if (windowBudget !== null) {
+    candidates.push({ cents: windowBudget, reason: "window" });
+  }
+  if (enforceCreditBlock) {
+    candidates.push({ cents: balance, reason: "credit" });
+  }
+  const exhaustedReason =
+    candidates.length > 0 &&
+    Math.min(...candidates.map((c) => c.cents)) <= 0
+      ? candidates.reduce((a, b) => (b.cents < a.cents ? b : a)).reason
+      : null;
+
+  return {
+    remainingWindowBudgetCents: windowBudget,
+    remainingBalanceCents: balance,
+    exhaustedReason,
+  };
 }
 
 export function computeRealtimeSpendCap(input: {
@@ -189,4 +288,103 @@ export function computeRealtimeSpendCap(input: {
   }
 
   return { blockReason: null, maxOutputTokens: affordableOutputTokens };
+}
+
+/**
+ * Host-side implementation of the framework's SubagentBudgetGuard
+ * (packages/agent types). Closes the last real-time gap (2026-09-15):
+ * subagent usage used to hit the ledger only at chat-post-finish, so a
+ * subagent could spend past an Entry window mid-task.
+ *
+ * The guard shares the parent turn's IN-MEMORY window/balance counters
+ * via callbacks -- it never writes ledger rows itself (the durable
+ * subagent debit still happens at chat-post-finish; double-billing is
+ * impossible by construction).
+ *
+ * Pure: all billing state flows through the callbacks, so the factory
+ * is fully bun-testable.
+ */
+export interface SubagentBudgetGuardCallbacks {
+  getWindowRemainingCents(): number | null;
+  getBalanceRemainingCents(): number;
+  getEnforceCreditBlock(): boolean;
+  /**
+   * Apply a spend to the live counters (mirrors the main-model
+   * finish-step mutation, including tripping the exhausted flags).
+   * Returns the post-spend budget state.
+   */
+  spendCents(costCents: number): ReturnType<typeof applySpendToBudgets>;
+  getCost(modelId: string): AvailableModelCost | undefined;
+}
+
+export function buildSubagentBudgetGuard(
+  callbacks: SubagentBudgetGuardCallbacks,
+): SubagentBudgetGuard {
+  const bindingBudget = (): { cents: number; reason: "window" | "credit" } | null => {
+    const candidates: Array<{ cents: number; reason: "window" | "credit" }> = [];
+    const windowBudget = callbacks.getWindowRemainingCents();
+    if (windowBudget !== null && Number.isFinite(windowBudget)) {
+      candidates.push({ cents: windowBudget, reason: "window" });
+    }
+    if (callbacks.getEnforceCreditBlock()) {
+      candidates.push({
+        cents: callbacks.getBalanceRemainingCents(),
+        reason: "credit",
+      });
+    }
+    if (candidates.length === 0) {
+      return null;
+    }
+    return candidates.reduce((a, b) => (b.cents < a.cents ? b : a));
+  };
+
+  return {
+    planSubagent(modelId: string) {
+      const binding = bindingBudget();
+      if (!binding) {
+        return { stop: false };
+      }
+      const affordable = computeAffordableOutputTokens(
+        binding.cents,
+        callbacks.getCost(modelId),
+      );
+      if (affordable.stop) {
+        return { stop: true, reason: binding.reason };
+      }
+      return {
+        stop: false,
+        ...(affordable.maxOutputTokens !== undefined
+          ? { maxOutputTokens: affordable.maxOutputTokens }
+          : {}),
+      };
+    },
+
+    noteSubagentStepUsage(modelId: string, usage: LanguageModelUsage) {
+      if (!bindingBudget()) {
+        return { stop: false };
+      }
+      const costUsd = estimateModelUsageCost(
+        {
+          inputTokens: usage.inputTokens ?? 0,
+          cachedInputTokens:
+            usage.inputTokenDetails?.cacheReadTokens ??
+            usage.cachedInputTokens ??
+            0,
+          outputTokens: usage.outputTokens ?? 0,
+        },
+        callbacks.getCost(modelId),
+      );
+      if (costUsd === undefined) {
+        // Unknown pricing: can't enforce in real time; the post-finish
+        // debit still lands durably.
+        return { stop: false };
+      }
+      const costCents = Math.max(0, Math.round(costUsd * 100));
+      const state = callbacks.spendCents(costCents);
+      if (state.exhaustedReason) {
+        return { stop: true, reason: state.exhaustedReason };
+      }
+      return { stop: false };
+    },
+  };
 }

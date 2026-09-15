@@ -1,6 +1,7 @@
 import { designSubagent } from "./design";
 import { executorSubagent } from "./executor";
 import { explorerSubagent } from "./explorer";
+import { reviewerSubagent } from "./reviewer";
 
 export const SUBAGENT_REGISTRY = {
   explorer: {
@@ -17,6 +18,11 @@ export const SUBAGENT_REGISTRY = {
     shortDescription:
       "Use for creating distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
     agent: designSubagent,
+  },
+  reviewer: {
+    shortDescription:
+      "Use for read-only code review before finishing: finds bugs, security issues, and missing coverage in a diff, branch, or specific files. Verifies findings by reading call sites and tests, ranks them by severity, never invents findings.",
+    agent: reviewerSubagent,
   },
 } as const;
 

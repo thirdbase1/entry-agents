@@ -2,6 +2,7 @@ import type { InferAgentUIMessage, LanguageModelUsage } from "ai";
 import type { designSubagent } from "./design";
 import type { executorSubagent } from "./executor";
 import type { explorerSubagent } from "./explorer";
+import type { reviewerSubagent } from "./reviewer";
 
 export type SubagentMessageMetadata = {
   lastStepUsage?: LanguageModelUsage;
@@ -13,4 +14,5 @@ export type SubagentMessageMetadata = {
 export type SubagentUIMessage =
   | InferAgentUIMessage<typeof explorerSubagent, SubagentMessageMetadata>
   | InferAgentUIMessage<typeof executorSubagent, SubagentMessageMetadata>
-  | InferAgentUIMessage<typeof designSubagent, SubagentMessageMetadata>;
+  | InferAgentUIMessage<typeof designSubagent, SubagentMessageMetadata>
+  | InferAgentUIMessage<typeof reviewerSubagent, SubagentMessageMetadata>;

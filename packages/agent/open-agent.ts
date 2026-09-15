@@ -12,6 +12,7 @@ import { defaultModelLabel } from "./default-model";
 
 import type { SkillMetadata } from "./skills/types";
 import type {
+  SubagentBudgetGuard,
   GithubToolContext,
   SandboxLifecycleHooksContext,
   VercelToolContext,
@@ -93,6 +94,11 @@ const callOptionsSchema = z.object({
   // that injects the Guided Frontend Workflow section into the system
   // prompt. See system-prompt.ts's GUIDED_FRONTEND_WORKFLOW_PROMPT.
   guidedFrontendWorkflow: z.boolean().optional(),
+  // Host-injected real-time budget enforcement for subagents
+  // (apps/web, 2026-09-15 -- see SubagentBudgetGuard in ./types).
+  // Undefined in hosts without billing (tests, local dev) -- the task
+  // tool simply runs unguarded, exactly as before.
+  billingGuard: z.custom<SubagentBudgetGuard>().optional(),
   // Per-call output-token cap (apps/web real-time billing, 2026-09-15:
   // "make Entry-window usage real time so users can't drain more than
   // their allowance"). apps/web computes what the user's remaining
@@ -225,6 +231,7 @@ export const openAgent = new ToolLoopAgent({
         github: options.github,
         vercel: options.vercel,
         sandboxLifecycleHooks: options.sandboxLifecycleHooks,
+        billingGuard: options.billingGuard,
       },
     };
   },

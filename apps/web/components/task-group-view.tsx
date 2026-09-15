@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Hammer, Loader2, Paintbrush, Telescope } from "lucide-react";
+import {
+  ShieldCheck, Hammer, Loader2, Paintbrush, Telescope } from "lucide-react";
 import type { TaskPendingToolCall, TaskToolUIPart } from "@open-agents/agent";
 import { formatTokens, toRelativePath } from "@open-agents/shared";
 import { cn } from "@/lib/utils";
@@ -111,6 +112,8 @@ function getSubagentIcon(
       return <Hammer className={className} />;
     case "design":
       return <Paintbrush className={className} />;
+    case "reviewer":
+      return <ShieldCheck className={className} />;
     default:
       return <Telescope className={className} />;
   }
@@ -122,6 +125,8 @@ function getSubagentLabel(subagentType: string | undefined): string {
       return "Executor";
     case "design":
       return "Design";
+    case "reviewer":
+      return "Reviewer";
     default:
       return "Explorer";
   }

@@ -24,6 +24,8 @@ import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { estimateStepCost } from "./gateway-metadata";
 import {
+  applySpendToBudgets,
+  buildSubagentBudgetGuard,
   computeRealtimeSpendCap,
   estimateNextStepInputTokens,
 } from "@/lib/chat/realtime-spend-cap";
@@ -2322,6 +2324,44 @@ const runAgentStep = async (
   let remainingWindowBudgetCents = windowBudgetCents;
   let creditExhausted = false;
   let windowExhausted = false;
+  // Real-time subagent budget guard (framework SubagentBudgetGuard):
+  // shares these same in-memory counters with the main model, so
+  // subagent spend eats the same window/balance budgets mid-turn
+  // instead of landing only at chat-post-finish. spendCents mirrors
+  // the main-model finish-step mutation below (flags + turn abort);
+  // it writes NO ledger rows -- the durable subagent debit still
+  // happens at chat-post-finish, so there is no double-billing.
+  const subagentBudgetGuard = buildSubagentBudgetGuard({
+    getWindowRemainingCents: () => remainingWindowBudgetCents,
+    getBalanceRemainingCents: () => remainingBalanceCents,
+    getEnforceCreditBlock: () => enforceCreditBlock,
+    spendCents: (costCents) => {
+      const state = applySpendToBudgets({
+        remainingWindowBudgetCents,
+        remainingBalanceCents,
+        enforceCreditBlock,
+        costCents,
+      });
+      remainingWindowBudgetCents = state.remainingWindowBudgetCents;
+      remainingBalanceCents = state.remainingBalanceCents;
+      if (state.exhaustedReason === "window") {
+        windowExhausted = true;
+      }
+      if (state.exhaustedReason === "credit") {
+        creditExhausted = true;
+      }
+      if (state.exhaustedReason) {
+        // Stop the parent turn too: no further main-model steps are
+        // affordable either. (The task tool aborts the subagent with
+        // its LOCAL controller first, so its partial summary still
+        // flows back through the tool result before this propagates.)
+        abortController.abort();
+      }
+      return state;
+    },
+    getCost: (subagentModelId) =>
+      modelCostCatalog.find((m) => m.id === subagentModelId)?.cost,
+  });
   // Tripped when this turn's cumulative cost (totalMessageCost, which
   // persists across outer-loop step calls via message metadata -- see
   // the assignment below) crosses MAX_TURN_SPEND_CENTS, regardless of
@@ -2374,7 +2414,10 @@ const runAgentStep = async (
     const lastStepBreakdown = existingStepBreakdown.at(-1);
     const estimatedInputTokens = estimateNextStepInputTokens(
       lastStepBreakdown?.usage,
-      JSON.stringify(messages).length,
+      // LAZY (perf): the stringify only runs on the FIRST step of a
+      // turn (no measured baseline); every later step is O(1) off the
+      // last step's real token count.
+      () => JSON.stringify(messages).length,
     );
     const spendCap = computeRealtimeSpendCap({
       remainingWindowBudgetCents,
@@ -2410,6 +2453,7 @@ const runAgentStep = async (
     const vercelContext = agentOptions.vercel;
     const fullAgentOptions: OpenAgentCallOptions = {
       ...agentOptions,
+      billingGuard: subagentBudgetGuard,
       github: githubContext
         ? {
             hasRepo: githubContext.hasRepo,

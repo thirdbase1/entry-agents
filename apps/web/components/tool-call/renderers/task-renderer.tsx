@@ -4,6 +4,7 @@ import type { TaskPendingToolCall } from "@open-agents/agent";
 import { formatTokens, toRelativePath } from "@open-agents/shared";
 import type { ToolRenderState } from "@open-agents/shared/lib/tool-state";
 import {
+  ShieldCheck,
   Bot,
   FileText,
   FilePlus,
@@ -234,6 +235,8 @@ function getSubagentIcon(
       return <Paintbrush className={className} />;
     case "explorer":
       return <Telescope className={className} />;
+    case "reviewer":
+      return <ShieldCheck className={className} />;
     default:
       return <Bot className={className} />;
   }
@@ -247,6 +250,8 @@ function getSubagentLabel(subagentType: string | undefined): string {
       return "Design Subagent";
     case "explorer":
       return "Explorer Subagent";
+    case "reviewer":
+      return "Reviewer Subagent";
     default:
       return subagentType
         ? `${subagentType.charAt(0).toUpperCase() + subagentType.slice(1)} Subagent`

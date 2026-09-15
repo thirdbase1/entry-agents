@@ -13,6 +13,7 @@ import {
 import { SUBAGENT_STEP_LIMIT } from "../subagents/constants";
 import { sumLanguageModelUsage } from "../usage";
 import { getSandboxContext, getSubagentModel } from "./utils";
+import type { AgentContext, SubagentBudgetGuard } from "../types";
 
 const subagentTypeSchema = z.enum(SUBAGENT_TYPES);
 
@@ -95,6 +96,59 @@ IMPORTANT:
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
 
+    // Real-time subagent budget enforcement (host-injected billing
+    // guard, 2026-09-15): subagent usage previously landed in the
+    // ledger only at the END of the whole turn, so a subagent could
+    // spend past an Entry window mid-turn. The guard shares the parent
+    // turn's in-memory window/balance counters.
+    const billingGuard: SubagentBudgetGuard | undefined = (
+      experimental_context as AgentContext | undefined
+    )?.billingGuard;
+
+    const startedAt = Date.now();
+    let toolCallCount = 0;
+
+    if (billingGuard) {
+      const plan = billingGuard.planSubagent(subagentModelId);
+      if (plan.stop) {
+        // Even a first subagent step doesn't fit the remaining budget --
+        // refuse the launch with zero spend. Wording mirrors the main
+        // model's window/credit exhaustion notices.
+        const reasonText =
+          plan.reason === "window"
+            ? "usage window exhausted"
+            : "credit balance exhausted";
+        const refused: ModelMessage[] = [
+          {
+            role: "assistant",
+            content: `Task not started: the user's ${reasonText}. Ask them to wait for the window to refill or top up, then re-invoke this task.`,
+          },
+        ];
+        yield {
+          final: refused,
+          toolCallCount,
+          startedAt,
+          modelId: subagentModelId,
+        };
+        return;
+      }
+    }
+
+    // The subagent gets its own abort controller so the BUDGET guard
+    // can stop just the subagent without killing the parent turn --
+    // the parent's signal is forwarded so user-initiated stops still
+    // abort everything.
+    const localAbort = new AbortController();
+    const forwardParentAbort = () => localAbort.abort();
+    if (abortSignal?.aborted) {
+      localAbort.abort();
+    } else {
+      abortSignal?.addEventListener("abort", forwardParentAbort);
+    }
+
+    let budgetStopped = false;
+    let budgetStopReason: "window" | "credit" | undefined;
+
     const result = await subagent.stream({
       prompt:
         "Complete this task and provide a summary of what you accomplished.",
@@ -103,12 +157,18 @@ IMPORTANT:
         instructions,
         sandbox: sandboxContext.sandbox,
         model,
+        ...(billingGuard
+          ? (() => {
+              const plan = billingGuard.planSubagent(subagentModelId);
+              return plan.maxOutputTokens
+                ? { maxOutputTokens: plan.maxOutputTokens }
+                : {};
+            })()
+          : {}),
       },
-      abortSignal,
+      abortSignal: localAbort.signal,
     });
 
-    const startedAt = Date.now();
-    let toolCallCount = 0;
     let pending: TaskPendingToolCall | undefined;
     let usage: LanguageModelUsage | undefined;
 
@@ -130,6 +190,21 @@ IMPORTANT:
 
       if (part.type === "finish-step") {
         usage = sumLanguageModelUsage(usage, part.usage);
+        // Real-time budget accounting: the host decrements its shared
+        // window/balance counters with this step's real usage and tells
+        // us whether any budget just tripped. Stopping here bounds the
+        // subagent's overshoot to one step instead of the whole task.
+        if (billingGuard) {
+          const plan = billingGuard.noteSubagentStepUsage(
+            subagentModelId,
+            part.usage,
+          );
+          if (plan.stop) {
+            budgetStopped = true;
+            budgetStopReason = plan.reason;
+            localAbort.abort();
+          }
+        }
         // Keep the last observed tool call in interim updates so task UIs don't
         // flicker back to an initializing state between subagent steps.
         yield {
@@ -142,8 +217,39 @@ IMPORTANT:
       }
     }
 
+    abortSignal?.removeEventListener("abort", forwardParentAbort);
+
     const response = await result.response;
     const finalUsage = usage ?? (await result.usage);
+
+    if (budgetStopped) {
+      // The subagent was cut short by the user's window/balance
+      // budget. Its partial work still flows back to the parent (the
+      // parent loop itself will hit the same budget gate on its next
+      // step), but say so instead of pretending the task completed.
+      const reasonText =
+        budgetStopReason === "window"
+          ? "usage window"
+          : budgetStopReason === "credit"
+            ? "credit balance"
+            : "usage limit";
+      const truncated: ModelMessage[] = [
+        ...response.messages,
+        {
+          role: "assistant",
+          content: `[Budget limit reached: this subagent was stopped by the user's ${reasonText}. The work above is partial -- the remaining steps were not run.]`,
+        },
+      ];
+      yield {
+        final: truncated,
+        toolCallCount,
+        usage: finalUsage,
+        startedAt,
+        modelId: subagentModelId,
+      };
+      return;
+    }
+
     yield {
       final: response.messages,
       toolCallCount,

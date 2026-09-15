@@ -86,6 +86,11 @@ const callOptionsSchema = z.object({
     .custom<SandboxExecutionContext["sandbox"]>()
     .describe("Sandbox for file system and shell operations"),
   model: z.custom<LanguageModel>().describe("Language model for this subagent"),
+  // Per-step output clamp threaded from the host's billing guard
+  // (packages/agent SubagentBudgetGuard, 2026-09-15): ToolLoopAgent
+  // applies call settings to every internal step, so one value caps
+  // each step's output. Undefined = no cap.
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 
 export type DesignCallOptions = z.infer<typeof callOptionsSchema>;
@@ -117,6 +122,9 @@ export const designSubagent = new ToolLoopAgent({
     return {
       ...settings,
       model,
+      ...(options.maxOutputTokens
+        ? { maxOutputTokens: options.maxOutputTokens }
+        : {}),
       // Wrapped in addCacheControl() (2026-08-18): this whole block used to
       // be a bare string with no cache_control breakpoint at all, so
       // Anthropic reprocessed it from scratch on every single step of a

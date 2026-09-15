@@ -1,5 +1,5 @@
 import type { SandboxState } from "@open-agents/sandbox";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, LanguageModelUsage } from "ai";
 import { z } from "zod";
 import type { AgentSandboxContext } from "./open-agent";
 import type { SkillMetadata } from "./skills/types";
@@ -192,6 +192,45 @@ export interface VercelApiResult {
   error?: string;
 }
 
+/**
+ * Real-time budget enforcement for subagents (owner 2026-09-15:
+ * "make the usage real time -- users can drain more than their
+ * usage"). The HOST (apps/web) implements this against its in-memory
+ * window/balance counters and injects it via call options -- the
+ * framework stays vendor-agnostic about pricing and billing.
+ *
+ * The task tool consults it:
+ *  - once before launching a subagent (planSubagent) -- can veto the
+ *    launch entirely (stop) or clamp the subagent's per-step output
+ *    (maxOutputTokens) so a subagent can't blow past the window;
+ *  - after every subagent model step (noteSubagentStepUsage) -- the
+ *    host decrements its shared budget counters and can stop the
+ *    subagent mid-task, leaving the parent turn to fail the same way
+ *    the main model does.
+ *
+ * IMPORTANT: the host must NOT write ledger rows from these calls if
+ * the durable debit already happens elsewhere (apps/web debits subagent
+ * usage at chat-post-finish) -- these hooks are for real-time
+ * enforcement only, never for durable accounting.
+ */
+export interface SubagentBudgetPlan {
+  stop: boolean;
+  /** Which budget tripped -- mirrors the main-model metadata flags
+   * (windowExhausted vs creditExhausted) for user-facing wording. */
+  reason?: "window" | "credit";
+  /** Per-step output clamp for the subagent (whole task, applied to
+   * every internal step), or undefined for no clamp. */
+  maxOutputTokens?: number;
+}
+
+export interface SubagentBudgetGuard {
+  planSubagent(modelId: string): SubagentBudgetPlan;
+  noteSubagentStepUsage(
+    modelId: string,
+    usage: LanguageModelUsage,
+  ): SubagentBudgetPlan;
+}
+
 export interface AgentContext {
   sandbox: AgentSandboxContext;
   skills?: SkillMetadata[];
@@ -200,6 +239,7 @@ export interface AgentContext {
   github?: GithubToolContext;
   vercel?: VercelToolContext;
   sandboxLifecycleHooks?: SandboxLifecycleHooksContext;
+  billingGuard?: SubagentBudgetGuard;
 }
 
 export interface SandboxExecutionContext {

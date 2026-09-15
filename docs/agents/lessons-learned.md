@@ -2693,3 +2693,28 @@ temp secret-gated route that caught and returned the raw failed query
 + params live. Also note: this same broken query would have failed
 every Entry-plan chat turn at the window gate once admin enforcement
 (d7a25be) rolled out -- fixing it fixed both surfaces at once.
+
+## 2026-09-15 (final +5): lapsed subscribers now revert to Free
+
+Owner report: "after one month user account doesn't go back to free."
+Root cause: the Paystack webhook only handled charge.success and
+subscription.create; subscription.disable (fires when a subscription
+ends -- user cancels, or Paystack gives up after failed renewal
+charges) hit the default 200-and-ignore case, so users.plan kept its
+paid value forever -- full model access, nobody paying. Fix: case
+"subscription.disable" -> downgradeToFreeOnSubscriptionEnd (new, in
+credit-ledger): resolves the user by customer_code, then consults
+shouldDowngradeOnSubscriptionDisable (pure policy in plans.ts -- the
+bun test / server-only-import split, same as
+findExceededUsageWindow). Guards: (1) the disabled subscription_code
+must MATCH the code stored on the user -- Paystack sends .disable for
+every ended subscription, including a stale one after re-subscribing
+on a new code, and that must never kick the user off their active
+plan; (2) already-Free users are a no-op. Balance is deliberately
+untouched: credit is prepaid value ($1=$1), only plan perks revert.
+Webhook idempotency: claimed via claimEventOnce keyed on
+subscription_code. 5 policy tests. NOTE for the future: missed webhooks
+are still possible (Paystack retries, but a permanently missed event
+means a paid plan survives) -- if we ever want a sweeper cron that
+reverts plans whose billingCycleAnchor is older than ~40 days without
+a renewal charge, that's a separate hardening pass.

@@ -2746,3 +2746,38 @@ forever. New, delivery-independent layer:
   forgotten.
 - 6 policy tests. Combined with the disable-webhook downgrade, the
   expiry surface is now covered twice, by two independent mechanisms.
+
+## 2026-09-15 (final +7): subscription credit now expires with the plan
+
+Owner: "when monthly subscription expires, hope user credit expired
+along it." Until now expiry preserved the whole balance; a subscriber
+could stop paying and keep spending unspent grant credit forever on
+the Free tier. New mechanism (commits this date, migration 0055):
+- users.planGrantBalanceCents (integer, default 0): tracks unspent
+  subscription-grant credit. grantSubscriptionRenewal grows it with
+  each grant; applyLedgerEntry consumes it FIRST for usage_debit rows
+  (LEAST(cost, pool) in the same atomic update), so the pool is always
+  exactly the unspent grant. Top-ups/refunds never touch it.
+- expireGrantPoolOnPlanEnd (credit-ledger): removes
+  expiredGrantCentsOnPlanEnd(balance, pool) = min(balance, pool) from
+  the balance, zeroes the pool, writes a "grant_expiry" ledger row
+  (new CreditTransactionType + schema enum value). Called from BOTH
+  plan-end paths: enforcePlanExpiry (own sweeper) and
+  downgradeToFreeOnSubscriptionEnd (subscription.disable webhook) --
+  run AFTER the plan flips to free so a concurrent pass no-ops.
+- Pure policy in plans.ts (consumedFromGrantPool /
+  expiredGrantCentsOnPlanEnd), 11 policy tests total.
+- Grandfathering: pre-existing balances start with pool=0, so nobody's
+  existing credit is retroactively confiscated; only grants after
+  this column ships enter the expiring pool.
+- Migration 0055 is a single ADD COLUMN DEFAULT 0 NOT NULL; applied
+  automatically by the build (pnpm db:migrate:apply runs pre-build).
+- Also this date: owner said "something is wrong check logs" -- runtime
+  logs showed ~3 req/s for 16+ min (one chat stuck isStreaming drove
+  the 3s fast-poll loop). By inspection the stuck list was already
+  empty (stream GET reconcile cleared it); zero 4xx/5xx in 3000
+  requests. Temp stream-diag route used for the check, then deleted.
+  Future hardening idea (NOT built): the sessions/chats list endpoints
+  could self-clear activeStreamId rows whose chat.updatedAt is older
+  than ~15 min so a never-reopened stuck chat can't drive 3s polling
+  forever.

@@ -110,6 +110,9 @@ type ChatModelRuntime = {
    * every model step and abort mid-turn on exhaustion. See the block
    * above that computes it for why admins get a value too. */
   startingBalanceCents: number;
+  /** True when startingBalanceCents was capped by a rolling usage
+   * window (Entry plan) rather than the plain balance. */
+  windowBudgetCapped: boolean;
   /** True for non-admins -- controls whether runAgentStep is allowed to
    * abort the stream when the running balance hits zero. Admins are
    * still billed (see runAgentStep) but never blocked. */
@@ -445,6 +448,7 @@ async function resolveChatModelRuntime(params: {
   // discovering the overspend in one lump sum after the whole turn
   // finishes (see the old chat-post-finish.ts behavior this replaces).
   let startingBalanceCents = 0;
+  let windowBudgetCapped = false;
   if (!isAdminUser) {
     const { getUserBillingState, claimUserBillingTurn } =
       await import("@/lib/billing/credit-ledger");
@@ -510,6 +514,31 @@ async function resolveChatModelRuntime(params: {
       const { findExceededUsageWindow } = await import("@/lib/billing/plans");
       const totals = await getUsageWindowTotals(params.userId);
       const exceeded = findExceededUsageWindow(totals, plan.usageWindows);
+
+      // Accuracy (2026-09-15, owner request): even when no window is
+      // exceeded yet, cap this turn's spend budget to the tightest
+      // remaining window allowance. runAgentStep aborts the instant
+      // the in-memory budget hits zero, so the turn now stops exactly
+      // at the window edge mid-turn instead of overshooting by up to a
+      // whole turn before the NEXT pre-turn gate notices.
+      const windowRemainingCents = Math.min(
+        plan.usageWindows.fiveHourLimitCents - totals.last5HoursCents,
+        plan.usageWindows.weeklyLimitCents - totals.last7DaysCents,
+        plan.usageWindows.monthlyLimitCents - totals.last30DaysCents,
+      );
+      if (windowRemainingCents > startingBalanceCents) {
+        // Balance is the binding constraint -- behave exactly as before.
+        windowBudgetCapped = false;
+      } else if (windowRemainingCents <= 0) {
+        // Guard: findExceededUsageWindow should have thrown already.
+        throw toSafeChatError(
+          "Your Entry plan's usage window is full -- it refills continuously as your oldest usage slides out; try again in a little while.",
+        );
+      } else {
+        startingBalanceCents = windowRemainingCents;
+        windowBudgetCapped = true;
+      }
+
       if (exceeded) {
         const limitCents =
           exceeded === "fiveHour"
@@ -584,6 +613,7 @@ async function resolveChatModelRuntime(params: {
     autoCommitEnabled,
     autoCreatePrEnabled,
     startingBalanceCents,
+    windowBudgetCapped,
     enforceCreditBlock: !isAdminUser,
     guidedFrontendWorkflowEnabled:
       preferences?.guidedFrontendWorkflowEnabled ?? false,
@@ -1951,11 +1981,19 @@ export async function runAgentWorkflow(options: Options) {
       // generic "The request was stopped." abort text -- real-time
       // billing in runAgentStep already stopped generation the instant
       // the balance hit zero.
+      //
+      // Accuracy (2026-09-15): when the turn's budget was capped by an
+      // Entry-plan usage window (windowBudgetCapped), the balance is
+      // NOT exhausted -- saying "top up" would be wrong. Surface
+      // windowExhausted instead so the client explains the window.
+      const wasWindowCapped = modelRuntime.windowBudgetCapped;
       pendingAssistantResponse = {
         ...pendingAssistantResponse,
         metadata: {
           ...pendingAssistantResponse.metadata,
-          creditExhausted: true,
+          ...(wasWindowCapped
+            ? { windowExhausted: true }
+            : { creditExhausted: true }),
         },
       };
     }

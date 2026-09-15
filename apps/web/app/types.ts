@@ -63,6 +63,10 @@ export type WebAgentMessageMetadata = {
    * "you're out of credit" notice in session-chat-content.tsx.
    */
   creditExhausted?: boolean;
+  /** Stopped because an Entry-plan rolling usage window (5h/weekly/
+   * monthly) filled mid-turn -- distinct from creditExhausted so the
+   * client doesn't tell a user with balance to top up. */
+  windowExhausted?: boolean;
   /**
    * True when this single turn's own cumulative cost crossed the
    * MAX_TURN_SPEND_CENTS circuit-breaker in app/workflows/chat.ts,

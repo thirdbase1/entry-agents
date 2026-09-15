@@ -2565,3 +2565,18 @@ re-mocked-globalThis.fetch cases see each other's responses; added
 __resetGatewayModelsCacheForTests() (test-only export, called in
 beforeEach). chat.test.ts fails on clean main too (pre-existing
 'createMcpToolSet' module-resolution error), NOT from this change.
+
+## 2026-09-15 (later): models.dev fetch cache (commit e9109ce)
+
+Second perf finding: every chat page load and /api/models request was
+downloading https://models.dev/api.json (a multi-MB catalog) with a
+750ms abort timeout -- for enrichment that is currently a NO-OP for our
+model IDs (see the MODELS_DEV_URL comment in models-with-context.ts).
+Now cached 6h per serverless instance; empty-map results (fetch
+failures resolve to an empty map) evict immediately so a blip never
+freezes enrichment for 6h. Test-only __resetModelsDevCacheForTests()
+added, called in /api/models route.test beforeEach alongside the
+gateway-models reset. Re-confirmed the repo gotcha the hard way: 3 test
+files in one `bun test` invocation showed 8 false failures (mock.module
+leak) -- all green when run per-file, which is exactly why CI uses
+pnpm test:isolated.

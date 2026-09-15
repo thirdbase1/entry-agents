@@ -2531,6 +2531,10 @@ database CHECK constraint (migration 0043), so the schema.ts enum
 widening needs no migration. Deliberately did NOT port Command Code's
 5h/weekly sub-limit windows -- Entry's per-turn spend cap + hard
 stop-at-zero already bound worst-case exposure to the same class as
-the existing Max tier. Note the ladder asymmetry this creates: GOAT
-($70 credit at $10) now beats Pro ($30 at $15) and equals Max ($70 at
-$35); owner may want to re-tune the upper tiers later.
+the existing Max tier. Note the ladder asymmetry this created: GOAT
+($70 credit at $10) beat Pro ($30 at $15) and matched Max ($70 at $35).
+RESOLVED same day, commit 203b964 (owner approved the re-tune):
+Pro is now $20/mo -> $100 credit (5x) and Max is $40/mo -> $180 credit
+(4.5x), so the ladder strictly increases in absolute credit
+($10 / $70 / $100 / $180) while GOAT keeps the best value-per-dollar
+hook. Pricing-page blurbs updated to match.

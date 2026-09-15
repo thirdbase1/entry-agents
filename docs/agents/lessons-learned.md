@@ -2817,3 +2817,45 @@ Two-part fix (commit 9ec7948, same pricing source as real debits):
   by the next turn's window sums, and MAX_TURN_SPEND caps the whole
   turn. If that ever needs closing, the task tool needs a per-call
   budget hook in the framework.
+
+## 2026-09-15 (final 2): subagent budget guard + reviewer subagent + cap perf
+
+Owner: "make sure all this check doesn't make agent response slow" +
+"build the subagent stuff and create another subagent" (commit e96bdf9).
+
+PERF: the pre-step cap check is O(1) after a turn's first step --
+estimateNextStepInputTokens now takes a LAZY char-count GETTER, so
+JSON.stringify(messages) (5-15ms on big contexts) only runs on step 1
+(no measured baseline); later steps use last step's real inputTokens.
+The check itself is pure in-memory math, zero awaits/DB round-trips.
+
+SUBAGENT REAL-TIME BUDGET (closed the last known bound): framework
+gained SubagentBudgetGuard (packages/agent/types, exported from index)
+-- host-injected via call options (billingGuard), threaded through
+prepareCall into experimental_context. task tool:
+- planSubagent(modelId) before launch -> stop = refuse the launch
+  zero-spend ("Task not started: usage window/credit exhausted");
+  maxOutputTokens = per-STEP output clamp (ToolLoopAgent applies call
+  settings to every internal step).
+- noteSubagentStepUsage after each subagent model step -> host
+  decrements the SAME in-memory window/balance counters as the main
+  model; on trip, task tool aborts via a LOCAL AbortController (parent
+  signal is forwarded, so only the subagent stops, not the turn) and
+  yields the partial summary + "[Budget limit reached...]" message.
+- The host guard (apps/web buildSubagentBudgetGuard) writes NO ledger
+  rows -- durable subagent debit still happens at chat-post-finish,
+  so no double-billing by construction. Same unfiltered
+  fetchModelCostCatalog pricing as everything else.
+- Subagents (explorer/executor/design/reviewer) each accept
+  maxOutputTokens in their callOptionsSchema now.
+
+NEW SUBAGENT: "reviewer" -- read-only (read/grep/glob/bash read-only),
+reviews diffs/branches/files for bugs > security > data integrity >
+tests > consistency; verifies findings by reading call sites; ranks
+severity; never invents findings. Auto-appears in the task tool +
+system prompt via the registry. UI: ShieldCheck icon, "Reviewer" label
+(task-group-view + task-renderer).
+
+Tests: 26 in realtime-spend-cap.test.ts (guard factory + helpers +
+lazy-getter), framework 70 pass. Gotcha hit AGAIN: overriding a mock
+getter must not desync from the state the spendCents mutator uses.

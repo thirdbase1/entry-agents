@@ -6,6 +6,7 @@ import { processChargeSuccess } from "@/lib/billing/process-charge";
 import {
   setPaystackSubscriptionCode,
   findUserIdByPaystackCustomerCode,
+  downgradeToFreeOnSubscriptionEnd,
 } from "@/lib/billing/credit-ledger";
 
 interface PaystackChargeSuccessData {
@@ -21,6 +22,11 @@ interface PaystackSubscriptionCreateData {
   subscription_code: string;
   customer: { customer_code: string };
   plan: { plan_code: string };
+}
+
+interface PaystackSubscriptionDisableData {
+  subscription_code: string;
+  customer?: { customer_code?: string } | null;
 }
 
 async function claimEventOnce(
@@ -118,9 +124,39 @@ export async function POST(req: Request) {
         break;
       }
 
+      case "subscription.disable": {
+        // Subscription ended -- user cancelled, or Paystack gave up
+        // after failed renewal charges (owner report 2026-09-15:
+        // lapsed subscribers previously kept their paid plan forever).
+        // Downgrades the user to Free ONLY when the disabled code is
+        // the one actually stored on their account, so a stale disable
+        // for an old subscription never kicks off a re-subscribed user.
+        const data = event.data as unknown as PaystackSubscriptionDisableData;
+        const eventKey = `subscription.disable:${data.subscription_code}`;
+        const isNew = await claimEventOnce(eventKey, event.event, event.data);
+        if (!isNew) {
+          break;
+        }
+
+        if (data.customer?.customer_code) {
+          const result = await downgradeToFreeOnSubscriptionEnd(
+            data.customer.customer_code,
+            data.subscription_code,
+          );
+          if (!result.downgraded && result.userId) {
+            console.log(
+              "[billing/webhook] subscription.disable for user:",
+              result.userId,
+              "-- code mismatch or already free, no downgrade",
+            );
+          }
+        }
+        break;
+      }
+
       default:
-        // Not-yet-handled event types (subscription.disable,
-        // invoice.payment_failed, etc.) -- acknowledge with 200 so
+        // Not-yet-handled event types (invoice.payment_failed,
+        // subscription.enable, etc.) -- acknowledge with 200 so
         // Paystack doesn't retry; extend here as needed.
         break;
     }

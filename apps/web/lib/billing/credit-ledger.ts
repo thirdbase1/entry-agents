@@ -353,3 +353,67 @@ export async function findUserIdByPaystackCustomerCode(
     .where(eq(users.paystackCustomerCode, customerCode));
   return row?.id ?? null;
 }
+
+/**
+ * End-of-subscription downgrade (subscription.disable webhook).
+ *
+ * Owner report 2026-09-15: "after one month user account doesn't go
+ * back to free" -- the webhook only handled charge.success and
+ * subscription.create, so when a Paystack subscription ended (user
+ * cancels, or Paystack gives up after failed renewal charges), the
+ * users.plan column kept its paid value forever: full model access
+ * with no one paying.
+ *
+ * Guard: only downgrade when the DISABLED subscription_code matches
+ * the one currently stored on the user. Paystack sends subscription
+ * .disable for every ended subscription -- including a previous one
+ * after the user has re-subscribed on a new code -- and that must
+ * never kick them off their active plan.
+ *
+ * Balance is deliberately left untouched: credit is prepaid value
+ * ($1 = $1), so a lapsed subscriber keeps whatever wallet balance
+ * they've already paid for; only plan perks (model access + future
+ * monthly grants) revert to Free.
+ */
+export async function downgradeToFreeOnSubscriptionEnd(
+  customerCode: string,
+  subscriptionCode: string,
+): Promise<{ downgraded: boolean; userId?: string }> {
+  const [row] = await db
+    .select({
+      id: users.id,
+      plan: users.plan,
+      paystackSubscriptionCode: users.paystackSubscriptionCode,
+    })
+    .from(users)
+    .where(eq(users.paystackCustomerCode, customerCode));
+
+  if (!row) {
+    return { downgraded: false };
+  }
+
+  // Policy (shouldDowngradeOnSubscriptionDisable, in plans.ts): a
+  // disable for a subscription the user is no longer on (they
+  // re-subscribed on a new code) never kicks them off, and repeat
+  // deliveries for an already-Free user are a no-op.
+  const shouldDowngrade = (
+    await import("@/lib/billing/plans")
+  ).shouldDowngradeOnSubscriptionDisable(
+    row.plan,
+    row.paystackSubscriptionCode,
+    subscriptionCode,
+  );
+  if (!shouldDowngrade) {
+    return { downgraded: false, userId: row.id };
+  }
+
+  await db
+    .update(users)
+    .set({
+      plan: "free",
+      paystackSubscriptionCode: null,
+    })
+    .where(eq(users.id, row.id));
+
+  return { downgraded: true, userId: row.id };
+}

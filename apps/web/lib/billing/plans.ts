@@ -77,6 +77,31 @@ export interface UsageWindowTotals {
  * rolling window is already at its limit, nearest-reset window first so
  * the error message matches the soonest refill.
  */
+/**
+ * Pure policy for the subscription.disable webhook: should this user be
+ * downgraded to Free? Lives here (not credit-ledger) so it's testable
+ * in bun -- credit-ledger has a server-only import that breaks bun
+ * test runs (same reason findExceededUsageWindow lives here).
+ *
+ * Guards:
+ * - The disabled subscription_code must match the code currently
+ *   stored on the user -- Paystack fires .disable for EVERY ended
+ *   subscription, including a previous one after the user already
+ *   re-subscribed on a new code; that must never kick them off.
+ * - A user already on Free (or with no plan) is a no-op (repeat
+ *   webhook delivery, or a manual change in between).
+ */
+export function shouldDowngradeOnSubscriptionDisable(
+  currentPlan: string | null | undefined,
+  currentSubscriptionCode: string | null | undefined,
+  disabledSubscriptionCode: string,
+): boolean {
+  if (!currentPlan || currentPlan === "free") {
+    return false;
+  }
+  return currentSubscriptionCode === disabledSubscriptionCode;
+}
+
 export function findExceededUsageWindow(
   totals: UsageWindowTotals,
   windows: PlanUsageWindows,

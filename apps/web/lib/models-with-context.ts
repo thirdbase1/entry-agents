@@ -449,12 +449,14 @@ export async function fetchAvailableLanguageModelsWithContext(): Promise<
 }
 
 /**
- * Every language model the gateway knows about, unfiltered by disabled
- * status -- for the admin models page (settings/admin/models), which
- * needs to show (and let an admin re-enable) models that are currently
- * hidden from the regular picker.
+ * Every language model the gateway knows about with models.dev
+ * metadata (context windows), unfiltered by disabled status --
+ * for the ADMIN models page (settings/admin/models, needs the
+ * re-enable toggle) and the PUBLIC /model price page (owner
+ * 2026-09-15: "show all model price" -- a price list is not a
+ * picker, so availability filtering stays picker-only).
  */
-export async function fetchAllLanguageModelsForAdmin(): Promise<
+export async function fetchAllLanguageModelsWithContext(): Promise<
   AvailableModel[]
 > {
   const [models, modelsDevMetadataMap] = await Promise.all([
@@ -466,3 +468,8 @@ export async function fetchAllLanguageModelsForAdmin(): Promise<
     .filter((model) => model.modelType === "language")
     .map((model) => addModelsDevMetadata(model, modelsDevMetadataMap));
 }
+
+/** Backwards-compatible alias -- the admin models page's original name
+ *  for fetchAllLanguageModelsWithContext(). */
+export const fetchAllLanguageModelsForAdmin =
+  fetchAllLanguageModelsWithContext;

@@ -29,6 +29,12 @@ export function LandingFooter() {
                 Pricing
               </Link>
               <Link
+                href="/model"
+                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
+              >
+                Model
+              </Link>
+              <Link
                 href="/benchmarks"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >

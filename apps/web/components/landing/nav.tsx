@@ -17,7 +17,7 @@ export function LandingNav({
   const [scrolled, setScrolled] = useState(false);
   // FIXED 2026-08-17: this nav used to render <SignInButton /> ("Sign in
   // with Vercel") completely unconditionally on every marketing page
-  // that passes showSignIn (/, /pricing, /billing/plans) -- it never
+  // that passes showSignIn (/, /pricing, /model) -- it never
   // checked whether the visitor already had a session, so an already
   // logged-in owner landing on the billing page (e.g. via the sidebar
   // balance pill) still saw a "sign in" prompt instead of their own

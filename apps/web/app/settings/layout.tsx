@@ -77,7 +77,7 @@ const baseSidebarItems = [
   {
     id: "billing",
     label: "Billing",
-    href: "/billing/plans",
+    href: "/pricing",
     icon: CreditCard,
   },
   {

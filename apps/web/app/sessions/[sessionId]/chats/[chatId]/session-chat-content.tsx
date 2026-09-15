@@ -816,7 +816,7 @@ function SandboxInputOverlay({
       <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-md">
         <button
           type="button"
-          onClick={() => router.push("/billing/plans")}
+          onClick={() => router.push("/pricing")}
           className="flex items-center gap-2 rounded-full bg-background px-4 py-2 text-sm font-medium text-foreground shadow-md ring-1 ring-border transition-colors hover:bg-muted"
         >
           <Lock className="h-4 w-4 shrink-0" />
@@ -4627,7 +4627,7 @@ export function SessionChatContent({
                                     FREE_TIER_ALLOWED_MODEL_IDS
                                   }
                                   onUpgradeRequired={() =>
-                                    router.push("/billing/plans")
+                                    router.push("/pricing")
                                   }
                                 />
                               </div>

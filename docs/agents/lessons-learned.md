@@ -2515,3 +2515,22 @@ itself; the AI SDK will happily forward truncated stream garbage. And a
 deterministic 400 that survives ALL Workflow SDK retries is always a
 poisoned-payload bug, not a transient upstream issue -- look at the exact
 responseBody before assuming provider flakiness.
+
+## 2026-09-15: GOAT plan tier (owner request, commit fc762a7)
+
+Owner asked to integrate Command Code's GOAT plan
+(commandcode.ai/docs/plans/goat: $10/mo buys $70 of credits, 7x
+multiplier, the highest of any $10 coding plan) into Entry's billing so
+users can buy it. Implementation: new "goat" PlanId between plus and
+pro in PLAN_CATALOG ($10/mo, creditGrantCents 7000 = 7x, modelAccess
+"all"). NO Paystack plan-code changes needed -- checkout charges as a
+one-off transaction (see checkout/route.ts comment) and the webhook
+applies plan + credit via isPlanId/PLAN_CATALOG, so the tier flows
+through automatically. users.plan is a plain text column with NO
+database CHECK constraint (migration 0043), so the schema.ts enum
+widening needs no migration. Deliberately did NOT port Command Code's
+5h/weekly sub-limit windows -- Entry's per-turn spend cap + hard
+stop-at-zero already bound worst-case exposure to the same class as
+the existing Max tier. Note the ladder asymmetry this creates: GOAT
+($70 credit at $10) now beats Pro ($30 at $15) and equals Max ($70 at
+$35); owner may want to re-tune the upper tiers later.

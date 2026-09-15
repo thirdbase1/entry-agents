@@ -2609,3 +2609,22 @@ says no other Entry plan works this way. Gotcha: findExceededUsageWindow
 initially lived in credit-ledger.ts whose `import "server-only"` breaks
 bun test imports -- pure plan policy belongs in plans.ts, which has no
 server-only guard. 7 tests in lib/billing/usage-windows.test.ts.
+
+## 2026-09-15 (final +1): plan renamed to "Entry" + Entry Windows UI (commit 8c01b78)
+
+Owner request: the windowed plan is publicly named "Entry" (not GOAT).
+Renamed ONLY the display name (PlanDefinition.name) -- the id stays
+"goat" forever because users.plan DB rows, Paystack plan codes and the
+checkout flow all key on the id. Every user-facing surface renders
+plan.name so the rename propagated automatically (billing grid, /api/
+billing/me planName, sidebar plan badge, ledger renewal descriptions);
+window-exceeded chat errors now say "Your Entry plan's ... usage
+window". New UI: /api/billing/me returns usageWindows {fiveHour,
+weekly, monthly: {usedCents, limitCents}} -- NULL for every plan
+without windows, so the exclusivity is enforced at the API level too;
+billing page renders an EntryWindowsCard under the current-plan banner
+(three progress bars, green/red at limit, "refills continuously"
+note); sidebar badge for the goat plan got an emerald style (previously
+fell back to the muted free style). Windows remain enforced ONLY for
+this plan: the pre-turn gate keys on plan.usageWindows which only the
+goat entry defines.

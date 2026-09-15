@@ -11,8 +11,8 @@
  *   app/workflows/chat.ts, which reuses the existing free-tier-gate error
  *   marker/UI for this.
  * - GOAT (added 2026-09-15, owner request): the Command Code GOAT-plan
- *   model integrated into Entry -- a $10/mo tier that grants $70 of
- *   credit per renewal (a 7x bonus, deliberately breaking the flat 2x
+ *   model integrated into Entry -- a $10/mo tier that grants $50 of
+ *   credit per renewal (a 5x bonus, deliberately breaking the flat 2x
  *   rule the other tiers use; it's the volume bait tier that gets users
  *   to upgrade from Plus). Still a single spendable balance: no
  *   Command-Code-style 5h/weekly sub-windows -- Entry's existing
@@ -22,8 +22,8 @@
  *   (including all FreeModel-sourced GPT-5.6 + Claude models once those
  *   routes are enabled on the gateway). They differ only by price and
  *   how much credit each renewal grants. Retuned 2026-09-15 (owner
- *   approved): GOAT's 7x bonus broke the old flat-2x rule -- the ladder
- *   is now Plus $5->$10 (2x), GOAT $10->$70 (7x), Pro $20->$100 (5x),
+ *   approved): GOAT's bonus broke the old flat-2x rule -- the ladder
+ *   is now Plus $5->$10 (2x), GOAT $10->$50 (5x), Pro $20->$100 (5x),
  *   Max $40->$180 (4.5x), strictly increasing in absolute credit. If a paid user's balance hits
  *   zero mid-cycle, they are hard-blocked exactly like the free plan
  *   (composer locked, "You're out of credit") until they top up
@@ -72,7 +72,8 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     id: "goat",
     name: "GOAT",
     priceUsdCents: 1000, // $10/mo
-    creditGrantCents: 7000, // $70 credit (7x) -- Command Code GOAT-style tier
+    creditGrantCents: 5000, // $50 credit (5x) -- Command Code GOAT-style
+    // tier; grant tuned from $70 (7x) to $50 on owner request 2026-09-15
     modelAccess: "all",
     paystackPlanCode: null,
   },
@@ -81,7 +82,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     name: "Pro",
     priceUsdCents: 2000, // $20/mo
     creditGrantCents: 10000, // $100 credit (5x) -- retuned 2026-09-15 so the
-    // ladder stays ordered above GOAT ($10 buys $70); the old 2x $30 grant
+    // ladder stays ordered above GOAT ($10 buys $50); the old 2x $30 grant
     // was strictly dominated by GOAT at two-thirds of the price.
     modelAccess: "all",
     paystackPlanCode: null,
@@ -91,7 +92,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     name: "Max",
     priceUsdCents: 4000, // $40/mo
     creditGrantCents: 18000, // $180 credit (4.5x) -- retuned 2026-09-15,
-    // same reason as Pro: the old $70 grant at $35 was matched by GOAT at $10.
+    // same reason as Pro: the old flat-2x grant at $35 was dominated by GOAT.
     modelAccess: "all",
     paystackPlanCode: null,
   },

@@ -23,7 +23,7 @@ interface BillingMeResponse {
 const PLAN_BLURB: Record<string, string> = {
   free: "Try Entry with GPT-5.6 Luna. $1 trial credit, no card required.",
   plus: "Full model access. $10 of credit every month.",
-  goat: "Best value tier. $10 buys $70 of credit (7x) every month.",
+  goat: "Best value tier. $10 buys $50 of credit (5x) every month.",
   pro: "$100 of credit every month for heavy builders.",
   max: "$180 of credit. Our biggest monthly pool.",
 };

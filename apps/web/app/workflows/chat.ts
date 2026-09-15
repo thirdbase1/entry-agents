@@ -51,6 +51,7 @@ import {
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import { canonicalizeMessageParts } from "@/lib/chat/canonicalize-key-order";
+import { sanitizeMessageToolInputs } from "@/lib/chat/sanitize-tool-inputs";
 import {
   type ChatErrorCategory,
   classifyChatError,
@@ -217,7 +218,8 @@ const convertMessages = async (
   const { webAgent } = await import("@/app/config");
   const dedupedMessages = messages
     .map(dedupeMessageReasoning)
-    .map(canonicalizeMessageParts);
+    .map(canonicalizeMessageParts)
+    .map(sanitizeMessageToolInputs);
   const modelMessages = await convertToModelMessages<WebAgentUIMessage>(
     dedupedMessages,
     {

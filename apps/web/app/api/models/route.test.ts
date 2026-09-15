@@ -84,6 +84,7 @@ const routeModulePromise = import("./route");
 beforeEach(async () => {
   const modelsModule = await import("@/lib/models-with-context");
   modelsModule.__resetGatewayModelsCacheForTests();
+  modelsModule.__resetModelsDevCacheForTests();
 });
 
 afterEach(() => {

@@ -129,7 +129,51 @@ function getModelsDevMetadataMap(
   return metadataMap;
 }
 
+// PERF 2026-09-15: fetchModelsDevMetadataMap() used to hit
+// https://models.dev/api.json (a multi-megabyte JSON catalog) on EVERY
+// chat page load and every /api/models request, paying up to the 750ms
+// abort timeout on the page-load critical path -- for enrichment that is
+// currently a no-op for our catalog (see the MODELS_DEV_URL comment
+// above). The catalog changes at most a few times a day, so cache the
+// successful fetch for 6 hours per serverless instance. Failures are NOT
+// cached (same discipline as the gateway-models cache): a transient
+// models.dev blip just costs the next caller its bounded 750ms, not 6h
+// of stale-empty enrichment.
+const MODELS_DEV_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+let modelsDevCache: {
+  promise: Promise<Map<string, ModelsDevMetadata>>;
+  expiresAt: number;
+} | null = null;
+
+/** Test-only hook: drops the models.dev metadata cache (see above).
+ * Production code must never call this. */
+export function __resetModelsDevCacheForTests(): void {
+  modelsDevCache = null;
+}
+
 async function fetchModelsDevMetadataMap(): Promise<
+  Map<string, ModelsDevMetadata>
+> {
+  const now = Date.now();
+  if (modelsDevCache && modelsDevCache.expiresAt > now) {
+    return modelsDevCache.promise;
+  }
+  const promise = fetchModelsDevMetadataMapUncached();
+  const entry = { promise, expiresAt: now + MODELS_DEV_CACHE_TTL_MS };
+  modelsDevCache = entry;
+  // fetchModelsDevMetadataMapUncached RESOLVES to an empty map on fetch
+  // failure (750ms abort / non-ok / parse error) -- treat that exactly
+  // like a failure: drop the cache entry so the next caller retries
+  // instead of serving 6h of stale-empty enrichment.
+  promise.then((map) => {
+    if (map.size === 0 && modelsDevCache === entry) {
+      modelsDevCache = null;
+    }
+  });
+  return promise;
+}
+
+async function fetchModelsDevMetadataMapUncached(): Promise<
   Map<string, ModelsDevMetadata>
 > {
   const controller = new AbortController();

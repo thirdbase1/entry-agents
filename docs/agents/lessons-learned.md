@@ -2859,3 +2859,26 @@ system prompt via the registry. UI: ShieldCheck icon, "Reviewer" label
 Tests: 26 in realtime-spend-cap.test.ts (guard factory + helpers +
 lazy-getter), framework 70 pass. Gotcha hit AGAIN: overriding a mock
 getter must not desync from the state the spendCents mutator uses.
+
+## 2026-09-15 (final 3): public pricing page swap + all-model price page
+
+Owner: "make plan page public and name to pricing and model pricing
+change to just model and show all model price" (commit 6fdc801).
+
+- Plan catalog (was /billing/plans, title "Plans.") is now the public
+  /pricing page, title "Pricing." -- metadata-bearing server wrapper
+  (app/pricing/page.tsx) + client PlansCatalog (app/pricing/
+  plans-catalog.tsx, the old billing page verbatim). Viewing was
+  already public; the URL now matches the name. Cross-links: pricing
+  page links to /model ("See the price of every model"), /model page
+  links back to /pricing.
+- /billing/plans is a permanent redirect to /pricing (sidebar,
+  in-chat upgrade CTAs, bookmarks, Paystack flows all keep working;
+  in-app router.push sites updated to /pricing directly).
+- Model price table moved /pricing -> /model, title "Pricing." ->
+  "Model." Shows ALL gateway models UNFILTERED (renamed
+  fetchAllLanguageModelsForAdmin -> fetchAllLanguageModelsWithContext
+  with alias; it skips filterDisabledModels) -- including
+  admin-disabled, hard-blocked Mythos/kimi/grok entries. Rationale:
+  a price list is not a picker; availability filtering stays
+  picker-only. Footer gained a "Model" link next to "Pricing".

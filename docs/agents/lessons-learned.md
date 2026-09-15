@@ -2580,3 +2580,13 @@ gateway-models reset. Re-confirmed the repo gotcha the hard way: 3 test
 files in one `bun test` invocation showed 8 false failures (mock.module
 leak) -- all green when run per-file, which is exactly why CI uses
 pnpm test:isolated.
+
+## 2026-09-15 (later still): GOAT grant retune $70 -> $50 (commit 2d2468f)
+
+Owner voice-requested: GOAT's monthly grant is now $50 (5x on the
+$10/mo price), down from $70 (7x). No checkout/Paystack/DB changes
+needed (catalog-driven, same as the original fc762a7 integration).
+Ladder after this: Plus $5->$10 (2x), GOAT $10->$50 (5x), Pro $20->$100
+(5x), Max $40->$180 (4.5x). GOAT stays the best value-per-dollar hook;
+GOAT and Pro now tie on multiplier (5x) but Pro still grants 2x the
+absolute credit for 2x the price.

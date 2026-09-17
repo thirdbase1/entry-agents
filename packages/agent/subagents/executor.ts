@@ -8,6 +8,7 @@ import { bashTool } from "../tools/bash";
 import { globTool } from "../tools/glob";
 import { grepTool } from "../tools/grep";
 import { readFileTool } from "../tools/read";
+import { createReadFileState } from "../tools/read-state";
 import { editFileTool, writeFileTool } from "../tools/write";
 import type { SandboxExecutionContext } from "../types";
 import {
@@ -121,6 +122,12 @@ ${SUBAGENT_REMINDER}`,
       experimental_context: {
         sandbox,
         model,
+        // Read-before-edit gate state (tools/read-state.ts): a fresh
+        // store per subagent run — the subagent must read a file
+        // before editing it, same rule as the main agent. Parent
+        // reads do NOT carry over: the subagent's own view of the
+        // file is what its edits are checked against.
+        readFileState: createReadFileState(),
       },
     };
   },

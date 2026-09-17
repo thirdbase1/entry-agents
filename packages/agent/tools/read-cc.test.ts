@@ -23,6 +23,20 @@ mock.module("@open-agents/sandbox", () => ({
 }));
 
 const { readFileTool } = await import("./read");
+
+type ReadCcResult = {
+  success: boolean;
+  path: string;
+  totalLines: number;
+  startLine: number;
+  endLine: number;
+  contentHash: string;
+  content: string;
+  truncated?: boolean;
+  nextOffset?: number | null;
+  unchanged?: boolean;
+  error?: string;
+};
 const { resetReadDedupStoreForTests } = await import("./read-ceilings");
 
 const workingDirectory = await mkdtemp(path.join(tmpdir(), "read-cc-"));
@@ -32,7 +46,8 @@ function createContext() {
   sandboxRegistry.set(sandboxId, {
     workingDirectory,
     stat: (p: string) => stat(p),
-    readFile: (p: string, encoding: string) => readFile(p, { encoding }),
+    readFile: (p: string, encoding: string) =>
+      readFile(p, { encoding: encoding as "utf-8" }),
   });
 
   return {
@@ -53,14 +68,14 @@ describe("readFileTool Command Code upgrades", () => {
       Array.from({ length: 100 }, (_, i) => `line-${i + 1}`).join("\n"),
       "utf-8",
     );
-    const result = await readFileTool().execute?.(
+    const result = (await readFileTool().execute?.(
       { filePath: p, offset: -10 },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(result).toMatchObject({
       success: true,
       startLine: 91,
@@ -74,14 +89,14 @@ describe("readFileTool Command Code upgrades", () => {
     resetReadDedupStoreForTests();
     const p = path.join(workingDirectory, "bundle.js");
     await writeFile(p, "x".repeat(20_000), "utf-8");
-    const result = await readFileTool().execute?.(
+    const result = (await readFileTool().execute?.(
       { filePath: p },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(result.success).toBe(true);
     expect(result.content).toContain("[line clamped:");
     expect(result.content.length).toBeLessThan(5_000);
@@ -92,35 +107,35 @@ describe("readFileTool Command Code upgrades", () => {
     const p = path.join(workingDirectory, "dedup.txt");
     await writeFile(p, "stable", "utf-8");
 
-    const first = await readFileTool().execute?.(
+    const first = (await readFileTool().execute?.(
       { filePath: p },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(first.content).toContain("stable");
 
-    const second = await readFileTool().execute?.(
+    const second = (await readFileTool().execute?.(
       { filePath: p },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(second.unchanged).toBe(true);
     expect(second.content).toContain("unchanged since your previous read");
 
-    const third = await readFileTool().execute?.(
+    const third = (await readFileTool().execute?.(
       { filePath: p },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(third.content).toContain("stable");
   });
 
@@ -128,14 +143,14 @@ describe("readFileTool Command Code upgrades", () => {
     resetReadDedupStoreForTests();
     const p = path.join(workingDirectory, "empty.txt");
     await writeFile(p, "", "utf-8");
-    const result = await readFileTool().execute?.(
+    const result = (await readFileTool().execute?.(
       { filePath: p },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(result).toMatchObject({ success: true, totalLines: 0 });
     expect(result.content).toContain("empty");
   });
@@ -144,27 +159,27 @@ describe("readFileTool Command Code upgrades", () => {
     resetReadDedupStoreForTests();
     const p = path.join(workingDirectory, "blob.bin");
     await writeFile(p, `text\x00binary\x00junk`, "utf-8");
-    const result = await readFileTool().execute?.(
+    const result = (await readFileTool().execute?.(
       { filePath: p },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(result).toMatchObject({ success: false });
     expect(result.error).toContain("grep -a");
   });
 
   test("device paths are refused before any I/O", async () => {
-    const result = await readFileTool().execute?.(
+    const result = (await readFileTool().execute?.(
       { filePath: "/dev/zero" },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(result).toMatchObject({ success: false });
     expect(result.error).toContain("refused");
   });
@@ -177,14 +192,14 @@ describe("readFileTool Command Code upgrades", () => {
       Array.from({ length: 50 }, (_, i) => `row-${i + 1}`).join("\n"),
       "utf-8",
     );
-    const result = await readFileTool().execute?.(
+    const result = (await readFileTool().execute?.(
       { filePath: p, limit: 10 },
       {
         toolCallId: "tc-1",
         messages: [],
         experimental_context: createContext(),
       } as never,
-    );
+    )) as ReadCcResult;
     expect(result).toMatchObject({
       success: true,
       truncated: true,

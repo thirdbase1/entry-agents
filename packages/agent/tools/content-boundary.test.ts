@@ -1,3 +1,4 @@
+import { describe, expect, it } from "bun:test";
 import {
   EXTERNAL_FILE_CONTENT_CLOSE,
   EXTERNAL_FILE_CONTENT_OPEN,

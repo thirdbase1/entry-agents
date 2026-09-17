@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { wrapExternalFileContent } from "./content-boundary";
+import { ensureReadFileState } from "./read-state";
 import {
   READ_BYTE_CEILING,
   checkUnchangedRead,
@@ -167,16 +168,26 @@ EXAMPLES:
         // agree with what cat -n and other tools see.
         const content = normalizeFileContent(raw);
         const lines = content.split("\n");
+        const displayPath = toDisplayPath(absolutePath, workingDirectory);
+        const contentHash = hashFileContent(content);
+        // Read-gate state (read-state.ts): hash of the FULL file so
+        // partial/tail/empty reads all count as "seen". Attached
+        // lazily when the host (prepareStep / subagents) hasn't.
+        const readState = ensureReadFileState(
+          (experimental_context ?? {}) as { readFileState?: unknown },
+        );
+        readState.set(displayPath, contentHash);
 
         // Empty-file note with recovery (Command Code): an empty read
         // is a success, not an error — the model shouldn't retry.
         if (content.length === 0) {
           return {
             success: true,
-            path: toDisplayPath(absolutePath, workingDirectory),
+            path: displayPath,
             totalLines: 0,
             startLine: 0,
             endLine: 0,
+            contentHash,
             content:
               "This file is empty (0 bytes, 0 lines). Nothing to read — it may be a placeholder or waiting to be written.",
           };
@@ -187,13 +198,13 @@ EXAMPLES:
         // a cheap notice. Consumes itself on hit, so the next read
         // returns full content again.
         const dedupKey = `${workingDirectory}:${absolutePath}`;
-        const contentHash = hashFileContent(content);
         if (checkUnchangedRead(dedupKey, contentHash)) {
           return {
             success: true,
-            path: toDisplayPath(absolutePath, workingDirectory),
+            path: displayPath,
             totalLines: lines.length,
             unchanged: true,
+            contentHash,
             content:
               "File unchanged since your previous read — same content, same size. Read again if you need the full content back.",
           };
@@ -216,15 +227,16 @@ EXAMPLES:
 
         const result: Record<string, unknown> = {
           success: true,
-          path: toDisplayPath(absolutePath, workingDirectory),
+          path: displayPath,
           totalLines: lines.length,
           startLine: selection.startLine,
           endLine: selection.endLine,
+          contentHash,
           // Workspace file content is untrusted data (upstream #875):
           // wrap it in a prompt-injection boundary so instructions
           // embedded in a repo can't masquerade as operator commands.
           content: wrapExternalFileContent(
-            toDisplayPath(absolutePath, workingDirectory),
+            displayPath,
             numberedLines.join("\n"),
           ),
         };

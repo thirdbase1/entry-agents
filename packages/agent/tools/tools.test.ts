@@ -80,6 +80,7 @@ const { MAX_BODY_LENGTH, isAllowedWebUrl, webFetchTool } =
 const { globTool } = await import("./glob");
 const { grepTool } = await import("./grep");
 const { readFileTool } = await import("./read");
+const { hashFileContent } = await import("./read-ceilings");
 const { skillTool } = await import("./skill");
 const { taskTool } = await import("./task");
 const { todoWriteTool } = await import("./todo");
@@ -158,6 +159,8 @@ describe("tools execute behavior", () => {
       totalLines: 3,
       startLine: 2,
       endLine: 3,
+      // Read-gate state hash of the FULL file content (read-state.ts)
+      contentHash: hashFileContent("line-1\nline-2\nline-3"),
       // File content is wrapped in a prompt-injection boundary
       // (upstream #875); the numbered lines live inside it.
       content: wrapExternalFileContent(
@@ -225,6 +228,7 @@ describe("tools execute behavior", () => {
     expect(result).toEqual({
       success: true,
       path: relativePath,
+      contentHash: hashFileContent("hello"),
       bytesWritten: 5,
     });
   });
@@ -234,9 +238,17 @@ describe("tools execute behavior", () => {
     const filePath = path.join(workingDirectory, "src.txt");
     await writeFile(filePath, "alpha\nalpha\nomega", "utf-8");
 
+    // Read gate (read-state.ts): edits require a prior read of the
+    // current on-disk content. One shared context so the read counts.
+    const context = createContext(sandbox);
+    await readFileTool().execute?.(
+      { filePath },
+      executionOptions(context),
+    );
+
     const result = await editFileTool().execute?.(
       { filePath, oldString: "alpha", newString: "beta" },
-      executionOptions(createContext(sandbox)),
+      executionOptions(context),
     );
 
     expect(result).toEqual({
@@ -251,9 +263,17 @@ describe("tools execute behavior", () => {
     const filePath = path.join(workingDirectory, "src.txt");
     await writeFile(filePath, "alpha\nalpha\nomega", "utf-8");
 
+    // Read gate (read-state.ts): edits require a prior read of the
+    // current on-disk content. One shared context so the read counts.
+    const context = createContext(sandbox);
+    await readFileTool().execute?.(
+      { filePath },
+      executionOptions(context),
+    );
+
     const result = await editFileTool().execute?.(
       { filePath, oldString: "alpha", newString: "beta", replaceAll: true },
-      executionOptions(createContext(sandbox)),
+      executionOptions(context),
     );
 
     const content = await readFile(filePath, "utf-8");
@@ -261,6 +281,7 @@ describe("tools execute behavior", () => {
     expect(result).toEqual({
       success: true,
       path: "src.txt",
+      contentHash: hashFileContent("beta\nbeta\nomega"),
       replacements: 2,
       startLine: 1,
     });

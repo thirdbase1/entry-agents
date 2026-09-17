@@ -3,6 +3,11 @@ import { z } from "zod";
 import * as path from "path";
 import { getSandbox, toDisplayPath } from "./utils";
 import {
+  checkReadGate,
+  currentFileHash,
+  ensureReadFileState,
+} from "./read-state";
+import {
   isDotEnvFilePath,
   isSensitiveDotEnvPath,
   resolveSandboxRealPath,
@@ -131,15 +136,51 @@ EXAMPLES:
           };
         }
 
+        // Read gate (read-state.ts): overwriting an existing file
+        // the model has not read in its current version is a blind
+        // write — the worst kind of edit. Creating a new file is free.
+        const readState = ensureReadFileState(
+          (experimental_context ?? {}) as { readFileState?: unknown },
+        );
+        const displayPath = toDisplayPath(absolutePath, workingDirectory);
+        let fileExists = true;
+        try {
+          await sandbox.stat(absolutePath);
+        } catch {
+          fileExists = false;
+        }
+        if (fileExists) {
+          const existingRaw = await sandbox.readFile(absolutePath, "utf-8");
+          const gate = checkReadGate(
+            readState,
+            displayPath,
+            currentFileHash(existingRaw),
+            "write",
+          );
+          if (!gate.ok) {
+            return {
+              success: false,
+              error: gate.message,
+              gate: gate.reason,
+            };
+          }
+        }
+
         const dir = path.dirname(absolutePath);
         await sandbox.mkdir(dir, { recursive: true });
         await sandbox.writeFile(absolutePath, content, "utf-8");
+
+        // The write itself is the newest "seen" version — record it
+        // so a following edit never demands a redundant re-read.
+        const contentHash = currentFileHash(content);
+        readState.set(displayPath, contentHash);
 
         const stats = await sandbox.stat(absolutePath);
 
         return {
           success: true,
-          path: toDisplayPath(absolutePath, workingDirectory),
+          path: displayPath,
+          contentHash,
           bytesWritten: stats.size,
         };
       } catch (error) {
@@ -259,6 +300,28 @@ EXAMPLES:
 
         const content = await sandbox.readFile(absolutePath, "utf-8");
 
+        // Read gate (read-state.ts): the model may only edit a file
+        // it has read in its current version. Never-read files,
+        // failed reads, and stale reads (external bash/git changes)
+        // are all refused with a recovery instruction.
+        const readState = ensureReadFileState(
+          (experimental_context ?? {}) as { readFileState?: unknown },
+        );
+        const displayPath = toDisplayPath(absolutePath, workingDirectory);
+        const gate = checkReadGate(
+          readState,
+          displayPath,
+          currentFileHash(content),
+          "edit",
+        );
+        if (!gate.ok) {
+          return {
+            success: false,
+            error: gate.message,
+            gate: gate.reason,
+          };
+        }
+
         if (!content.includes(oldString)) {
           return {
             success: false,
@@ -285,9 +348,15 @@ EXAMPLES:
 
         await sandbox.writeFile(absolutePath, newContent, "utf-8");
 
+        // The edit itself is the newest "seen" version — record it
+        // so consecutive edits never demand redundant re-reads.
+        const contentHash = currentFileHash(newContent);
+        readState.set(displayPath, contentHash);
+
         return {
           success: true,
-          path: toDisplayPath(absolutePath, workingDirectory),
+          path: displayPath,
+          contentHash,
           replacements: replaceAll ? occurrences : 1,
           startLine,
         };

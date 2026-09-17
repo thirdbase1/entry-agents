@@ -1,7 +1,7 @@
 DO $$ BEGIN
  CREATE TABLE IF NOT EXISTS "compaction_events" (
   "id" text PRIMARY KEY NOT NULL,
-  "user_id" text NOT NULL REFERENCES "users"."id" ON DELETE CASCADE,
+  "user_id" text NOT NULL REFERENCES "users" ("id") ON DELETE CASCADE,
   "chat_id" text,
   "session_id" text,
   "model_id" text,

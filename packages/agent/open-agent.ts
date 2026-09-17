@@ -3,6 +3,11 @@ import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
 import { addCacheControl, maybeCompactMessages } from "./context-management";
 import {
+  createReadFileState,
+  rebuildReadFileState,
+  type ReadFileState,
+} from "./tools/read-state";
+import {
   type SharedProviderModelId,
   createInertPlaceholderModel,
   sharedProvider,
@@ -165,12 +170,33 @@ export const openAgent = new ToolLoopAgent({
   tools,
   stopWhen: stepCountIs(1),
   callOptionsSchema,
-  prepareStep: ({ messages, model, steps: _steps }) => {
+  prepareStep: ({ messages, model, steps: _steps, experimental_context }) => {
+    // Read-before-edit gate state (tools/read-state.ts): re-derived
+    // from the message history on EVERY model step so it survives
+    // refresh, resume, and workflow suspend/resume with no separate
+    // storage to drift (the persisted read/edit/write outputs carry
+    // contentHash; history IS the state). The same Map instance is
+    // reused across steps so live in-turn updates from the tools
+    // persist alongside the replay.
+    const context = (experimental_context ?? {}) as {
+      readFileState?: unknown;
+    };
+    let readFileState: ReadFileState | undefined =
+      context.readFileState instanceof Map ? context.readFileState : undefined;
+    if (!readFileState) {
+      readFileState = createReadFileState();
+    }
+    rebuildReadFileState(messages, readFileState);
+
     return {
       messages: addCacheControl({
         messages: maybeCompactMessages({ messages, model }),
         model,
       }),
+      experimental_context: {
+        ...context,
+        readFileState,
+      },
     };
   },
   prepareCall: ({ options, ...settings }) => {

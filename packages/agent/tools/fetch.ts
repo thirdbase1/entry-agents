@@ -413,9 +413,10 @@ EXAMPLES:
       const output = result.stdout ?? "";
       // Output shape: [preview body]\n[status]\n[size]
       const lines = output.split("\n");
-      const sizeText = lines.length >= 1 ? lines[lines.length - 1].trim() : "";
+      const sizeText =
+        lines.length >= 1 ? (lines[lines.length - 1] ?? "").trim() : "";
       const statusText =
-        lines.length >= 2 ? lines[lines.length - 2].trim() : "";
+        lines.length >= 2 ? (lines[lines.length - 2] ?? "").trim() : "";
       const responseBody =
         lines.length >= 2 ? lines.slice(0, -2).join("\n") : output;
       const status = /^\d+$/.test(statusText) ? parseInt(statusText, 10) : null;

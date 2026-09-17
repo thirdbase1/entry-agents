@@ -794,6 +794,71 @@ export async function upsertChatMessageScoped(
   });
 }
 
+/**
+ * Atomic final-assistant persist (upstream open-agents #845).
+ *
+ * Persists the assistant message AND conditionally clears the chat's
+ * activeStreamId in ONE transaction, so there is no window where the
+ * message is durable but the chat still looks "streaming". In the old
+ * two-step flow, a page refresh landing in that window re-attached to
+ * the finished workflow and replayed the response into the transcript
+ * (duplicate response on refresh).
+ *
+ * The clear is a compare-and-set against workflowRunId: a newer
+ * workflow that legitimately owns the slot is never clobbered by a
+ * late-finishing older one.
+ */
+export async function upsertChatMessageAndClearActiveStream(
+  data: NewChatMessage,
+  workflowRunId: string,
+): Promise<UpsertChatMessageScopedResult> {
+  return db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(chatMessages)
+      .values(data)
+      .onConflictDoNothing({ target: chatMessages.id })
+      .returning();
+
+    let status: UpsertChatMessageScopedResult["status"] = "inserted";
+    let message: typeof chatMessages.$inferSelect | undefined = inserted;
+
+    if (!inserted) {
+      const [updated] = await tx
+        .update(chatMessages)
+        .set({ parts: data.parts })
+        .where(
+          and(
+            eq(chatMessages.id, data.id),
+            eq(chatMessages.chatId, data.chatId),
+            eq(chatMessages.role, data.role),
+          ),
+        )
+        .returning();
+
+      if (updated) {
+        status = "updated";
+        message = updated;
+      } else {
+        status = "conflict";
+      }
+    }
+
+    if (status !== "conflict") {
+      // CAS-clear inside the SAME transaction as the upsert.
+      await tx
+        .update(chats)
+        .set({ activeStreamId: null })
+        .where(
+          and(eq(chats.id, data.chatId), eq(chats.activeStreamId, workflowRunId)),
+        );
+    }
+
+    return status === "conflict"
+      ? { status }
+      : { status, message: message! };
+  });
+}
+
 export async function getChatMessageById(messageId: string) {
   return db.query.chatMessages.findFirst({
     where: eq(chatMessages.id, messageId),

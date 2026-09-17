@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolNeedsApprovalFunction } from "./utils";
+import { wrapExternalFileContent } from "./content-boundary";
 
 const sandboxRegistry = new Map<string, Record<string, unknown>>();
 
@@ -157,7 +158,12 @@ describe("tools execute behavior", () => {
       totalLines: 3,
       startLine: 2,
       endLine: 3,
-      content: "2: line-2\n3: line-3",
+      // File content is wrapped in a prompt-injection boundary
+      // (upstream #875); the numbered lines live inside it.
+      content: wrapExternalFileContent(
+        "notes.txt",
+        "2: line-2\n3: line-3",
+      ),
     });
   });
 
@@ -500,7 +506,7 @@ describe("tools execute behavior", () => {
         return {
           success: false,
           exitCode: 23,
-          stdout: `${responseBody}\n200`,
+          stdout: `${responseBody}\n200\n${MAX_BODY_LENGTH + 5000}`,
           stderr: "",
           truncated: false,
         };
@@ -519,10 +525,14 @@ describe("tools execute behavior", () => {
 
     expect(executedCommand).toContain("curl");
     expect(executedCommand).toContain(`head -c ${MAX_BODY_LENGTH}`);
+    // The full body must be saved to a deterministic sandbox file
+    // (upstream #781 / PR #813) and its path surfaced to the agent.
+    expect(executedCommand).toContain(".open-harness/web-fetch/fetch-");
     expect(result).toMatchObject({
       success: true,
       status: 200,
       truncated: true,
+      savedTo: expect.stringContaining(".open-harness/web-fetch/fetch-"),
     });
 
     const body =

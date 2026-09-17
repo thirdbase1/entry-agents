@@ -1,8 +1,13 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { getSandbox, shellEscape } from "./utils";
+import {
+  WEB_FETCH_BODY_DIR,
+  buildWebFetchBodyFileName,
+} from "./web-fetch-body";
+import { getToolTimeoutMs } from "./tool-timeouts";
 
-const TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 export const MAX_BODY_LENGTH = 10_000;
 
 type Ipv4Address = [number, number, number, number];
@@ -279,6 +284,10 @@ const fetchOutputSchema = z.union([
     status: z.number().int().nullable(),
     body: z.string(),
     truncated: z.boolean(),
+    // When the body was truncated, the FULL response is persisted to
+    // this sandbox path (upstream #781 / PR #813) so the agent can
+    // grep/read it instead of losing it or blowing up the context.
+    savedTo: z.string().optional(),
   }),
   z.object({
     success: z.literal(false),
@@ -307,7 +316,8 @@ USAGE:
 - Make HTTP requests to external URLs
 - Supports GET, POST, PUT, PATCH, DELETE, and HEAD methods
 - Returns the response status and body text
-- Body is truncated to ${MAX_BODY_LENGTH} characters to avoid overwhelming context
+- Body is truncated to ${MAX_BODY_LENGTH} characters to protect the context window
+- When truncated, the FULL body is saved to a file and its path is returned in savedTo — use grep or read on that file for the rest instead of re-fetching
 
 EXAMPLES:
 - Simple GET: url: "https://api.example.com/data"
@@ -336,6 +346,18 @@ EXAMPLES:
       };
     }
 
+    // Configurable per-tool timeout (upstream #798):
+    // TOOL_TIMEOUT_WEB_FETCH_MS overrides the 30s default.
+    const timeoutMs = getToolTimeoutMs("web_fetch", DEFAULT_TIMEOUT_MS);
+
+    // Upstream #781 / PR #813: save the FULL body to a sandbox file
+    // (deterministic per-URL name, so re-fetches overwrite rather than
+    // accumulate), then stream only the first MAX_BODY_LENGTH characters
+    // into stdout (and thus into the model's context). Size is reported
+    // after the status so we know whether the preview was truncated.
+    const bodyFileName = buildWebFetchBodyFileName(url);
+    const bodyFilePath = `${WEB_FETCH_BODY_DIR}/${bodyFileName}`;
+
     const args: string[] = [
       "curl",
       "-sS",
@@ -346,9 +368,9 @@ EXAMPLES:
       "-X",
       method,
       "--max-time",
-      String(Math.ceil(TIMEOUT_MS / 1000)),
+      String(Math.ceil(timeoutMs / 1000)),
       "-o",
-      `>(head -c ${MAX_BODY_LENGTH} >&3)`,
+      shellEscape(bodyFilePath),
       "-w",
       shellEscape("%{http_code}"),
     ];
@@ -366,16 +388,18 @@ EXAMPLES:
     args.push(shellEscape(url));
 
     const command = [
-      "exec 3>&1",
+      `mkdir -p ${shellEscape(WEB_FETCH_BODY_DIR)}`,
       `status=$(${args.join(" ")})`,
       "curlExit=$?",
-      "exec 3>&-",
+      `size=$(wc -c < ${shellEscape(bodyFilePath)} 2>/dev/null || printf 0)`,
+      `head -c ${MAX_BODY_LENGTH} ${shellEscape(bodyFilePath)}`,
       "printf '\\n%s' \"$status\"",
+      "printf '\\n%s' \"$size\"",
       "exit $curlExit",
     ].join("\n");
 
     try {
-      const result = await sandbox.exec(command, workingDirectory, TIMEOUT_MS, {
+      const result = await sandbox.exec(command, workingDirectory, timeoutMs + 5_000, {
         signal: abortSignal,
       });
 
@@ -387,18 +411,23 @@ EXAMPLES:
       }
 
       const output = result.stdout ?? "";
-      const lastNewline = output.lastIndexOf("\n");
+      // Output shape: [preview body]\n[status]\n[size]
+      const lines = output.split("\n");
+      const sizeText = lines.length >= 1 ? lines[lines.length - 1].trim() : "";
       const statusText =
-        lastNewline !== -1 ? output.slice(lastNewline + 1).trim() : "";
+        lines.length >= 2 ? lines[lines.length - 2].trim() : "";
       const responseBody =
-        lastNewline !== -1 ? output.slice(0, lastNewline) : output;
+        lines.length >= 2 ? lines.slice(0, -2).join("\n") : output;
       const status = /^\d+$/.test(statusText) ? parseInt(statusText, 10) : null;
+      const size = /^\d+$/.test(sizeText) ? parseInt(sizeText, 10) : responseBody.length;
+      const truncated = result.exitCode === 23 || size > MAX_BODY_LENGTH;
 
       return {
         success: true,
         status,
         body: responseBody,
-        truncated: result.exitCode === 23,
+        truncated,
+        ...(truncated ? { savedTo: bodyFilePath } : {}),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

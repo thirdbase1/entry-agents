@@ -1,5 +1,19 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { wrapExternalFileContent } from "./content-boundary";
+import {
+  READ_BYTE_CEILING,
+  checkUnchangedRead,
+  type SelectedLines as SelectedLinesResult,
+  clampLine,
+  hashFileContent,
+  isDevicePath,
+  isLikelyBinary,
+  normalizeFileContent,
+  recordRead,
+  selectLines,
+  applyByteCeiling,
+} from "./read-ceilings";
 import { getSandbox, toDisplayPath } from "./utils";
 import {
   isDotEnvFilePath,
@@ -17,7 +31,9 @@ const readInputSchema = z.object({
   offset: z
     .number()
     .optional()
-    .describe("Line number to start reading from (1-indexed)"),
+    .describe(
+      "Line number to start reading from (1-indexed). NEGATIVE reads the tail: offset=-50 returns the last 50 lines. When a previous read was truncated it returns nextOffset — pass that here to continue exactly where it stopped.",
+    ),
   limit: z
     .number()
     .optional()
@@ -72,6 +88,10 @@ USAGE:
 - Paths are resolved from the workspace root
 - By default reads up to 2000 lines starting from line 1
 - Use offset and limit for long files (both are line-based, 1-indexed)
+- Negative offset reads the tail: offset=-50 is the last 50 lines
+- Three ceilings protect the context window: 2000 lines, 128KB per read, and 2000 chars per line (over-long lines are clamped with a visible marker)
+- If the file was cut, the result includes nextOffset — pass it as the next offset to resume exactly where it stopped
+- Re-reading an UNCHANGED file returns a cheap "unchanged" notice instead of the full content; read again for the full content
 - Results include line numbers starting at 1 in "N: content" format
 
 IMPORTANT:
@@ -91,6 +111,17 @@ EXAMPLES:
       const workingDirectory = sandbox.workingDirectory;
 
       try {
+        // Refuse device and virtual file paths before any I/O
+        // (Command Code read tool: /dev/zero and friends are infinite or
+        // live streams — reading them wedges or floods the sandbox).
+        if (isDevicePath(filePath)) {
+          return {
+            success: false,
+            error:
+              "Device and virtual file paths (e.g. /dev/zero, /proc/N/fd) are refused. Read the real file on disk instead — if you need a stream's content, save it to a file first with bash redirection.",
+          };
+        }
+
         const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
         if (!absolutePath) {
           return {
@@ -119,23 +150,100 @@ EXAMPLES:
           };
         }
 
-        const content = await sandbox.readFile(absolutePath, "utf-8");
-        const lines = content.split("\n");
-        const startLine = Math.max(1, offset) - 1;
-        const endLine = Math.min(lines.length, startLine + limit);
-        const selectedLines = lines.slice(startLine, endLine);
+        const raw = await sandbox.readFile(absolutePath, "utf-8");
 
-        const numberedLines = selectedLines.map(
-          (line, i) => `${startLine + i + 1}: ${line}`,
+        // Magic-byte sniff (never the extension): a NUL byte in the
+        // head means this is not text — return a recovery note instead
+        // of flooding the context with binary garbage.
+        if (isLikelyBinary(raw)) {
+          return {
+            success: false,
+            error:
+              "This file looks binary (not text). Use bash with `grep -a`, `strings`, or a specific extraction command to pull out the parts you need instead of reading it whole.",
+          };
+        }
+
+        // BOM stripped, CRLF normalized — so line numbers and offsets
+        // agree with what cat -n and other tools see.
+        const content = normalizeFileContent(raw);
+        const lines = content.split("\n");
+
+        // Empty-file note with recovery (Command Code): an empty read
+        // is a success, not an error — the model shouldn't retry.
+        if (content.length === 0) {
+          return {
+            success: true,
+            path: toDisplayPath(absolutePath, workingDirectory),
+            totalLines: 0,
+            startLine: 0,
+            endLine: 0,
+            content:
+              "This file is empty (0 bytes, 0 lines). Nothing to read — it may be a placeholder or waiting to be written.",
+          };
+        }
+
+        // Unchanged-read dedup (Command Code): re-reading a file that
+        // has not changed since the immediately previous read returns
+        // a cheap notice. Consumes itself on hit, so the next read
+        // returns full content again.
+        const dedupKey = `${workingDirectory}:${absolutePath}`;
+        const contentHash = hashFileContent(content);
+        if (checkUnchangedRead(dedupKey, contentHash)) {
+          return {
+            success: true,
+            path: toDisplayPath(absolutePath, workingDirectory),
+            totalLines: lines.length,
+            unchanged: true,
+            content:
+              "File unchanged since your previous read — same content, same size. Read again if you need the full content back.",
+          };
+        }
+        recordRead(dedupKey, contentHash);
+
+        // Three ceilings: line window (offset/limit, negative = tail),
+        // per-line clamp (minified bundles), byte budget (logs).
+        let selection: SelectedLinesResult & { nextOffset?: number | null } =
+          selectLines(lines, { offset, limit });
+        const clamped = selection.lines.map((line) => clampLine(line));
+        selection = applyByteCeiling({
+          ...selection,
+          lines: clamped.map((c) => c.line),
+        });
+
+        const numberedLines = selection.lines.map(
+          (line, i) => `${selection.startLine + i}: ${line}`,
         );
 
-        return {
+        const result: Record<string, unknown> = {
           success: true,
           path: toDisplayPath(absolutePath, workingDirectory),
           totalLines: lines.length,
-          startLine: startLine + 1,
-          endLine,
-          content: numberedLines.join("\n"),
+          startLine: selection.startLine,
+          endLine: selection.endLine,
+          // Workspace file content is untrusted data (upstream #875):
+          // wrap it in a prompt-injection boundary so instructions
+          // embedded in a repo can't masquerade as operator commands.
+          content: wrapExternalFileContent(
+            toDisplayPath(absolutePath, workingDirectory),
+            numberedLines.join("\n"),
+          ),
+        };
+
+        if (selection.truncated) {
+          result.truncated = true;
+          result.nextOffset = selection.nextOffset;
+        }
+
+        return result as {
+          success: boolean;
+          path: string;
+          totalLines: number;
+          startLine: number;
+          endLine: number;
+          content: string;
+          truncated?: boolean;
+          nextOffset?: number | null;
+          unchanged?: boolean;
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

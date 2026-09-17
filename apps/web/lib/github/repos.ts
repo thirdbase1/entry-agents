@@ -67,6 +67,42 @@ function compareRepositoriesByRecentActivity(
   return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
 }
 
+export interface FilterRepositoriesOptions {
+  owner?: string;
+  query?: string;
+  limit?: number;
+}
+
+/**
+ * Pure local filter over a (possibly cached) repository list. Extracted
+ * so the repo index cache (upstream #840) can serve query/owner/limit
+ * filtering without another GitHub API round-trip.
+ */
+export function filterRepositories(
+  repos: InstallationRepository[],
+  { owner, query, limit }: FilterRepositoriesOptions = {},
+): InstallationRepository[] {
+  const ownerFilter = owner?.trim().toLowerCase();
+  const queryFilter = query?.trim().toLowerCase();
+  const normalizedLimit = normalizeLimit(limit);
+
+  const filtered = repos.filter((repo) => {
+    const matchesOwner = ownerFilter
+      ? repo.full_name.split("/")[0]?.toLowerCase() === ownerFilter
+      : true;
+
+    const matchesQuery = queryFilter
+      ? repo.name.toLowerCase().includes(queryFilter) ||
+        repo.full_name.toLowerCase().includes(queryFilter)
+      : true;
+
+    return matchesOwner && matchesQuery;
+  });
+
+  filtered.sort(compareRepositoriesByRecentActivity);
+  return filtered.slice(0, normalizedLimit);
+}
+
 /**
  * List repositories accessible to the user through a specific GitHub App
  * installation. Uses the user's OAuth token so GitHub computes the

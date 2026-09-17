@@ -1,9 +1,10 @@
 import { tool } from "ai";
+import { getToolTimeoutMs } from "./tool-timeouts";
 import { z } from "zod";
 import { getSandbox, reconnectSandboxAfterMigration } from "./utils";
 import { resolveBashWorkingDirectory } from "./cwd-security";
 
-const TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 const bashInputSchema = z.object({
   command: z.string().describe("The bash command to execute"),
@@ -172,7 +173,11 @@ EXAMPLES:
         }
       }
 
-      const result = await sandbox.exec(command, workingDir, TIMEOUT_MS, {
+      // Configurable per-tool timeout (upstream #798):
+      // TOOL_TIMEOUT_BASH_MS overrides the 120s default.
+      const timeoutMs = getToolTimeoutMs("bash", DEFAULT_TIMEOUT_MS);
+
+      const result = await sandbox.exec(command, workingDir, timeoutMs, {
         signal: abortSignal,
       });
 
@@ -191,7 +196,7 @@ EXAMPLES:
           const retryResult = await freshSandbox.exec(
             command,
             workingDir,
-            TIMEOUT_MS,
+            timeoutMs,
             { signal: abortSignal },
           );
           return {

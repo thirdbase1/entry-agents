@@ -12,6 +12,7 @@ import {
   updateSession,
   isFirstChatMessage,
   upsertChatMessageScoped,
+  upsertChatMessageAndClearActiveStream,
   updateChatAssistantActivity,
 } from "@/lib/db/sessions";
 import {
@@ -201,6 +202,42 @@ export async function persistAssistantMessage(
     }
   } catch (error) {
     console.error("[workflow] Failed to persist assistant message:", error);
+  }
+}
+
+/**
+ * Atomic final persist (upstream open-agents #845): the assistant
+ * message and the activeStreamId clear commit together in one
+ * transaction, closing the refresh-replay window between them.
+ */
+export async function persistFinalAssistantMessage(
+  chatId: string,
+  message: WebAgentUIMessage,
+  workflowRunId: string,
+): Promise<void> {
+  "use step";
+
+  try {
+    const dedupedMessage = dedupeMessageReasoning(message);
+    const result = await upsertChatMessageAndClearActiveStream(
+      {
+        id: dedupedMessage.id,
+        chatId,
+        role: "assistant",
+        parts: dedupedMessage,
+      },
+      workflowRunId,
+    );
+
+    if (result.status === "conflict") {
+      console.warn(
+        `[workflow] Skipped assistant upsert due to ID scope conflict: ${message.id}`,
+      );
+    } else if (result.status === "inserted") {
+      await updateChatAssistantActivity(chatId, new Date());
+    }
+  } catch (error) {
+    console.error("[workflow] Failed to persist final assistant message:", error);
   }
 }
 

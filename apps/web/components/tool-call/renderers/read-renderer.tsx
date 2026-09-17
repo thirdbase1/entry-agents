@@ -26,7 +26,25 @@ export function ReadRenderer({
   const filePath =
     rawFilePath === "..." ? rawFilePath : toRelativePath(rawFilePath, cwd);
 
-  const output = part.state === "output-available" ? part.output : undefined;
+  // The read tool returns a union of success / recovery-note /
+  // unchanged / error shapes (Command Code read-tool model), so view it
+  // through a permissive shape instead of the full union.
+  const output = part.state === "output-available"
+    ? (part.output as
+        | {
+            success: boolean;
+            path?: string;
+            totalLines?: number;
+            startLine?: number;
+            endLine?: number;
+            content?: string;
+            error?: string;
+            truncated?: boolean;
+            nextOffset?: number | null;
+            unchanged?: boolean;
+          }
+        | undefined)
+    : undefined;
   const totalLines = output?.totalLines;
   const startLine = output?.startLine;
   const endLine = output?.endLine;

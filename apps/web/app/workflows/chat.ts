@@ -47,6 +47,7 @@ import {
   clearActiveStream,
   releaseUserBillingTurnStep,
   hasAutoCommitChangesStep,
+  persistFinalAssistantMessage,
   persistAssistantMessage,
   persistAssistantMessageWithToolResults,
   persistSandboxState,
@@ -2056,8 +2057,15 @@ export async function runAgentWorkflow(options: Options) {
 
     // Persist completed model output before post-finish work so it is not lost
     // if later automation fails. Sandbox state can persist in parallel.
+    // This final persist ALSO clears activeStreamId in the same
+    // transaction (upstream open-agents #845) — atomic, so a refresh can
+    // never replay the response into the transcript a second time.
     await Promise.all([
-      persistAssistantMessage(options.chatId, pendingAssistantResponse),
+      persistFinalAssistantMessage(
+        options.chatId,
+        pendingAssistantResponse,
+        workflowRunId,
+      ),
       ...(sandboxState
         ? [persistSandboxState(options.sessionId, sandboxState)]
         : []),

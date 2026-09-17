@@ -770,4 +770,33 @@ export const composioSessions = pgTable("composio_sessions", {
 });
 
 export type ComposioSessionRow = typeof composioSessions.$inferSelect;
+
+/**
+ * Cached per-user GitHub repository index (upstream open-agents #840 /
+ * #792). The full repo list for a GitHub App installation is fetched
+ * ONCE, stored here, and served from the DB with local filtering until
+ * the TTL expires — instead of paging api.github.com on every repo
+ * selector keystroke (their 30s secondary rate limit is trivially hit
+ * that way).
+ */
+export const githubRepoIndex = pgTable(
+  "github_repo_index",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    installationId: integer("installation_id").notNull(),
+    repos: jsonb("repos").$type<unknown[]>().notNull(),
+    fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("github_repo_index_user_installation_idx").on(
+      t.userId,
+      t.installationId,
+    ),
+  ],
+);
+
+export type GithubRepoIndexRow = typeof githubRepoIndex.$inferSelect;
 export type NewComposioSessionRow = typeof composioSessions.$inferInsert;

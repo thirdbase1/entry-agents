@@ -7,6 +7,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -523,6 +524,35 @@ export const usageEvents = pgTable("usage_events", {
   toolCallCount: integer("tool_call_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Compaction telemetry — one row per auto-compaction firing (append-only).
+// Added 2026-09-17: the owner suspected compaction never fires in
+// production; these rows make every firing admin-visible (when it fired,
+// on which chat/model, and how many tokens it actually saved). Written
+// from chat.ts's compaction sink (see packages/agent compaction-telemetry).
+export const compactionEvents = pgTable("compaction_events", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  chatId: text("chat_id"),
+  sessionId: text("session_id"),
+  modelId: text("model_id"),
+  preCompactTokens: integer("pre_compact_tokens").notNull(),
+  postCompactTokens: integer("post_compact_tokens").notNull(),
+  contextWindowTokens: integer("context_window_tokens").notNull(),
+  threshold: real("threshold").notNull(),
+  compactedToolCalls: integer("compacted_tool_calls").notNull().default(0),
+  compactedAnonymousToolResults: integer(
+    "compacted_anonymous_tool_results",
+  )
+    .notNull()
+    .default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("compaction_events_created_at_idx").on(t.createdAt),
+  index("compaction_events_chat_id_idx").on(t.chatId),
+]);
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;

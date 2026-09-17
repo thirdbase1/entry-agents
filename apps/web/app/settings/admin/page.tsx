@@ -1,6 +1,7 @@
 "use client";
 
 import { AdminActivityChart } from "./admin-activity-chart";
+import { AdminCompactionSection } from "./admin-compaction-section";
 import { AdminModelHealthSection } from "./admin-model-health-section";
 import { AdminPlatformStatsSection } from "./admin-platform-stats-section";
 import { AdminUsageSection } from "./admin-usage-section";
@@ -20,6 +21,8 @@ export default function AdminPage() {
       </div>
 
       <AdminUsageSection />
+
+      <AdminCompactionSection />
     </div>
   );
 }

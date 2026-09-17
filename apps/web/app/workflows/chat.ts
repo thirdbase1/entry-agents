@@ -12,12 +12,14 @@ import {
 import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
+  runWithCompactionSink,
   type GithubApiResult,
   type GithubRawCliResult,
   type OpenAgentCallOptions,
   type VercelApiResult,
   type VercelCliToolResult,
 } from "@open-agents/agent";
+import { recordCompactionEvent } from "@/lib/db/compaction";
 import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -1902,24 +1904,39 @@ export async function runAgentWorkflow(options: Options) {
       };
 
       try {
-        result = await runAgentStep(
-          modelMessages,
-          originalMessagesForStep,
-          assistantId,
-          writable,
-          workflowRunId,
-          options.chatId,
-          options.sessionId,
-          options.userId,
-          runtime.sessionTitle,
-          selectedModelId,
-          modelId,
-          stepAgentOptions,
-          step + 1,
-          modelCostCatalog,
-          remainingBalanceCents,
-          modelRuntime.enforceCreditBlock,
-          remainingWindowBudgetCents,
+        // COMPACT TELEMETRY SCOPE (2026-09-17): every auto-compaction
+        // firing inside this step (main model or a subagent it launches)
+        // reports through this sink into the compaction_events analytics
+        // table. Scoped per STEP, not per turn, so a workflow
+        // suspend/resume between steps can never lose the AsyncLocalStorage
+        // context. Fire-and-forget inside the sink -- telemetry can never
+        // break the model step (see compaction-telemetry.ts).
+        result = await runWithCompactionSink(
+          (event) =>
+            recordCompactionEvent(event, {
+              userId: options.userId,
+              chatId: options.chatId,
+              sessionId: options.sessionId,
+            }),
+          () => runAgentStep(
+            modelMessages,
+            originalMessagesForStep,
+            assistantId,
+            writable,
+            workflowRunId,
+            options.chatId,
+            options.sessionId,
+            options.userId,
+            runtime.sessionTitle,
+            selectedModelId,
+            modelId,
+            stepAgentOptions,
+            step + 1,
+            modelCostCatalog,
+            remainingBalanceCents,
+            modelRuntime.enforceCreditBlock,
+            remainingWindowBudgetCents,
+          ),
         );
       } catch (error) {
         if (isStepTimingError(error)) {

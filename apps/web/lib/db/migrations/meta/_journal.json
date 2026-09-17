@@ -393,6 +393,13 @@
       "when": 1789478582314,
       "tag": "0055_happy_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789647273795,
+      "tag": "0056_compaction_telemetry",
+      "breakpoints": true
     }
   ]
 }

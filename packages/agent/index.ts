@@ -77,3 +77,12 @@ export {
   collectTaskToolUsageEvents,
   sumLanguageModelUsage,
 } from "./usage";
+export {
+  runWithCompactionSink,
+  emitCompactionEvent,
+} from "./context-management/compaction-telemetry";
+export type { CompactionEvent } from "./context-management/compaction-telemetry";
+export {
+  AUTO_COMPACT_THRESHOLD,
+  PROTECTED_RECENT_MESSAGES,
+} from "./context-management/auto-compact";

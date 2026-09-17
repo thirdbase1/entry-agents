@@ -9,3 +9,8 @@ export {
   getContextWindowForModel,
   DEFAULT_CONTEXT_WINDOW,
 } from "./context-windows";
+export {
+  runWithCompactionSink,
+  emitCompactionEvent,
+} from "./compaction-telemetry";
+export type { CompactionEvent } from "./compaction-telemetry";

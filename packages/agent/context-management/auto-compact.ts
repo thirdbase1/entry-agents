@@ -5,15 +5,25 @@ import {
   indexToolCalls,
 } from "./aggressive-compaction-helpers";
 import { getContextWindowForModel } from "./context-windows";
+import { emitCompactionEvent } from "./compaction-telemetry";
 
 /**
  * Fraction of the model's context window that, once crossed, triggers
- * auto-compaction of older tool call/result payloads. Comparable to
- * Claude Code's auto-compact (which fires around ~90-95%); we trigger a
- * bit earlier since Entry's window is also shared with the system prompt,
- * skills, and (for some turns) a subagent call.
+ * auto-compaction of older tool call/result payloads.
+ *
+ * OWNER CHANGE 2026-09-17: raised 0.8 -> 0.95 ("increase compaction 95%")
+ * to match Claude Code's own auto-compact firing point (~90-95%) and keep
+ * full, un-summarized tool context available as deep into the window as
+ * safely possible. TRADE-OFF, accepted by owner, from production data:
+ * Entry's observed per-step contexts sit around ~170K tokens (~67% of
+ * qwen3.8-flash's 256K window), so at either threshold compaction fires
+ * only on the longest-running turns -- every firing is now recorded and
+ * admin-visible (see compaction-telemetry.ts + compaction_events table),
+ * so the behavior is finally observable rather than assumed. If token
+ * spend from long turns grows, lowering this (or adding an absolute
+ * early-compaction floor) is the single biggest lever.
  */
-export const AUTO_COMPACT_THRESHOLD = 0.8;
+export const AUTO_COMPACT_THRESHOLD = 0.95;
 
 /**
  * Fixed token buffer for everything that fills the context window but
@@ -165,6 +175,21 @@ export function maybeCompactMessages({
       (compactedTokens / contextWindow) * 100,
     )}% of ${contextWindow}).`,
   );
+
+  // ADMIN TELEMETRY (2026-09-17): report this firing to the web app's
+  // compaction_events analytics table via the AsyncLocalStorage sink set
+  // up by chat.ts. No-ops when no sink is in scope (e.g. tests, non-web
+  // callers) and never blocks or breaks the model step.
+  emitCompactionEvent({
+    preCompactTokens: estimatedTokens,
+    postCompactTokens: compactedTokens,
+    contextWindowTokens: contextWindow,
+    threshold: AUTO_COMPACT_THRESHOLD,
+    compactedToolCalls: pendingCandidates.pendingToolCallKeys.size,
+    compactedAnonymousToolResults:
+      pendingCandidates.pendingAnonymousToolResults,
+    modelId: getModelId(model),
+  });
 
   return compacted;
 }

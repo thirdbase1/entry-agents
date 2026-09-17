@@ -37,6 +37,10 @@ import {
   getAdminPlatformUsageOverview,
   type AdminPlatformUsageOverview,
 } from "@/lib/db/admin-usage";
+import {
+  getCompactionEligibleTurnCount,
+  getCompactionOverview,
+} from "@/lib/db/compaction";
 import { db } from "@/lib/db/client";
 import {
   accounts,
@@ -697,4 +701,23 @@ export async function listAdminBenchmarkRuns(
 ): Promise<BenchmarkRunWithProgress[]> {
   await requireAdmin();
   return listRecentBenchmarkRunsWithProgress(limit);
+}
+
+/**
+ * Compaction activity overview for the admin dashboard (owner request
+ * 2026-09-17: "build compaction usage on the admin side -- cause am
+ * thinking compaction doesn't work"). Pairs the recorded compaction
+ * firings against the count of turns whose estimated per-step context
+ * was already big enough that compaction COULD have fired -- so "zero
+ * events" can be told apart from "compaction broken".
+ */
+export async function getAdminCompactionOverview(days = 30) {
+  await requireAdmin();
+
+  const [overview, eligibleTurns] = await Promise.all([
+    getCompactionOverview(days),
+    getCompactionEligibleTurnCount(days),
+  ]);
+
+  return { ...overview, eligibleTurns };
 }

@@ -1,5 +1,18 @@
 # Lessons Learned
 
+## 2026-09-17 — upstream adoption pass + Command Code read tool (commit bc85b73)
+
+- Upstream triage of vercel-labs/open-agents: our fork had ALREADY fixed 5 items (#891 workflow beta pin, #800 sandbox-failure relaunch, #735/#736 unknown modelType 500s, #545/#804 rs_* reasoning replay poisoning). This pass adopted the remaining high-value ones:
+  - #845: atomic final assistant persist — message upsert + activeStreamId CAS-clear in ONE transaction (upsertChatMessageAndClearActiveStream); closes the refresh-replay window that duplicated responses.
+  - #840/#792: cached per-user GitHub repo index (github_repo_index table, 10min TTL, migration 0057) + pure filterRepositories + last-used-repo boost. No more per-keystroke GitHub paging (their 30s secondary rate limit).
+  - #781/#813: web_fetch full-body persistence to a deterministic sandbox file (.open-harness/web-fetch/fetch-<hash>) + savedTo in the result; truncated previews no longer lose data.
+  - #875: content boundary wrapper (wrapExternalFileContent) around read-tool output — repo content is untrusted data, not instructions.
+  - #798-style: universal 25s tool timeout wrapper; ssh -o ConnectTimeout=8 kills infinite DNS stalls; pre-flight mkdir in fetch persistence.
+- Command Code read tool (commandcode.ai/docs/eng/read-tool) adopted into packages/agent/tools/read.ts + read-ceilings.ts: three ceilings (2000 lines / 128KB / 2000 chars per line with visible clamp marker), negative offset tail reads, precomputed nextOffset on truncation, unchanged-read dedup that consumes itself on hit, magic-byte binary sniff with grep -a recovery note, empty-file success note, device-path refusal (/dev/*, /proc/N/fd) before any I/O, BOM strip + CRLF normalize. 20 new tests.
+- GOTCHA: `array.map(clampLine)` passes the array INDEX as the second arg (maxChars) — lines got clamped to index-many chars. Always wrap unary fns: `.map((l) => clampLine(l))`.
+- Compaction-hash research (owner asked): "compaction hash" as a term belongs to etcd, not agent harnesses. The real mechanism the owner remembered: compaction state is MODEL-BOUND. (a) pi/oh-my-pi native compaction replay requires a matching provider/model — switching models makes an existing compaction payload unusable, so the harness re-compacts (pi docs: "Model switches affect subsequent checks and compactions"). (b) Claude Code re-evaluates the auto-compact threshold against the ACTIVE model's window — switching mid-session to a smaller-window model can instantly cross the threshold and fire a compact. (c) oh-my-pi context promotion does the opposite on overflow: switch to a BIGGER model to avoid compacting. ENTRY IMPLICATION: our AUTO_COMPACT_THRESHOLD (0.95 of window) is evaluated per-turn against the current model's window, so a mid-chat switch from e.g. 256k to 128k can trip compaction on the very next turn. Deliberate behavior, same as upstream.
+
+
 Hard-won knowledge from building this codebase. When you make a mistake or discover a non-obvious behavior, add it here.
 
 ## General / Tooling

@@ -12,14 +12,12 @@ import {
 import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
-  runWithCompactionSink,
   type GithubApiResult,
   type GithubRawCliResult,
   type OpenAgentCallOptions,
   type VercelApiResult,
   type VercelCliToolResult,
 } from "@open-agents/agent";
-import { recordCompactionEvent } from "@/lib/db/compaction";
 import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -520,7 +518,6 @@ async function resolveChatModelRuntime(params: {
           : "You're out of credit -- add more to keep chatting.",
       );
     }
-
   } else {
     // Admins are never blocked on BALANCE, but their usage is still
     // billed (see runAgentStep) -- fetch their balance too so it stays
@@ -532,7 +529,8 @@ async function resolveChatModelRuntime(params: {
     const { getPlanDefinition } = await import("@/lib/billing/plans");
     const billingState = await getUserBillingState(params.userId);
     startingBalanceCents = billingState?.creditBalanceCents ?? 0;
-    planUsageWindows = getPlanDefinition(billingState?.plan).usageWindows ?? null;
+    planUsageWindows =
+      getPlanDefinition(billingState?.plan).usageWindows ?? null;
   }
 
   // Entry Windows (2026-09-15, shared gate): rolling 5-hour / weekly /
@@ -545,9 +543,8 @@ async function resolveChatModelRuntime(params: {
   // (refill-soon vs top-up wording) and an admin's balance privileges
   // don't accidentally re-enable a balance block they're exempt from.
   if (planUsageWindows) {
-    const { getUsageWindowTotals } = await import(
-      "@/lib/billing/credit-ledger"
-    );
+    const { getUsageWindowTotals } =
+      await import("@/lib/billing/credit-ledger");
     const { findExceededUsageWindow } = await import("@/lib/billing/plans");
     const totals = await getUsageWindowTotals(params.userId);
     const exceeded = findExceededUsageWindow(totals, planUsageWindows);
@@ -1905,39 +1902,29 @@ export async function runAgentWorkflow(options: Options) {
       };
 
       try {
-        // COMPACT TELEMETRY SCOPE (2026-09-17): every auto-compaction
-        // firing inside this step (main model or a subagent it launches)
-        // reports through this sink into the compaction_events analytics
-        // table. Scoped per STEP, not per turn, so a workflow
-        // suspend/resume between steps can never lose the AsyncLocalStorage
-        // context. Fire-and-forget inside the sink -- telemetry can never
-        // break the model step (see compaction-telemetry.ts).
-        result = await runWithCompactionSink(
-          (event) =>
-            recordCompactionEvent(event, {
-              userId: options.userId,
-              chatId: options.chatId,
-              sessionId: options.sessionId,
-            }),
-          () => runAgentStep(
-            modelMessages,
-            originalMessagesForStep,
-            assistantId,
-            writable,
-            workflowRunId,
-            options.chatId,
-            options.sessionId,
-            options.userId,
-            runtime.sessionTitle,
-            selectedModelId,
-            modelId,
-            stepAgentOptions,
-            step + 1,
-            modelCostCatalog,
-            remainingBalanceCents,
-            modelRuntime.enforceCreditBlock,
-            remainingWindowBudgetCents,
-          ),
+        // COMPACT TELEMETRY SCOPE (2026-09-17): the sink wraps the model
+        // stream INSIDE runAgentStep ("use step"), not here in the
+        // workflow function -- see runAgentStep for why (the Workflow
+        // SDK's restricted bundle rejects the module graphs the sink's
+        // static imports would pull in from workflow scope).
+        result = await runAgentStep(
+          modelMessages,
+          originalMessagesForStep,
+          assistantId,
+          writable,
+          workflowRunId,
+          options.chatId,
+          options.sessionId,
+          options.userId,
+          runtime.sessionTitle,
+          selectedModelId,
+          modelId,
+          stepAgentOptions,
+          step + 1,
+          modelCostCatalog,
+          remainingBalanceCents,
+          modelRuntime.enforceCreditBlock,
+          remainingWindowBudgetCents,
         );
       } catch (error) {
         if (isStepTimingError(error)) {
@@ -2724,136 +2711,165 @@ const runAgentStep = async (
       fullAgentOptions.extraTools = mcpToolSet.tools;
     }
 
-    const result = await webAgent.stream({
-      messages,
-      options: spendCap.maxOutputTokens
-        ? { ...fullAgentOptions, maxOutputTokens: spendCap.maxOutputTokens }
-        : fullAgentOptions,
-      abortSignal: abortController.signal,
-    });
+    // COMPACT TELEMETRY SCOPE (moved inside this "use step" function
+    // 2026-09-17): every auto-compaction firing inside this step (main
+    // model or a subagent it launches) reports through this sink into
+    // the compaction_events analytics table. This wrapping used to live
+    // in the workflow function body around the runAgentStep call, but
+    // the Workflow SDK's restricted "use workflow" bundle rejects the
+    // module graphs the sink's imports pull in from workflow scope
+    // (node:async_hooks from the agent package, postgres/nanoid from
+    // lib/db/compaction -- and transitively the whole agent package).
+    // Dynamic imports + wrapping the stream consumption here keeps
+    // every emitCompactionEvent firing inside the sink while staying
+    // step-scoped. Scoped per STEP, not per turn, so a workflow
+    // suspend/resume between steps can never lose the AsyncLocalStorage
+    // context. Fire-and-forget inside the sink -- telemetry can never
+    // break the model step (see compaction-telemetry.ts).
+    const { runWithCompactionSink } = await import("@open-agents/agent");
+    const { recordCompactionEvent } = await import("@/lib/db/compaction");
 
-    for await (const part of result.toUIMessageStream<WebAgentUIMessage>({
-      originalMessages,
-      generateMessageId: () => messageId,
-      sendStart: false,
-      sendFinish: false,
-      // Never let raw provider/gateway error text (Opencode Zen, upstream
-      // model APIs, etc.) reach the client as an in-stream "error" chunk --
-      // route it through the same sanitizer used for setup/transport
-      // failures below.
-      onError: toFriendlyChatErrorText,
-      messageMetadata: ({ part: streamPart }) => {
-        if (streamPart.type === "finish-step") {
-          lastStepUsage = streamPart.usage;
-          if (streamPart.usage) {
-            totalMessageUsage = totalMessageUsage
-              ? addLanguageModelUsage(totalMessageUsage, streamPart.usage)
-              : streamPart.usage;
-          }
-          const stepCost = estimateStepCost(
-            streamPart.providerMetadata,
-            modelId,
-            streamPart.usage,
-            modelCostCatalog,
-          );
-          if (stepCost !== undefined) {
-            lastStepCost = stepCost;
-            totalMessageCost = (totalMessageCost ?? 0) + stepCost;
+    const result = await runWithCompactionSink(
+      (event) =>
+        recordCompactionEvent(event, {
+          userId,
+          chatId,
+          sessionId,
+        }),
+      async () => {
+        const stream = await webAgent.stream({
+          messages,
+          options: spendCap.maxOutputTokens
+            ? { ...fullAgentOptions, maxOutputTokens: spendCap.maxOutputTokens }
+            : fullAgentOptions,
+          abortSignal: abortController.signal,
+        });
 
-            const stepCostCents = Math.round(stepCost * 100);
-            if (stepCostCents > 0) {
-              // Fire the ledger write now (queued, flushed before this
-              // step function returns) -- see the pendingDebits comment
-              // above for why this can't simply be awaited right here.
-              pendingDebits.push(
-                (async () => {
-                  const { debitUsage } =
-                    await import("@/lib/billing/credit-ledger");
-                  try {
-                    await debitUsage(userId, stepCostCents, {
-                      modelId,
-                      description: `Usage: ${modelId}`,
-                    });
-                  } catch (error) {
-                    console.error(
-                      "[workflow] Failed to debit credit ledger in real time:",
-                      error,
-                    );
-                  }
-                })(),
+        for await (const part of stream.toUIMessageStream<WebAgentUIMessage>({
+          originalMessages,
+          generateMessageId: () => messageId,
+          sendStart: false,
+          sendFinish: false,
+          // Never let raw provider/gateway error text (Opencode Zen, upstream
+          // model APIs, etc.) reach the client as an in-stream "error" chunk --
+          // route it through the same sanitizer used for setup/transport
+          // failures below.
+          onError: toFriendlyChatErrorText,
+          messageMetadata: ({ part: streamPart }) => {
+            if (streamPart.type === "finish-step") {
+              lastStepUsage = streamPart.usage;
+              if (streamPart.usage) {
+                totalMessageUsage = totalMessageUsage
+                  ? addLanguageModelUsage(totalMessageUsage, streamPart.usage)
+                  : streamPart.usage;
+              }
+              const stepCost = estimateStepCost(
+                streamPart.providerMetadata,
+                modelId,
+                streamPart.usage,
+                modelCostCatalog,
               );
+              if (stepCost !== undefined) {
+                lastStepCost = stepCost;
+                totalMessageCost = (totalMessageCost ?? 0) + stepCost;
 
-              if (enforceCreditBlock) {
-                remainingBalanceCents -= stepCostCents;
-                if (remainingBalanceCents <= 0 && !creditExhausted) {
-                  creditExhausted = true;
-                  // Stop the model mid-turn the instant the balance is
-                  // spent -- the outer step loop (runAgentWorkflow) also
-                  // checks `creditExhausted` on the returned result so it
-                  // never starts another (now-unaffordable) step.
-                  abortController.abort();
+                const stepCostCents = Math.round(stepCost * 100);
+                if (stepCostCents > 0) {
+                  // Fire the ledger write now (queued, flushed before this
+                  // step function returns) -- see the pendingDebits comment
+                  // above for why this can't simply be awaited right here.
+                  pendingDebits.push(
+                    (async () => {
+                      const { debitUsage } =
+                        await import("@/lib/billing/credit-ledger");
+                      try {
+                        await debitUsage(userId, stepCostCents, {
+                          modelId,
+                          description: `Usage: ${modelId}`,
+                        });
+                      } catch (error) {
+                        console.error(
+                          "[workflow] Failed to debit credit ledger in real time:",
+                          error,
+                        );
+                      }
+                    })(),
+                  );
+
+                  if (enforceCreditBlock) {
+                    remainingBalanceCents -= stepCostCents;
+                    if (remainingBalanceCents <= 0 && !creditExhausted) {
+                      creditExhausted = true;
+                      // Stop the model mid-turn the instant the balance is
+                      // spent -- the outer step loop (runAgentWorkflow) also
+                      // checks `creditExhausted` on the returned result so it
+                      // never starts another (now-unaffordable) step.
+                      abortController.abort();
+                    }
+                  }
+
+                  // Entry-plan rolling usage windows: a SEPARATE in-memory
+                  // counter, decremented for windowed users regardless of
+                  // admin (owner request 2026-09-15) -- admins are exempt
+                  // from the balance block above but NOT from windows.
+                  // Aborting here marks windowExhausted so the client says
+                  // "window refills continuously", never "top up".
+                  if (remainingWindowBudgetCents !== null && !windowExhausted) {
+                    remainingWindowBudgetCents -= stepCostCents;
+                    if (remainingWindowBudgetCents <= 0) {
+                      windowExhausted = true;
+                      abortController.abort();
+                    }
+                  }
+
+                  // Per-turn cost circuit-breaker: independent of the
+                  // account-balance check above, never let one turn spend
+                  // past MAX_TURN_SPEND_CENTS. totalMessageCost already
+                  // accumulates across every step of this turn (see its
+                  // declaration above), including steps from earlier calls
+                  // to runAgentStep for this same message.
+                  if (
+                    !turnSpendCapped &&
+                    Math.round((totalMessageCost ?? 0) * 100) >=
+                      MAX_TURN_SPEND_CENTS
+                  ) {
+                    turnSpendCapped = true;
+                    abortController.abort();
+                  }
                 }
               }
-
-              // Entry-plan rolling usage windows: a SEPARATE in-memory
-              // counter, decremented for windowed users regardless of
-              // admin (owner request 2026-09-15) -- admins are exempt
-              // from the balance block above but NOT from windows.
-              // Aborting here marks windowExhausted so the client says
-              // "window refills continuously", never "top up".
-              if (remainingWindowBudgetCents !== null && !windowExhausted) {
-                remainingWindowBudgetCents -= stepCostCents;
-                if (remainingWindowBudgetCents <= 0) {
-                  windowExhausted = true;
-                  abortController.abort();
-                }
-              }
-
-              // Per-turn cost circuit-breaker: independent of the
-              // account-balance check above, never let one turn spend
-              // past MAX_TURN_SPEND_CENTS. totalMessageCost already
-              // accumulates across every step of this turn (see its
-              // declaration above), including steps from earlier calls
-              // to runAgentStep for this same message.
-              if (
-                !turnSpendCapped &&
-                Math.round((totalMessageCost ?? 0) * 100) >=
-                  MAX_TURN_SPEND_CENTS
-              ) {
-                turnSpendCapped = true;
-                abortController.abort();
-              }
+              stepFinishReasons = [
+                ...stepFinishReasons,
+                {
+                  finishReason: streamPart.finishReason,
+                  rawFinishReason: streamPart.rawFinishReason,
+                },
+              ];
+              return {
+                selectedModelId,
+                modelId,
+                lastStepUsage,
+                totalMessageUsage,
+                lastStepCost,
+                totalMessageCost,
+                lastStepFinishReason: streamPart.finishReason,
+                lastStepRawFinishReason: streamPart.rawFinishReason,
+                stepFinishReasons,
+              } satisfies WebAgentMessageMetadata;
             }
-          }
-          stepFinishReasons = [
-            ...stepFinishReasons,
-            {
-              finishReason: streamPart.finishReason,
-              rawFinishReason: streamPart.rawFinishReason,
-            },
-          ];
-          return {
-            selectedModelId,
-            modelId,
-            lastStepUsage,
-            totalMessageUsage,
-            lastStepCost,
-            totalMessageCost,
-            lastStepFinishReason: streamPart.finishReason,
-            lastStepRawFinishReason: streamPart.rawFinishReason,
-            stepFinishReasons,
-          } satisfies WebAgentMessageMetadata;
+            return undefined;
+          },
+          onFinish: ({ responseMessage: finishedResponseMessage }) => {
+            responseMessage = finishedResponseMessage;
+          },
+        })) {
+          const writer = writable.getWriter();
+          await writer.write(part);
+          writer.releaseLock();
         }
-        return undefined;
+        return stream;
       },
-      onFinish: ({ responseMessage: finishedResponseMessage }) => {
-        responseMessage = finishedResponseMessage;
-      },
-    })) {
-      const writer = writable.getWriter();
-      await writer.write(part);
-      writer.releaseLock();
-    }
+    );
 
     if (responseMessage == null) {
       throw new Error("Agent stream finished without a response message");

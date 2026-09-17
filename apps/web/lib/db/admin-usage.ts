@@ -30,6 +30,7 @@ export interface AdminPlatformUsageOverview {
   totalActiveUsers: number;
   totalEvents: number;
   totalInputTokens: number;
+  totalCachedInputTokens: number;
   totalOutputTokens: number;
   totalEstimatedCostUsd: number;
   /** True if any usage fell under a model missing from the cost catalog. */
@@ -119,6 +120,7 @@ export async function getAdminPlatformUsageOverview(
 
   let totalEvents = 0;
   let totalInputTokens = 0;
+  let totalCachedInputTokens = 0;
   let totalOutputTokens = 0;
   let totalEstimatedCostUsd = 0;
   let hasUnpricedUsage = false;
@@ -127,6 +129,7 @@ export async function getAdminPlatformUsageOverview(
     activeUserIds.add(row.userId);
     totalEvents += 1;
     totalInputTokens += row.inputTokens;
+    totalCachedInputTokens += row.cachedInputTokens;
     totalOutputTokens += row.outputTokens;
 
     // Priced per-event, on this event's own token counts -- see the
@@ -213,6 +216,7 @@ export async function getAdminPlatformUsageOverview(
     totalActiveUsers: activeUserIds.size,
     totalEvents,
     totalInputTokens,
+    totalCachedInputTokens,
     totalOutputTokens,
     totalEstimatedCostUsd,
     hasUnpricedUsage,

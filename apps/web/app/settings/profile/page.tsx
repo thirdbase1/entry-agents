@@ -346,6 +346,7 @@ function ProfileSidebar({
 }: {
   totals: {
     inputTokens: number;
+    cachedInputTokens: number;
     outputTokens: number;
     messageCount: number;
     toolCallCount: number;
@@ -419,6 +420,10 @@ function ProfileSidebar({
           </h3>
           <div className="rounded-lg border border-border/50 bg-muted/10 px-4 py-1 divide-y divide-border/50">
             <StatItem label="Total tokens" value={formatTokens(totalTokens)} />
+            <StatItem
+              label="Cache read"
+              value={formatTokens(totals.cachedInputTokens)}
+            />
             <StatItem label="Estimated cost" value={estimatedCostValue} />
             <StatItem
               label="Messages"

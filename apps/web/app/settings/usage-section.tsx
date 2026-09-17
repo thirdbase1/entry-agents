@@ -691,8 +691,17 @@ export function UsageSection() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
-            <StatBlock label="Total tokens" value={formatTokens(totalTokens)} />
+          <div className="grid gap-3 min-[420px]:grid-cols-2 xl:grid-cols-5">
+            <StatBlock
+              label="Total tokens"
+              value={formatTokens(totalTokens)}
+              detail={`${formatTokens(totals.inputTokens)} input · ${formatTokens(totals.outputTokens)} output`}
+            />
+            <StatBlock
+              label="Cache read"
+              value={formatTokens(totals.cachedInputTokens)}
+              detail="Included in input total"
+            />
             <StatBlock
               label="Estimated cost"
               value={costEstimateValue}

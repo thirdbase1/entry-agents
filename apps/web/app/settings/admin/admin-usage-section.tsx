@@ -104,7 +104,7 @@ export function AdminUsageSection() {
               value={formatTokens(
                 data.totalInputTokens + data.totalOutputTokens,
               )}
-              description={`${formatTokens(data.totalInputTokens)} in / ${formatTokens(data.totalOutputTokens)} out`}
+              description={`${formatTokens(data.totalInputTokens)} in · ${formatTokens(data.totalCachedInputTokens)} cached · ${formatTokens(data.totalOutputTokens)} out`}
             />
             <AdminStatCard
               label="Estimated spend"
@@ -144,7 +144,7 @@ export function AdminUsageSection() {
                         {formatTokens(
                           model.totalInputTokens + model.totalOutputTokens,
                         )}{" "}
-                        tokens
+                        tokens · {formatTokens(model.totalCachedInputTokens)} cached
                       </p>
                     </div>
                     <p className="shrink-0 tabular-nums text-muted-foreground">

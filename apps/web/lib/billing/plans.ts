@@ -13,7 +13,7 @@
  * - GOAT (added 2026-09-15, owner request; publicly NAMED "Entry" since
  *   same-day owner request -- the id stays "goat" forever): the Command
  *   Code GOAT-plan
- *   model integrated into Entry -- a $10/mo tier that grants $50 of
+ *   model integrated into Entry -- a $13/mo tier that grants $50 of
  *   credit per renewal (a 5x bonus, deliberately breaking the flat 2x
  *   rule the other tiers use; it's the volume bait tier that gets users
  *   to upgrade from Plus). Still a single spendable balance: no
@@ -25,7 +25,7 @@
  *   routes are enabled on the gateway). They differ only by price and
  *   how much credit each renewal grants. Retuned 2026-09-15 (owner
  *   approved): GOAT's bonus broke the old flat-2x rule -- the ladder
- *   is now Plus $5->$10 (2x), GOAT $10->$50 (5x), Pro $20->$100 (5x),
+ *   is now Plus $5->$10 (2x), GOAT $13->$50, Pro $20->$100 (5x),
  *   Max $40->$180 (4.5x), strictly increasing in absolute credit. If a paid user's balance hits
  *   zero mid-cycle, they are hard-blocked exactly like the free plan
  *   (composer locked, "You're out of credit") until they top up
@@ -236,7 +236,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     // forever -- users.plan rows in the DB, Paystack plan codes and the
     // checkout flow all key on the id, never the display name.
     name: "Entry",
-    priceUsdCents: 1000, // $10/mo
+    priceUsdCents: 1300, // $13/mo
     creditGrantCents: 5000, // $50 credit (5x) -- Command Code GOAT-style
     // tier; grant tuned from $70 (7x) to $50 on owner request 2026-09-15
     modelAccess: "all",
@@ -254,7 +254,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     name: "Pro",
     priceUsdCents: 2000, // $20/mo
     creditGrantCents: 10000, // $100 credit (5x) -- retuned 2026-09-15 so the
-    // ladder stays ordered above GOAT ($10 buys $50); the old 2x $30 grant
+    // ladder stays ordered above GOAT ($13 buys $50); the old 2x $30 grant
     // was strictly dominated by GOAT at two-thirds of the price.
     modelAccess: "all",
     paystackPlanCode: null,

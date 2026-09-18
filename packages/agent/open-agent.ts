@@ -44,6 +44,13 @@ import {
 export interface AgentModelSelection {
   id: SharedProviderModelId;
   providerOptionsOverrides?: ProviderOptionsByProvider;
+  /**
+   * Live context_window from Entry's gateway model catalog. The agent
+   * package keeps a conservative static fallback for non-web hosts/tests,
+   * but the production web app passes the gateway value so new models do
+   * not require a second hardcoded context-window entry here.
+   */
+  contextWindow?: number;
 }
 
 export type OpenAgentModelInput = SharedProviderModelId | AgentModelSelection;
@@ -180,6 +187,7 @@ export const openAgent = new ToolLoopAgent({
     // persist alongside the replay.
     const context = (experimental_context ?? {}) as {
       readFileState?: unknown;
+      contextWindow?: number;
     };
     let readFileState: ReadFileState | undefined =
       context.readFileState instanceof Map ? context.readFileState : undefined;
@@ -253,6 +261,7 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
+        contextWindow: mainSelection.contextWindow,
         permissionMode: options.permissionMode ?? "ask",
         github: options.github,
         vercel: options.vercel,

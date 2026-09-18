@@ -96,15 +96,25 @@ function getModelId(model: LanguageModel): string {
 export function maybeCompactMessages({
   messages,
   model,
+  contextWindowOverride,
 }: {
   messages: ModelMessage[];
   model: LanguageModel;
+  /**
+   * Live context_window supplied by the host's model catalog. This takes
+   * precedence over the conservative fallback table so adding a model to
+   * the gateway is enough to teach compaction its real window.
+   */
+  contextWindowOverride?: number;
 }): ModelMessage[] {
   if (messages.length <= PROTECTED_RECENT_MESSAGES) {
     return messages;
   }
 
-  const contextWindow = getContextWindowForModel(getModelId(model));
+  const contextWindow = getContextWindowForModel(
+    getModelId(model),
+    contextWindowOverride,
+  );
   // See SYSTEM_AND_TOOLS_OVERHEAD_TOKENS above -- without this, the check
   // below only ever sees the visible message transcript and silently
   // ignores the system prompt + tool schemas that are also part of every

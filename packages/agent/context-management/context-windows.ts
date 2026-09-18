@@ -87,7 +87,13 @@ const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-5.6-terra": 1_050_000,
   "gpt-5.6-luna": 1_050_000,
   "kimi-k3": 256_000,
-  "deepseek-v4-flash": 128_000,
+  // Safe fallback only. Production normally supplies the gateway's live
+  // context_window, but keeping the current official DeepSeek Flash family
+  // here prevents a transient gateway-catalog failure from regressing this
+  // model to the generic 128k fallback.
+  "deepseek-v4.1-flash:free": 1_000_000,
+  "deepseek-v4-flash:free": 1_000_000,
+  "deepseek-v4-flash": 1_000_000,
   "deepseek-v4-pro": 128_000,
   "deepseek-v4-flash-vision-exp": 1_000_000,
   "glm-5.2": 200_000,
@@ -114,11 +120,30 @@ const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
 const PREFIX_CONTEXT_WINDOWS: Array<[string, number]> = [
   ["claude", 200_000],
   ["kimi", 256_000],
+  // DeepSeek's current Flash family is 1M. The live gateway value still
+  // wins when available; these family fallbacks only protect hosts/catalog
+  // outages and newly suffixed Flash IDs.
+  ["deepseek-v4.1-flash", 1_000_000],
+  ["deepseek-v4-flash", 1_000_000],
 ];
 
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
 
-export function getContextWindowForModel(modelId: string): number {
+export function getContextWindowForModel(
+  modelId: string,
+  runtimeContextWindow?: number,
+): number {
+  // The gateway is the runtime source of truth. Hosts that have a live
+  // gateway catalog can pass the exact context_window here, so new models
+  // never need a second entry in this package's fallback table.
+  if (
+    typeof runtimeContextWindow === "number" &&
+    Number.isFinite(runtimeContextWindow) &&
+    runtimeContextWindow > 0
+  ) {
+    return Math.floor(runtimeContextWindow);
+  }
+
   const known = KNOWN_CONTEXT_WINDOWS[modelId];
   if (known) return known;
 

@@ -57,10 +57,11 @@
  *     "under-estimating is safe, over-estimating risks a hard error"
  *     philosophy. Revisit if this can be confirmed against FreeModel
  *     directly.
- *   - deepseek-v4-flash, deepseek-v4-pro: left at 128k -- conflicting/
- *     unclear public info on whether these specific route names get
- *     DeepSeek's newer 1M-context variant or the older 128k one, so kept
- *     the safe low number rather than guess.
+ *   - DeepSeek V4.1 Flash / legacy V4 Flash routes: the live gateway
+ *     context_window is authoritative. The current official DeepSeek Flash
+ *     API is 1M, and these fallbacks are now 1M so a transient catalog
+ *     failure cannot regress the Flash family to the generic 128k default.
+ *     V4 Pro remains 128k here as a conservative fallback.
  *   - glm-5.3-flash: B.AI's own model listing (the provider this app
  *     routes glm-5.3-flash through) -- 1,000,000. Was missing from this
  *     table entirely and silently fell back to DEFAULT_CONTEXT_WINDOW

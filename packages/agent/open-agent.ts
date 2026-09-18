@@ -198,7 +198,11 @@ export const openAgent = new ToolLoopAgent({
 
     return {
       messages: addCacheControl({
-        messages: maybeCompactMessages({ messages, model }),
+        messages: maybeCompactMessages({
+          messages,
+          model,
+          contextWindowOverride: context.contextWindow,
+        }),
         model,
       }),
       experimental_context: {

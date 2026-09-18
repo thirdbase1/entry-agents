@@ -132,6 +132,42 @@ type ChatModelRuntime = {
 
 type Writable = WritableStream<UIMessageChunk>;
 
+function attachLiveModelContextWindow(
+  selection: OpenAgentCallOptions["model"],
+  catalog: AvailableModel[],
+): OpenAgentCallOptions["model"] {
+  if (!selection) {
+    return selection;
+  }
+
+  const modelId = typeof selection === "string" ? selection : selection.id;
+  const contextWindow = catalog.find((model) => model.id === modelId)?.context_window;
+
+  if (
+    typeof contextWindow !== "number" ||
+    !Number.isFinite(contextWindow) ||
+    contextWindow <= 0
+  ) {
+    // Keep the existing conservative package fallback when the gateway
+    // doesn't publish a context_window for a model. This preserves
+    // backwards compatibility without making a missing metadata field
+    // capable of disabling the agent.
+    return selection;
+  }
+
+  if (typeof selection === "string") {
+    return {
+      id: selection,
+      contextWindow,
+    };
+  }
+
+  return {
+    ...selection,
+    contextWindow,
+  };
+}
+
 // The `github.commitAndPush` closure below captures live runtime state
 // (sandbox connections, DB handles) and cannot cross a workflow-step
 // serialization boundary -- Workflow SDK only serializes plain data
@@ -1857,6 +1893,24 @@ export async function runAgentWorkflow(options: Options) {
     const agentOptions: WorkflowAgentOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
+      // The gateway's live catalog is the single runtime source of truth
+      // for model context windows. Pass it into the agent selection so
+      // prepareStep/auto-compaction never falls back to a stale hardcoded
+      // window when a newly-added gateway model has its metadata set.
+      model: attachLiveModelContextWindow(
+        options.agentOptions?.model ?? modelRuntime.agentOptions.model,
+        modelCostCatalog,
+      ),
+      ...(options.agentOptions?.subagentModel !== undefined ||
+      modelRuntime.agentOptions.subagentModel !== undefined
+        ? {
+            subagentModel: attachLiveModelContextWindow(
+              options.agentOptions?.subagentModel ??
+                modelRuntime.agentOptions.subagentModel,
+              modelCostCatalog,
+            ),
+          }
+        : {}),
       sandbox: {
         state: runtime.sandboxState,
         workingDirectory: runtime.workingDirectory,

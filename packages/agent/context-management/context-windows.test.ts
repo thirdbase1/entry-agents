@@ -2,6 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { getContextWindowForModel } from "./context-windows";
 
 describe("getContextWindowForModel", () => {
+  test("live gateway context_window overrides the static fallback", () => {
+    expect(
+      getContextWindowForModel("brand-new-model", 1_000_000),
+    ).toBe(1_000_000);
+  });
+
+  test("DeepSeek V4.1 Flash fallback is 1M when the live catalog is unavailable", () => {
+    expect(getContextWindowForModel("deepseek-v4.1-flash:free")).toBe(
+      1_000_000,
+    );
+  });
+
   test("glm-5.3-flash uses B.AI's documented 1M window, not the 128k fallback", () => {
     // Found 2026-08-30: glm-5.3-flash was missing from the table, so it
     // silently used DEFAULT_CONTEXT_WINDOW (128k) and auto-compaction

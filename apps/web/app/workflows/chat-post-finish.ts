@@ -531,11 +531,14 @@ export async function recordWorkflowUsage(
         agentType: "main",
         model: modelId,
         messages: [responseMessage],
-        usage: mainUsage,
-        costUsd: estimateModelUsageCost(
-          mainUsage,
-          billingCatalog.find((m) => m.id === modelId)?.cost,
-        ) ?? null,
+        usage: {
+          ...mainUsage,
+          costUsd:
+            estimateModelUsageCost(
+              mainUsage,
+              billingCatalog.find((m) => m.id === modelId)?.cost,
+            ) ?? null,
+        },
       });
     }
 
@@ -591,11 +594,14 @@ export async function recordWorkflowUsage(
           agentType: "subagent",
           model: eventModelId,
           messages: [],
-          usage: subagentUsage,
-          costUsd: estimateModelUsageCost(
-            subagentUsage,
-            billingCatalog.find((m) => m.id === eventModelId)?.cost,
-          ) ?? null,
+          usage: {
+            ...subagentUsage,
+            costUsd:
+              estimateModelUsageCost(
+                subagentUsage,
+                billingCatalog.find((m) => m.id === eventModelId)?.cost,
+              ) ?? null,
+          },
           toolCallCount: modelUsage.toolCallCount,
         });
         await debitForModelUsage(eventModelId, subagentUsage);

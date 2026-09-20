@@ -22,6 +22,7 @@ export type SandboxLifecycleState =
   | "hibernating"
   | "hibernated"
   | "restoring"
+  | "migrating"
   | "archived"
   | "failed";
 
@@ -231,22 +232,24 @@ export async function evaluateSandboxLifecycle(
 
   const nowMs = Date.now();
   const dueAtMs = getLifecycleDueAtMs(session);
-  const isInactive = nowMs >= dueAtMs;
 
-  if (!isInactive) {
+  if (nowMs < dueAtMs) {
     return { action: "skipped", reason: "not-due-yet" };
   }
 
+  // Non-persistent Vercel sandboxes cannot be resumed after stop(). Once
+  // the hard sandbox lifetime is close enough to require lifecycle action,
+  // migration must happen regardless of whether the session currently has
+  // an active stream. Hibernating here would destroy an idle user's
+  // workspace with no way to reconstruct it.
+  //
+  // The migration step is deliberately outside this module to keep the
+  // lifecycle evaluator dependency-light and avoid a circular import.
+  if (isSandboxMigrationDue(sandboxState)) {
+    return { action: "migration-needed" };
+  }
+
   if (await hasActiveStreamForSession(sessionId)) {
-    // Normally we just skip and wait for the stream to finish before
-    // considering hibernation. But if we're also close to the sandbox's
-    // hard session-duration cap, skipping guarantees Vercel hard-kills
-    // the sandbox mid-task -- signal the workflow to migrate instead of
-    // hibernating (migration itself lives in lib/sandbox/migration.ts,
-    // called from the workflow file, to avoid a circular import here).
-    if (isSandboxMigrationDue(sandboxState)) {
-      return { action: "migration-needed" };
-    }
     return { action: "skipped", reason: "active-workflow" };
   }
 

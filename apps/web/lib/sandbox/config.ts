@@ -53,11 +53,13 @@ export const SANDBOX_EXPIRES_BUFFER_MS = 10 * 1000;
  * Lead time before a sandbox's hard session-duration cap at which the
  * lifecycle workflow proactively migrates the session to a fresh
  * sandbox instead of letting Vercel hard-kill it mid-task (Hobby's cap
- * is 45 minutes -- see DEFAULT_SANDBOX_TIMEOUT_MS above). Ten minutes gives the migration enough runway for packing the workspace,
- * fresh sandbox creation, and restore even when the lifecycle workflow is delayed. See
+ * is 45 minutes -- see DEFAULT_SANDBOX_TIMEOUT_MS above). Fifteen minutes
+ * gives the workflow substantial runway for packing, fresh sandbox creation,
+ * restore, and transient API delays while still preserving most of the
+ * session's useful runtime. See
  * lib/sandbox/migration.ts.
  */
-export const SANDBOX_MIGRATION_LEAD_MS = 10 * 60 * 1000;
+export const SANDBOX_MIGRATION_LEAD_MS = 15 * 60 * 1000;
 
 /** Grace window before treating a lifecycle run as stale (2 minutes) */
 export const SANDBOX_LIFECYCLE_STALE_RUN_GRACE_MS = 2 * 60 * 1000;
@@ -86,7 +88,7 @@ export const SANDBOX_MIGRATION_RETRY_MAX_MS = 2 * 60 * 1000;
  * Give up auto-retrying a migration after this many consecutive
  * failures. At that point the sandbox has almost certainly already hit
  * its real hard cap anyway (backoff schedule: 30s+60s+120s+120s+120s
- * ~= 7.5 min, already past the 5-min SANDBOX_MIGRATION_LEAD_MS
+ * ~= 7.5 min, already inside the 15-min SANDBOX_MIGRATION_LEAD_MS
  * headroom) -- further attempts are pointless. The session is left in
  * lifecycleState "failed" (existing "Connection issue" UI already
  * handles this) instead of hot-looping forever.

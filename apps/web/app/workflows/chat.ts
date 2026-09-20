@@ -2639,6 +2639,41 @@ const runAgentStep = async (
       // command is running right now before migrating to a fresh
       // sandbox. See SandboxLifecycleHooksContext + lib/sandbox/migration.ts.
       sandboxLifecycleHooks: {
+        beforeCommand: async () => {
+          const { getSessionById } = await import("@/lib/db/sessions");
+          const deadline = Date.now() + 180_000;
+          let waitedForMigration = false;
+          let migrationRunId: string | undefined;
+
+          while (true) {
+            const current = await getSessionById(sessionId);
+            if (!current) {
+              throw new Error("Session disappeared while preparing a sandbox operation");
+            }
+            if (current.status === "archived" || current.lifecycleState === "archived") {
+              throw new Error("Session is archived");
+            }
+
+            if (current.lifecycleState !== "migrating") {
+              return {
+                sandboxState: current.sandboxState ?? agentOptions.sandbox.state,
+                ...(waitedForMigration ? { waitedForMigration: true } : {}),
+                ...(migrationRunId ? { migrationRunId } : {}),
+              };
+            }
+
+            waitedForMigration = true;
+            migrationRunId = current.lifecycleRunId ?? migrationRunId;
+
+            if (Date.now() >= deadline) {
+              throw new Error(
+                "Sandbox migration is still running; command execution was held to avoid targeting the retiring sandbox.",
+              );
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 750));
+          }
+        },
         onCommandStart: async (info) => {
           const { updateSession } = await import("@/lib/db/sessions");
           try {

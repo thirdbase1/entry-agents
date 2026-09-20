@@ -85,7 +85,6 @@ async function resolveSandboxForOperation(experimental_context: unknown, toolNam
 
   const hooks = context.sandboxLifecycleHooks
     ? {
-        beforeCommand: context.sandboxLifecycleHooks.beforeCommand,
         onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
         onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
       }

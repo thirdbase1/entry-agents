@@ -842,7 +842,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       effectiveTimeout,
       startTime,
       ports,
-      persistent: options.persistent,
+      persistent,
     );
 
     // Call afterStart hook if provided
@@ -920,6 +920,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       remainingTimeout,
       startTime,
       options.ports,
+      options.persistent ?? false,
     );
 
     // Call afterStart hook if provided (useful for reconnection setup)
@@ -1423,6 +1424,7 @@ export async function connectVercelSandbox(
       remainingTimeout: connectConfig.remainingTimeout,
       ports: connectConfig.ports,
       resume: connectConfig.resume,
+      persistent: connectConfig.persistent,
     });
   }
 

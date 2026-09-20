@@ -70,6 +70,32 @@ async function getReadySessionSandbox(params: {
   if (session.status === "archived") {
     throw new Error("Session is archived");
   }
+
+  // Migration owns the workspace while the non-persistent sandbox is being
+  // packed and replaced. Never provision/connect concurrently: doing so can
+  // start a new command on the old VM while migration is capturing it.
+  // Wait for the durable lifecycle workflow to finish and then re-read state.
+  if (session.lifecycleState === "migrating") {
+    const migrationDeadline = Date.now() + 120_000;
+    while (Date.now() < migrationDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      session = await getSessionById(params.sessionId);
+      if (!session) {
+        throw new Error("Session not found");
+      }
+      if (
+        session.status === "archived" ||
+        session.lifecycleState !== "migrating"
+      ) {
+        break;
+      }
+    }
+
+    if (session.lifecycleState === "migrating") {
+      throw new Error("Workspace migration is still in progress");
+    }
+  }
+
   if (isSandboxActive(session.sandboxState)) {
     return { session, didSetupWorkspace: false };
   }

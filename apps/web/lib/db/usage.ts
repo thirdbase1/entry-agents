@@ -46,7 +46,7 @@ export async function recordUsage(
     inputTokens: data.usage.inputTokens,
     cachedInputTokens: data.usage.cachedInputTokens,
     outputTokens: data.usage.outputTokens,
-    costUsd: data.costUsd ?? null,
+    costUsd: data.usage.costUsd ?? null,
     toolCallCount,
   });
 }

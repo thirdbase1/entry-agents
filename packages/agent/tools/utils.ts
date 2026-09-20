@@ -95,12 +95,17 @@ export async function getSandbox(
   // duration cap. Undefined/no-op in hosts that don't wire it up.
   const hooks = context.sandboxLifecycleHooks
     ? {
+        beforeCommand: context.sandboxLifecycleHooks.beforeCommand,
         onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
         onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
       }
     : undefined;
 
-  return connectSandbox(context.sandbox.state, hooks ? { hooks } : undefined);
+  const commandGate = context.sandboxLifecycleHooks
+    ? await context.sandboxLifecycleHooks.beforeCommand()
+    : { sandboxState: context.sandbox.state };
+
+  return connectSandbox(commandGate.sandboxState, hooks ? { hooks } : undefined);
 }
 
 /**
@@ -128,6 +133,7 @@ export async function reconnectSandboxAfterMigration(
 
   const freshState = await context.sandboxLifecycleHooks.refreshSandboxState();
   const hooks = {
+    beforeCommand: context.sandboxLifecycleHooks.beforeCommand,
     onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
     onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
   };

@@ -79,18 +79,11 @@ export interface VercelSandboxConfig {
   /**
    * Retention policy that keeps only the N most recent auto-snapshots of
    * this sandbox, deleting older ones immediately as new ones are created.
-   * Re-enabled 2026-08-28 alongside flipping `persistent` back to `true`
-   * by default: this is the correct fix for the unbounded Snapshot Storage
-   * growth that caused the 2026-08-25 persistent-default-to-false flip
-   * (every stop created a brand new snapshot without ever cleaning up the
-   * prior one for that same session -- see docs/agents/lessons-learned.md,
-   * incidents 2026-08-18 through 2026-08-24). `{ count: 1, deleteEvicted:
-   * true }` caps worst case storage at one live snapshot per active named
-   * sandbox instead of accumulating forever, while keeping real
-   * resume-from-stop working -- unlike `persistent: false`, which discards
-   * the filesystem entirely on stop and can never resume it (confirmed via
-   * Vercel's own docs: "Non-persistent: Cannot be resumed; create a new
-   * sandbox").
+   * When `persistent: true`, `{ count: 1, deleteEvicted: true }` caps
+   * snapshot retention at one live snapshot per named sandbox instead of
+   * allowing automatic snapshots to accumulate indefinitely. Non-persistent
+   * sandboxes do not create resumable filesystem state, so this setting has
+   * no effect unless persistence is explicitly enabled.
    * @default { count: 1, deleteEvicted: true } when persistent
    */
   keepLastSnapshots?: {

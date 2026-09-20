@@ -70,13 +70,8 @@ export function toDisplayPath(
  * @returns The sandbox instance
  * @throws Error if sandbox is not available in context
  */
-export async function getSandbox(
-  experimental_context: unknown,
-  toolName?: string,
-): Promise<Sandbox> {
-  const context = isAgentContext(experimental_context)
-    ? experimental_context
-    : undefined;
+async function resolveSandboxForOperation(experimental_context: unknown, toolName?: string) {
+  const context = isAgentContext(experimental_context) ? experimental_context : undefined;
   if (!context?.sandbox) {
     const toolInfo = toolName ? ` (tool: ${toolName})` : "";
     const contextInfo = context
@@ -88,11 +83,6 @@ export async function getSandbox(
     );
   }
 
-  // Threads onCommandStart/onCommandEnd through when the host app wired
-  // them up (see SandboxLifecycleHooksContext) so the sandbox-migration
-  // safety net can find and kill whatever command is currently running
-  // here from a different process, ahead of the session's hard
-  // duration cap. Undefined/no-op in hosts that don't wire it up.
   const hooks = context.sandboxLifecycleHooks
     ? {
         beforeCommand: context.sandboxLifecycleHooks.beforeCommand,
@@ -105,9 +95,31 @@ export async function getSandbox(
     ? await context.sandboxLifecycleHooks.beforeCommand()
     : { sandboxState: context.sandbox.state };
 
-  return connectSandbox(commandGate.sandboxState, hooks ? { hooks } : undefined);
+  return {
+    sandbox: await connectSandbox(
+      commandGate.sandboxState,
+      hooks ? { hooks } : undefined,
+    ),
+    commandGate,
+  };
 }
 
+export async function getSandbox(
+  experimental_context: unknown,
+  toolName?: string,
+): Promise<Sandbox> {
+  const resolved = await resolveSandboxForOperation(experimental_context, toolName);
+  return resolved.sandbox;
+}
+
+/**
+ * Command-aware sandbox resolution. Exposes whether the host had to wait
+ * for a migration so the bash tool can report that control-plane event to
+ * the model instead of hiding it.
+ */
+export async function getSandboxForCommand(experimental_context: unknown) {
+  return resolveSandboxForOperation(experimental_context, "bash");
+}
 /**
  * Reconnect to this session's sandbox using its *current* DB state
  * rather than the point-in-time snapshot in `experimental_context`.

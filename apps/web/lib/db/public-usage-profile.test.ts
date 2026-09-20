@@ -113,6 +113,7 @@ describe("buildPublicUsageProfileData", () => {
           outputTokens: 50,
           messageCount: 2,
           toolCallCount: 1,
+          costUsd: 0.12,
         },
         {
           date: "2026-02-02",
@@ -125,6 +126,7 @@ describe("buildPublicUsageProfileData", () => {
           outputTokens: 30,
           messageCount: 0,
           toolCallCount: 3,
+          costUsd: 0.08,
         },
         {
           date: "2026-02-03",
@@ -137,6 +139,7 @@ describe("buildPublicUsageProfileData", () => {
           outputTokens: 10,
           messageCount: 1,
           toolCallCount: 0,
+          costUsd: 0.02,
         },
       ],
       insights: {

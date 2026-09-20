@@ -7,7 +7,11 @@ import {
   type Sandbox,
   type SandboxState,
 } from "@open-agents/sandbox";
-import { getSessionById, updateSession } from "@/lib/db/sessions";
+import {
+  claimSessionSandboxMigration,
+  getSessionById,
+  updateSession,
+} from "@/lib/db/sessions";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
   DEFAULT_SANDBOX_PORTS,
@@ -62,6 +66,7 @@ async function killActiveCommandBestEffort(
  */
 export async function performSandboxMigration(
   sessionId: string,
+  lifecycleRunId?: string,
 ): Promise<SandboxMigrationResult> {
   const session = await getSessionById(sessionId);
   if (!session) {
@@ -74,6 +79,10 @@ export async function performSandboxMigration(
     return { action: "skipped", reason: "migration-already-in-progress" };
   }
 
+  if (!lifecycleRunId) {
+    return { action: "skipped", reason: "migration-run-not-owned" };
+  }
+
   const sandboxState = session.sandboxState;
   if (!canOperateOnSandbox(sandboxState) || sandboxState.type !== "vercel") {
     return { action: "skipped", reason: "sandbox-not-operable" };
@@ -83,10 +92,13 @@ export async function performSandboxMigration(
     return { action: "skipped", reason: "not-due-yet" };
   }
 
-  await updateSession(sessionId, {
-    lifecycleState: "migrating",
-    lifecycleError: null,
-  });
+  // Claim the transition in one database UPDATE. The workflow lease and
+  // the lifecycle state must both still belong to this run; checking first
+  // and updating later would allow two workers to migrate the same sandbox.
+  const claimed = await claimSessionSandboxMigration(sessionId, lifecycleRunId);
+  if (!claimed) {
+    return { action: "skipped", reason: "migration-run-not-owned" };
+  }
 
   let oldSandbox: Sandbox;
   try {

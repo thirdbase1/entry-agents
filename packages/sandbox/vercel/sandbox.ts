@@ -815,9 +815,17 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       await clearGitHubCredentialBrokering(sdk);
     }
 
-    // Capture startTime AFTER all setup operations so users get their full timeout duration.
-    const startTime = Date.now();
+    // Vercel's session timeout starts when the sandbox session is created,
+    // not when repository/bootstrap setup finishes. Using Date.now() here
+    // used to overstate the real remaining lifetime by however long create +
+    // clone + setup took, which could make lifecycle migration wake up after
+    // Vercel had already killed the sandbox. Prefer the SDK's authoritative
+    // startedAt/requestedAt metadata and derive the proactive deadline from
+    // that same session clock used by reconnects.
     const session = sdk.currentSession();
+    const sessionStartTime =
+      session.startedAt?.getTime() ?? session.requestedAt?.getTime();
+    const startTime = sessionStartTime ?? Date.now();
     const sandbox = new VercelSandbox(
       sdk,
       session,

@@ -387,6 +387,37 @@ export async function claimSessionLifecycleRunId(
  * Atomically claims the session sandbox provisioning lease when no run is
  * currently recorded. Returns true when the claim succeeds.
  */
+/**
+ * Atomically claims the sandbox migration transition for the workflow run
+ * that owns the session lifecycle lease. Only an active session whose
+ * lifecycle lease still belongs to this run may transition to migrating.
+ * This closes the read-then-write race where two workers could both observe
+ * an active session and start competing pack/create/restore migrations.
+ */
+export async function claimSessionSandboxMigration(
+  sessionId: string,
+  runId: string,
+) {
+  const [updated] = await db
+    .update(sessions)
+    .set({
+      lifecycleState: "migrating",
+      lifecycleError: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        ne(sessions.status, "archived"),
+        eq(sessions.lifecycleState, "active"),
+        eq(sessions.lifecycleRunId, runId),
+      ),
+    )
+    .returning({ id: sessions.id });
+
+  return Boolean(updated);
+}
+
 export async function claimSessionSandboxProvisioningRunId(
   sessionId: string,
   runId: string,

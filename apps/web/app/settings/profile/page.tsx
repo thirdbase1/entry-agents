@@ -28,6 +28,7 @@ interface DailyUsageRow {
   outputTokens: number;
   messageCount: number;
   toolCallCount: number;
+  costUsd: number | null;
 }
 
 interface MergedDay {
@@ -206,7 +207,12 @@ function estimateUsageCost(
     const rowTotalTokens = row.inputTokens + row.outputTokens;
     totalTokens += rowTotalTokens;
 
-    const cost = estimateModelUsageCost(row, modelsById.get(row.modelId)?.cost);
+    // Prefer the immutable historical snapshot. Only legacy rows without
+    // a snapshot fall back to the current catalog.
+    const cost =
+      typeof row.costUsd === "number"
+        ? row.costUsd
+        : estimateModelUsageCost(row, modelsById.get(row.modelId)?.cost);
     if (cost === undefined) {
       continue;
     }

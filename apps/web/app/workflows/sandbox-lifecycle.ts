@@ -101,10 +101,11 @@ async function runLifecycleEvaluation(
 
 async function runSandboxMigrationStep(
   sessionId: string,
+  runId: string,
 ): Promise<SandboxMigrationResult> {
   "use step";
   const { performSandboxMigration } = await import("@/lib/sandbox/migration");
-  return performSandboxMigration(sessionId);
+  return performSandboxMigration(sessionId, runId);
 }
 
 async function clearLifecycleRunIdIfOwned(
@@ -146,7 +147,7 @@ export async function sandboxLifecycleWorkflow(
     const evaluation = await runLifecycleEvaluation(sessionId, reason);
 
     if (evaluation.action === "migration-needed") {
-      const migrationResult = await runSandboxMigrationStep(sessionId);
+      const migrationResult = await runSandboxMigrationStep(sessionId, runId);
 
       // Fixed 2026-08-29: a failed migration used to just fall through
       // to the same MIN_SLEEP (5s) tick as a normal recheck -- an

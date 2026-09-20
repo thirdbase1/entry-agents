@@ -1,10 +1,7 @@
 import type { SandboxHooks } from "../interface.ts";
 
 export interface VercelSandboxConfig {
-  /**
-   * Optional persistent sandbox name.
-   * When provided, repeated creates are expected to target the same durable sandbox.
-   */
+  /** Stable sandbox name/identity. Persistence is controlled separately by `persistent`. */
   name?: string;
   /**
    * Optional GitHub repository source to clone into the sandbox.
@@ -71,7 +68,7 @@ export interface VercelSandboxConfig {
   baseSnapshotId?: string;
   /**
    * Whether the sandbox should automatically persist filesystem state between sessions.
-   * @default true
+   * @default false
    */
   persistent?: boolean;
   /**
@@ -119,7 +116,7 @@ export interface VercelSandboxConfig {
  * Configuration for reconnecting to an existing persistent sandbox.
  */
 export interface VercelSandboxConnectConfig {
-  /** The persistent sandbox name to reconnect to */
+  /** Stable sandbox name/identity to reconnect to. Persistence is controlled separately. */
   sandboxName: string;
   /** Environment variables to make available to commands */
   env?: Record<string, string>;

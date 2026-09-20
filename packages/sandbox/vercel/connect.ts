@@ -397,6 +397,7 @@ async function connectNamedSandbox(
       remainingTimeout,
       ports: options?.ports,
       resume: options?.resume,
+      persistent: state.persistent ?? options?.persistent,
     });
   } catch (error) {
     if (!options?.createIfMissing) {

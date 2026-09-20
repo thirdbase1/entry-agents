@@ -400,6 +400,13 @@
       "when": 1789647273795,
       "tag": "0056_compaction_telemetry",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1789900000000,
+      "tag": "0057_historical_usage_cost",
+      "breakpoints": true
     }
   ]
 }

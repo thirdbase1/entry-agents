@@ -34,7 +34,21 @@ export type TodoItem = z.infer<typeof todoItemSchema>;
  * sandbox. Same layering reason as GithubToolContext above: this
  * package can't reach apps/web's DB directly.
  */
+export interface SandboxCommandGateResult {
+  sandboxState: SandboxState;
+  /** True when the command was held until an in-progress migration completed. */
+  waitedForMigration?: boolean;
+  /** Lifecycle run that performed the migration the command waited for. */
+  migrationRunId?: string;
+}
+
 export interface SandboxLifecycleHooksContext {
+  /**
+   * Called immediately before a tool acquires a sandbox connection. The host
+   * may block while a migration owns the workspace, then return the fresh
+   * sandbox state so the tool never starts against the retiring VM.
+   */
+  beforeCommand: () => Promise<SandboxCommandGateResult>;
   onCommandStart: (info: {
     cmdId: string;
     command: string;

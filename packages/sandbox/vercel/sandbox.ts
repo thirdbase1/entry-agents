@@ -279,7 +279,7 @@ function truncateCommandOutput(output: string): {
  */
 export class VercelSandbox implements Sandbox {
   readonly type = "cloud" as const;
-  /** Durable persistent sandbox name. */
+  /** Stable sandbox name/identity. Persistence is controlled separately. */
   readonly name: string;
   /** Current runtime session identifier. */
   readonly id: string;
@@ -306,6 +306,8 @@ export class VercelSandbox implements Sandbox {
   private _expiresAt?: number;
   private _timeout?: number;
   private _ports?: number[];
+  /** Whether this sandbox keeps filesystem state across stopped sessions. */
+  private readonly persistent: boolean;
 
   /**
    * Timestamp (ms since epoch) when this sandbox will be proactively stopped.
@@ -336,6 +338,7 @@ export class VercelSandbox implements Sandbox {
     timeout?: number,
     startTime?: number,
     ports?: number[],
+    persistent = false,
   ) {
     this.sdk = sdk;
     this.session = session;
@@ -346,6 +349,7 @@ export class VercelSandbox implements Sandbox {
     this.currentBranch = currentBranch;
     this.hooks = hooks;
     this._ports = ports;
+    this.persistent = persistent;
     this.isStopped = isStoppedSessionStatus(session.status);
 
     // Set timeout tracking for proactive stop
@@ -540,7 +544,7 @@ export class VercelSandbox implements Sandbox {
         ? "\n- Runtime env vars for dev server URLs are injected into commands: SANDBOX_HOST and SANDBOX_URL_<PORT> (for routable ports)"
         : "";
 
-    return `- Sandbox VMs are temporary, but named sandboxes can be hibernated and later resumed from their persisted filesystem state
+    return `- Sandbox VMs are temporary; filesystem persistence is ${this.persistent ? "enabled" : "disabled"} for this session. ${this.persistent ? "A stopped sandbox may be resumed from its persisted filesystem state." : "When this sandbox ends, its filesystem cannot be resumed; Entry migrates active work to a fresh sandbox before expiry."}
 - All bash commands already run in the working directory by default — never prepend \`cd <working-directory> &&\`; just run the command directly
 - Do NOT prefix any bash command with a \`cd\` to the working directory — commands like \`cd <working-directory> && npm test\` are WRONG; just use \`npm test\`
 - Use workspace-relative paths for read/write/search/edit operations
@@ -838,6 +842,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       effectiveTimeout,
       startTime,
       ports,
+      persistent: options.persistent,
     );
 
     // Call afterStart hook if provided
@@ -1369,7 +1374,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     return {
       type: "vercel",
       sandboxName: this.name,
-      persistent: false,
+      persistent: this.persistent,
       ...(this.expiresAt !== undefined ? { expiresAt: this.expiresAt } : {}),
     };
   }

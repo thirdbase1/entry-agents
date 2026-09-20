@@ -145,7 +145,6 @@ export async function reconnectSandboxAfterMigration(
 
   const freshState = await context.sandboxLifecycleHooks.refreshSandboxState();
   const hooks = {
-    beforeCommand: context.sandboxLifecycleHooks.beforeCommand,
     onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
     onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
   };

@@ -864,16 +864,33 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       remainingTimeout?: number;
       /** Ports that were declared at creation time (for preview URL display) */
       ports?: number[];
-      /** Whether to explicitly resume a stopped sandbox */
+      /** Whether to explicitly resume a stopped sandbox. */
       resume?: boolean;
+      /**
+       * Whether this sandbox keeps its filesystem across stopped sessions.
+       * Non-persistent sandboxes must never be treated as resumable.
+       */
+      persistent?: boolean;
     } = {},
   ): Promise<VercelSandbox> {
     const sdk = await VercelSandboxSDK.get({
       name: sandboxName,
-      resume: options.resume ?? false,
+      // A non-persistent sandbox must never resume a stopped session: Vercel
+      // starts a clean filesystem for the new session. Entry must migrate the
+      // workspace before expiry instead of silently reconnecting to an empty VM.
+      resume: options.persistent === false ? false : (options.resume ?? false),
     });
     await syncGitHubCredentialBrokering(sdk, undefined);
     const session = sdk.currentSession();
+
+    if (
+      options.persistent === false &&
+      isStoppedSessionStatus(session.status)
+    ) {
+      throw new Error(
+        "Sandbox is stopped and non-persistent; its filesystem is no longer resumable",
+      );
+    }
 
     // Use provided remainingTimeout when available; otherwise derive it from the
     // current live session. Fall back to the default reconnect timeout so active
@@ -1352,6 +1369,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     return {
       type: "vercel",
       sandboxName: this.name,
+      persistent: false,
       ...(this.expiresAt !== undefined ? { expiresAt: this.expiresAt } : {}),
     };
   }

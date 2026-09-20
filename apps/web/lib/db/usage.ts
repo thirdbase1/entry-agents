@@ -19,6 +19,7 @@ export async function recordUsage(
       inputTokens: number;
       cachedInputTokens: number;
       outputTokens: number;
+      costUsd?: number | null;
     };
     toolCallCount?: number;
   },

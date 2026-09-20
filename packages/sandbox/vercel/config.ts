@@ -93,8 +93,8 @@ export interface VercelSandboxConfig {
   };
   /**
    * When true, do not run `git init` or an initial empty commit in the workspace.
-   * Use when building a new base snapshot so `/vercel/sandbox` stays empty for a
-   * later `git clone ... .` (a leftover `.git` breaks clone into that directory).
+   * Use when building a new base snapshot so /vercel/sandbox stays empty for a
+   * later `git clone ... .` (a leftover .git breaks clone into that directory).
    */
   skipGitWorkspaceBootstrap?: boolean;
   /**
@@ -106,7 +106,7 @@ export interface VercelSandboxConfig {
 }
 
 /**
- * Configuration for reconnecting to an existing persistent sandbox.
+ * Configuration for reconnecting to an existing sandbox.
  */
 export interface VercelSandboxConnectConfig {
   /** Stable sandbox name/identity to reconnect to. Persistence is controlled separately. */
@@ -126,4 +126,6 @@ export interface VercelSandboxConnectConfig {
   ports?: number[];
   /** Whether a stopped sandbox should be explicitly resumed */
   resume?: boolean;
+  /** Whether the connected sandbox uses persistent filesystem state. */
+  persistent?: boolean;
 }

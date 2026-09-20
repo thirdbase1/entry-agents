@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { getToolTimeoutMs } from "./tool-timeouts";
 import { z } from "zod";
-import { getSandbox, reconnectSandboxAfterMigration } from "./utils";
+import { getSandboxForCommand, reconnectSandboxAfterMigration } from "./utils";
 import { resolveBashWorkingDirectory } from "./cwd-security";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -129,8 +129,16 @@ EXAMPLES:
       { command, cwd, detached },
       { experimental_context, abortSignal },
     ) => {
-      const sandbox = await getSandbox(experimental_context, "bash");
+      const { sandbox, commandGate } = await getSandboxForCommand(experimental_context);
       const workingDirectory = sandbox.workingDirectory;
+      const migrationNotice = commandGate.waitedForMigration
+        ? {
+            sandboxMigrated: true,
+            migrationRunId: commandGate.migrationRunId,
+            notice:
+              "This command was held while the sandbox workspace was migrated. It is running against the fresh sandbox now.",
+          }
+        : undefined;
       const workingDir = resolveBashWorkingDirectory(cwd, workingDirectory);
 
       if (!workingDir) {
@@ -162,6 +170,7 @@ EXAMPLES:
             exitCode: null,
             stdout: `Process started in background (command ID: ${commandId}). The server is now running.`,
             stderr: "",
+            ...(migrationNotice ? { migration: migrationNotice } : {}),
           };
         } catch (error) {
           return {
@@ -169,6 +178,7 @@ EXAMPLES:
             exitCode: null,
             stdout: "",
             stderr: error instanceof Error ? error.message : String(error),
+            ...(migrationNotice ? { migration: migrationNotice } : {}),
           };
         }
       }
@@ -205,6 +215,11 @@ EXAMPLES:
             stdout: retryResult.stdout,
             stderr: retryResult.stderr,
             ...(retryResult.truncated && { truncated: true }),
+            migration: {
+              sandboxMigrated: true,
+              notice:
+                "The sandbox migrated while this command was running. The interrupted command was reconnected and retried against the fresh sandbox.",
+            },
           };
         }
       }
@@ -215,6 +230,7 @@ EXAMPLES:
         stdout: result.stdout,
         stderr: result.stderr,
         ...(result.truncated && { truncated: true }),
+        ...(migrationNotice ? { migration: migrationNotice } : {}),
       };
     },
   });

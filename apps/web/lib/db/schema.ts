@@ -521,6 +521,8 @@ export const usageEvents = pgTable("usage_events", {
   inputTokens: integer("input_tokens").notNull().default(0),
   cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
   outputTokens: integer("output_tokens").notNull().default(0),
+  // Estimated provider cost for this usage event in USD. Nullable so historical rows remain valid.
+  costUsd: real("cost_usd"),
   toolCallCount: integer("tool_call_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

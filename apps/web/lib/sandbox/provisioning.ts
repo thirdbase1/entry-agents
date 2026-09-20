@@ -108,6 +108,7 @@ function buildSandboxState(session: SessionRecord): VercelSandboxState {
     type: "vercel",
     ...(isSandboxState(existingState) ? existingState : {}),
     sandboxName,
+    persistent: false,
     ...(source ? { source } : {}),
   };
 }

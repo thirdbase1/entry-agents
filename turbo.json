@@ -5,6 +5,7 @@
       "dependsOn": ["^build"],
       "env": [
         "AUDIT_ROUTE_SECRET",
+        "AUDIT_ROUTE_SECRET_LIVE",
         "BETTER_AUTH_SECRET",
         "BLOB_READ_WRITE_TOKEN",
         "COMPOSIO_API_KEY",
@@ -33,6 +34,8 @@
         "NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL",
         "OPEN_AGENTS_RESOURCE_PROFILE",
         "PARALLEL_API_KEY",
+        "PAYSTACK_PUBLIC_KEY",
+        "PAYSTACK_SECRET_KEY",
         "PGDATABASE",
         "PGHOST",
         "PGHOST_UNPOOLED",

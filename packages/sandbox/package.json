@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vercel/sandbox": "3.2.0"
+    "@vercel/sandbox": "3.3.0"
   },
   "devDependencies": {
     "@open-agents/tsconfig": "workspace:*",

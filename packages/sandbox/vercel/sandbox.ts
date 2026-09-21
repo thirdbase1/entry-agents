@@ -1,8 +1,10 @@
 import {
   Sandbox as VercelSandboxSDK,
   type Command as VercelSandboxCommand,
+  Drive as VercelDrive,
   type NetworkPolicy,
   type NetworkPolicyRule,
+  type SandboxMounts,
 } from "@vercel/sandbox";
 import type { Dirent } from "fs";
 import type {
@@ -650,6 +652,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       // `keepLastSnapshots` stays available below for any caller that
       // explicitly opts into `persistent: true`.
       persistent = false,
+      drives,
       snapshotExpiration = DEFAULT_SNAPSHOT_EXPIRATION_MS,
       keepLastSnapshots = persistent
         ? { count: 1, deleteEvicted: true }
@@ -687,30 +690,68 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       ...(keepLastSnapshots && { keepLastSnapshots }),
     };
 
-    let sdk: VercelSandboxSDK;
-    if (restoreSnapshotId) {
-      sdk = await VercelSandboxSDK.create({
-        ...createBaseConfig,
-        source: { type: "snapshot", snapshotId: restoreSnapshotId },
-      });
-    } else if (baseSnapshotId) {
-      sdk = await VercelSandboxSDK.create({
-        ...createBaseConfig,
-        source: { type: "snapshot", snapshotId: baseSnapshotId },
-      });
-    } else if (source) {
-      sdk = await VercelSandboxSDK.create({
-        ...createBaseConfig,
-        runtime,
-        source: {
-          type: "git",
-          url: source.url,
-          ...(source.branch && { revision: source.branch }),
-        },
-      });
-    } else {
-      sdk = await VercelSandboxSDK.create({ ...createBaseConfig, runtime });
-    }
+      let sdk: VercelSandboxSDK;
+
+      // Resolve declared drives to mount handles before creating. Each drive
+      // is created on first use and then reused, so a workspace mounted at
+      // e.g. /vercel/sandbox survives sandbox stop/expiry without depending
+      // on snapshot storage. Skipped entirely when `drives` is absent, so
+      // behaviour is unchanged for callers that do not opt in.
+      let mounts: SandboxMounts | undefined;
+      if (drives?.mounts?.length) {
+        mounts = {};
+        for (const spec of drives.mounts) {
+          try {
+            const drive = await VercelDrive.getOrCreate({
+              name: spec.driveName,
+              ...(spec.maxSizeBytes !== undefined && {
+                maxSize: spec.maxSizeBytes,
+              }),
+            });
+            mounts[spec.mountPath] =
+              spec.mode === "snapshot" ? drive.snapshot() : drive;
+          } catch (error) {
+            console.warn(
+              `[VercelSandbox] Failed to resolve drive '${spec.driveName}' for mount '${spec.mountPath}'; continuing without it.`,
+              error,
+            );
+          }
+        }
+        if (Object.keys(mounts).length === 0) {
+          mounts = undefined;
+        }
+      }
+
+      if (restoreSnapshotId) {
+        sdk = await VercelSandboxSDK.create({
+          ...createBaseConfig,
+          source: { type: "snapshot", snapshotId: restoreSnapshotId },
+          ...(mounts && { mounts }),
+        });
+      } else if (baseSnapshotId) {
+        sdk = await VercelSandboxSDK.create({
+          ...createBaseConfig,
+          source: { type: "snapshot", snapshotId: baseSnapshotId },
+          ...(mounts && { mounts }),
+        });
+      } else if (source) {
+        sdk = await VercelSandboxSDK.create({
+          ...createBaseConfig,
+          runtime,
+          source: {
+            type: "git",
+            url: source.url,
+            ...(source.branch && { revision: source.branch }),
+          },
+          ...(mounts && { mounts }),
+        });
+      } else {
+        sdk = await VercelSandboxSDK.create({
+          ...createBaseConfig,
+          runtime,
+          ...(mounts && { mounts }),
+        });
+      }
 
     // Seed the tracked-grants map to match the networkPolicy this sdk
     // instance was actually created with (set directly via createBaseConfig

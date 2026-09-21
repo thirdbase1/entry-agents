@@ -1,6 +1,6 @@
 import { Sandbox as VercelSandboxSDK } from "@vercel/sandbox";
 import type { Sandbox, SandboxHooks } from "../interface.ts";
-import type { VercelSandboxConfig } from "./config.ts";
+import type { DriveMountConfig, VercelSandboxConfig } from "./config.ts";
 import { VercelSandbox } from "./sandbox.ts";
 import type { VercelState } from "./state.ts";
 
@@ -15,10 +15,11 @@ interface ConnectOptions {
   baseSnapshotId?: string;
   resume?: boolean;
   createIfMissing?: boolean;
-  persistent?: boolean;
-  snapshotExpiration?: number;
-  skipGitWorkspaceBootstrap?: boolean;
-}
+    persistent?: boolean;
+    snapshotExpiration?: number;
+    skipGitWorkspaceBootstrap?: boolean;
+    drives?: DriveMountConfig;
+  }
 
 function getRemainingTimeout(
   expiresAt: number | undefined,
@@ -263,11 +264,12 @@ function buildCreateConfig(
     ...(options?.snapshotExpiration !== undefined && {
       snapshotExpiration: options.snapshotExpiration,
     }),
-    ...(options?.skipGitWorkspaceBootstrap && {
-      skipGitWorkspaceBootstrap: true,
-    }),
-  };
-}
+      ...(options?.skipGitWorkspaceBootstrap && {
+        skipGitWorkspaceBootstrap: true,
+      }),
+      ...(options?.drives && { drives: options.drives }),
+    };
+  }
 
 async function createSandboxWithQuotaFallback(
   config: VercelSandboxConfig,

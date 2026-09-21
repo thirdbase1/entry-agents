@@ -1,4 +1,33 @@
+import type { SandboxMounts } from "@vercel/sandbox";
 import type { SandboxHooks } from "../interface.ts";
+
+/**
+ * A single drive mount: the named drive to attach, the absolute path to
+ * mount it at inside the sandbox, and whether it is read-write or a
+ * read-only snapshot.
+ */
+export interface DriveMountSpec {
+  /** Name of an existing drive, resolved via `Drive.getOrCreate()`. */
+  driveName: string;
+  /** Absolute mount path inside the sandbox, e.g. `/vercel/sandbox`. */
+  mountPath: string;
+  /** `read-write` (default) or `snapshot` for a read-only view. */
+  mode?: "read-write" | "snapshot";
+  /** Drive size in bytes when the drive has to be created. */
+  maxSizeBytes?: number;
+}
+
+/**
+ * Optional drive configuration. When set, `connectSandbox()` resolves each
+ * declared drive with `Drive.getOrCreate()` before creating the sandbox and
+ * passes the resulting mounts through to `Sandbox.create()`.
+ *
+ * Drives persist independently of sandbox lifetime, so a workspace mounted
+ * on a drive survives sandbox stop/expiry without relying on snapshots.
+ */
+export interface DriveMountConfig {
+  mounts: DriveMountSpec[];
+}
 
 export interface VercelSandboxConfig {
   /** Stable sandbox name/identity. Persistence is controlled separately by `persistent`. */
@@ -97,6 +126,8 @@ export interface VercelSandboxConfig {
    * later `git clone ... .` (a leftover .git breaks clone into that directory).
    */
   skipGitWorkspaceBootstrap?: boolean;
+  /** Optional persistent drives to attach, resolved before creation. */
+  drives?: DriveMountConfig;
   /**
    * Lifecycle hooks for setup and teardown.
    * afterStart is called after the sandbox is created and configured.

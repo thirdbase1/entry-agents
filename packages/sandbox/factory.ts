@@ -44,6 +44,8 @@ export interface ConnectOptions {
   ports?: number[];
   /** Snapshot ID used as the base image for new sandboxes */
   baseSnapshotId?: string;
+  /** Optional persistent drives to attach to newly created sandboxes */
+  drives?: import("./vercel/config.ts").DriveMountConfig;
   /** Whether to resume a stopped persistent sandbox session */
   resume?: boolean;
   /** Whether to create the named sandbox when it does not already exist */

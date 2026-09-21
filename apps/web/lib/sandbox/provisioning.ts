@@ -28,6 +28,7 @@ import {
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
+  getSandboxDriveConfig,
 } from "@/lib/sandbox/config";
 import {
   buildActiveLifecycleUpdate,
@@ -252,6 +253,13 @@ export async function provisionSessionSandbox(params: {
         // this app doesn't otherwise need.
         persistent: false,
         resume: true,
+        // Opt-in via OPEN_AGENTS_SANDBOX_DRIVE=true. Mounts the
+        // workspace on a persistent drive so files survive sandbox
+        // stop/expiry. Undefined when disabled, so the field is simply
+        // absent and behaviour is unchanged.
+        ...(getSandboxDriveConfig() && {
+          drives: getSandboxDriveConfig(),
+        }),
         createIfMissing: true,
       },
     });

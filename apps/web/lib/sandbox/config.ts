@@ -4,6 +4,60 @@
  */
 
 import { isHobbyResourceProfile } from "../deployment/resource-profile.ts";
+import type { DriveMountConfig } from "@open-agents/sandbox/vercel/config.js";
+
+/**
+ * Drive name for the persistent session workspace. Created on first use
+ * via `Drive.getOrCreate()` and reused by every sandbox, so a workspace
+ * survives sandbox stop/expiry without depending on snapshot storage.
+ */
+export const DEFAULT_SANDBOX_DRIVE_NAME = "entry-agents-workspace";
+
+/**
+ * Mount path for the session workspace drive. This is the same directory
+ * the sandbox clones repos into, so a drive mounted here makes the whole
+ * workspace durable across sandbox lifetimes.
+ */
+export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
+
+/** 1 TiB default, matching Vercel's own drive default. */
+const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 1024 ** 4;
+
+/**
+ * Whether new sandboxes should mount the persistent workspace drive.
+ *
+ * Off by default: drives change where the workspace lives, which
+ * interacts with the snapshot-restore path and the pack/restore
+ * migration in lib/sandbox/migration.ts. Enable per environment once a
+ * session has been watched end to end.
+ */
+export function isSandboxDriveEnabled(): boolean {
+  return (
+    process.env.OPEN_AGENTS_SANDBOX_DRIVE === "true" &&
+    !isHobbyResourceProfile()
+  );
+}
+
+/**
+ * Drive mount config passed to `connectSandbox()`. Returns undefined when
+ * drives are disabled so callers can spread it unconditionally.
+ */
+export function getSandboxDriveConfig(): DriveMountConfig | undefined {
+  if (!isSandboxDriveEnabled()) {
+    return undefined;
+  }
+
+  return {
+    mounts: [
+      {
+        driveName: DEFAULT_SANDBOX_DRIVE_NAME,
+        mountPath: DEFAULT_SANDBOX_DRIVE_MOUNT_PATH,
+        mode: "read-write",
+        maxSizeBytes: DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES,
+      },
+    ],
+  };
+}
 
 /** SDK safety buffer reserved for sandbox before-stop hooks (30 seconds) */
 const VERCEL_SANDBOX_TIMEOUT_BUFFER_MS = 30 * 1000;

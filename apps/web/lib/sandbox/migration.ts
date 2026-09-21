@@ -17,6 +17,7 @@ import {
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
+  getSandboxDriveConfig,
 } from "@/lib/sandbox/config";
 import {
   buildActiveLifecycleUpdate,
@@ -138,6 +139,12 @@ export async function performSandboxMigration(
         persistent: false,
         createIfMissing: true,
         skipGitWorkspaceBootstrap: true,
+        // Mount the same workspace drive the old sandbox used, so the
+        // restore below writes into durable storage. Undefined when
+        // drives are disabled.
+        ...(getSandboxDriveConfig() && {
+          drives: getSandboxDriveConfig(),
+        }),
       },
     );
 

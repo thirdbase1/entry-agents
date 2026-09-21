@@ -337,8 +337,8 @@ importers:
   packages/sandbox:
     dependencies:
       '@vercel/sandbox':
-        specifier: 3.2.0
-        version: 3.2.0
+        specifier: 3.3.0
+        version: 3.3.0
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -3671,8 +3671,8 @@ packages:
       '@opentelemetry/api':
         optional: true
 
-  '@vercel/sandbox@3.2.0':
-    resolution: {integrity: sha512-aIOd8Z+NgpdS8k4Y1EEvVoEml4+mtBmJVtfw4rJpL5j5K2gS70YfR6LbnT7/bfHbsRsFZhp/JSTB3TeOw/pgsw==}
+  '@vercel/sandbox@3.3.0':
+      resolution: {integrity: sha512-TclqRD2joExyECTrrHsioi3Onw20X2YfpOYEzs3JpJUtAjOKYw2bMeXldKrUg+TB/TT7tPdDu8uKNxj9NE7QUg==}
 
   '@workflow/ai@5.0.0-beta.13':
     resolution: {integrity: sha512-ZYCRg7aFSdK1fj3UftZR39VgA4eJheEHqL5vqFaXzQi5CDBqnWwHD6ITPcdyFI5L1hg9SKEjJkQd8VxfOfrfcw==}
@@ -10373,7 +10373,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@vercel/sandbox@3.2.0':
+  '@vercel/sandbox@3.3.0':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2

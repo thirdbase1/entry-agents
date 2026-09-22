@@ -7,7 +7,7 @@ import {
 import { getSessionByIds } from "@/lib/db/sessions";
 import {
   getSessionDrivePrefix,
-  SANDBOX_DRIVE_MAX_AGE_MS,
+  SANDBOX_DRIVE_MAX_IDLE_MS,
 } from "@/lib/sandbox/config";
 
 /**
@@ -16,6 +16,10 @@ import {
  * Drives are created lazily by getSandboxDriveConfig() when a session
  * provisions a sandbox, one per session, and nothing else deletes them.
  * Without this they accumulate at 8 GiB of provisioned capacity each.
+ *
+ * Retention is driven by the DRIVE's own last-updated time (3 days), so a
+ * drive that is still being written to is never a candidate regardless of
+ * what its session record says.
  *
  * The Vercel SDK is only declared by @open-agents/sandbox, so the sweep
  * itself lives there; this wrapper resolves session liveness from the
@@ -35,7 +39,7 @@ export async function cleanupStaleSessionDrives(): Promise<{
 
   return cleanupStaleDrives({
     namePrefix: prefix,
-    maxIdleMs: SANDBOX_DRIVE_MAX_AGE_MS,
+    maxIdleMs: SANDBOX_DRIVE_MAX_IDLE_MS,
     resolveStatus: async (sessionId) => {
       const cached = cache.get(sessionId);
       if (cached) {
@@ -49,9 +53,8 @@ export async function cleanupStaleSessionDrives(): Promise<{
         ? {
             exists: true,
             archived: session.status === "archived",
-            lastTouchedAt: session.updatedAt?.getTime() ?? 0,
           }
-        : { exists: false, archived: false, lastTouchedAt: 0 };
+        : { exists: false, archived: false };
 
       cache.set(sessionId, status);
       return status;

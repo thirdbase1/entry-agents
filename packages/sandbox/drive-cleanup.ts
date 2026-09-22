@@ -13,8 +13,6 @@ export interface DriveSessionStatus {
   exists: boolean;
   /** Session is archived. */
   archived: boolean;
-  /** Last time the session was touched, epoch ms. */
-  lastTouchedAt: number;
 }
 
 export interface DriveCleanupResult {
@@ -27,7 +25,11 @@ export interface DriveCleanupResult {
 export interface DriveCleanupOptions {
   /** Only consider drives whose name starts with this. */
   namePrefix: string;
-  /** Delete a drive when its session has been idle longer than this. */
+  /**
+   * Delete a drive once the DRIVE itself has not been updated for this
+   * long. Measured on the drive's own `updatedAt`, so an actively used
+   * drive is never eligible no matter what its session record says.
+   */
   maxIdleMs: number;
   /** Resolve a session's status from the drive's session id. */
   resolveStatus: (sessionId: string) => Promise<DriveSessionStatus>;
@@ -46,7 +48,10 @@ export interface DriveCleanupOptions {
  *   1. It is not attached to a sandbox (`currentSandboxName` is unset) --
  *      an attached drive belongs to a live session, and the API rejects
  *      deleting it anyway.
- *   2. Its session is missing, archived, or idle past `maxIdleMs`.
+ *   2. The drive has not been updated for longer than `maxIdleMs` -- the
+ *      primary guard, measured on the drive itself.
+ *   3. Its session is missing or archived. A live session whose drive has
+ *      been quiet for the full window is still treated as reclaimable.
  *
  * A drive failing to delete is counted and the sweep continues, so one
  * bad drive cannot strand the rest.
@@ -109,19 +114,22 @@ export async function cleanupStaleDrives(
       continue;
     }
 
-    let reason: string | null = null;
+    // Guard 2 comes FIRST and is independent of the session record: a
+    // drive written to recently is live work, full stop.
+    const driveIdleMs = now - drive.updatedAt.getTime();
+    if (driveIdleMs <= options.maxIdleMs) {
+      result.skipped++;
+      options.onDecision?.(drive.name, "skipped", "drive-recently-updated");
+      continue;
+    }
+
+    let reason: string;
     if (!status.exists) {
       reason = "session-missing";
     } else if (status.archived) {
       reason = "session-archived";
-    } else if (now - status.lastTouchedAt > options.maxIdleMs) {
-      reason = "idle-too-long";
-    }
-
-    if (!reason) {
-      result.skipped++;
-      options.onDecision?.(drive.name, "skipped", "session-active");
-      continue;
+    } else {
+      reason = "drive-idle-too-long";
     }
 
     try {

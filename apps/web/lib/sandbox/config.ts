@@ -17,11 +17,15 @@ export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
 const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 8 * 1024 ** 3;
 
 /**
- * Maximum age of a session's drive before it is deleted. Drives are only
- * needed while a session is live or resumable, so anything untouched for
- * longer than this is reclaimable. Four days.
+ * A drive is reclaimable once it has not been updated for this long.
+ *
+ * Measured against the DRIVE's own `updatedAt`, not the session's: a
+ * drive stops being touched the moment its sandbox detaches, so drive
+ * age is the honest signal that nothing is actively writing to it. Three
+ * days of no writes is far longer than any real session goes idle, so
+ * active work is never caught by this.
  */
-export const SANDBOX_DRIVE_MAX_AGE_MS = 4 * 24 * 60 * 60 * 1000;
+export const SANDBOX_DRIVE_MAX_IDLE_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Drive name for a session's persistent workspace.

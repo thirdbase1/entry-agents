@@ -21,6 +21,8 @@ import {
 import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
+import { settleStepCost } from "@/lib/billing/usage-accrual";
+import type { UsageAccrualState } from "@/lib/billing/usage-accrual";
 import { addLanguageModelUsage } from "./usage-utils";
 import { estimateStepCost } from "./gateway-metadata";
 import {
@@ -2433,6 +2435,11 @@ const runAgentStep = async (
   // the assignment below) crosses MAX_TURN_SPEND_CENTS, regardless of
   // how much account balance remains.
   let turnSpendCapped = false;
+  // Per-turn sub-cent accrual state, threaded through every step so
+      // fractional cost is never dropped between the ledger's integer
+      // cents. Declared outside the try below because the finish-step
+      // handler (and the flush in `finally`) both live past that scope.
+  const usageAccrual: UsageAccrualState = { carryCents: 0 };
   const pendingDebits: Promise<void>[] = [];
   // Hoisted above the try/catch/finally on purpose -- `let` inside the
   // try block would be out of scope in the `finally` below, where it
@@ -2862,7 +2869,13 @@ const runAgentStep = async (
                 lastStepCost = stepCost;
                 totalMessageCost = (totalMessageCost ?? 0) + stepCost;
 
-                const stepCostCents = Math.round(stepCost * 100);
+                // Sub-cent accrual: the ledger only holds whole cents,
+                // but a step's real cost usually isn't one -- rounding
+                // here is what made every sub-cent step (cheap model,
+                // short answer) bill literally nothing. The accumulator
+                // carries the remainder forward so the whole cent only
+                // reaches the ledger once it has truly accrued.
+                const stepCostCents = settleStepCost(usageAccrual, stepCost);
                 if (stepCostCents > 0) {
                   // Fire the ledger write now (queued, flushed before this
                   // step function returns) -- see the pendingDebits comment

@@ -27,6 +27,10 @@ import {
 } from "@/lib/db/workflow-runs";
 import { recordUsage } from "@/lib/db/usage";
 import { releaseUserBillingTurn } from "@/lib/billing/credit-ledger";
+import {
+  settleStepCost,
+  type UsageAccrualState,
+} from "@/lib/billing/usage-accrual";
 
 const cachedInputTokensFor = (usage: LanguageModelUsage) =>
   usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
@@ -485,7 +489,13 @@ export async function recordWorkflowUsage(
       await import("@/lib/models-with-context");
     const { debitUsage } = await import("@/lib/billing/credit-ledger");
     const { estimateModelUsageCost } = await import("@/lib/models");
-    const billingCatalog = await fetchModelCostCatalog().catch(
+    // Subagent-only ledger accumulator (main-turn usage is debited
+    // in real time inside runAgentStep -- see the comment above).
+    // Deliberately local to this turn: the pending remainder is
+    // sub-cent by construction, so never carrying it across turns
+    // can only ever leave at most one cent uncharged per turn,
+    // which is the safe direction to err for the user.
+    const subagentAccrual: UsageAccrualState = { carryCents: 0 };
       (error) => {
         console.error(
           "[workflow] Failed to fetch pricing catalog for billing debit:",
@@ -509,7 +519,12 @@ export async function recordWorkflowUsage(
         return;
       }
       try {
-        await debitUsage(userId, Math.round(costUsd * 100), {
+        // Same sub-cent accrual as the real-time main-model debit in
+        // chat.ts: a cheap subagent's total usage is routinely under a
+        // cent, and rounding it here billed those turns nothing at all.
+        // The accumulator is per-turn so the remainder carries across
+        // every subagent step instead of being discarded.
+        await debitUsage(userId, settleStepCost(subagentAccrual, costUsd), {
           modelId: billedModelId,
           description: `Usage: ${billedModelId}`,
         });

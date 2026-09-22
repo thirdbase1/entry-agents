@@ -82,7 +82,15 @@ export function selectLines(
     startIdx = Math.max(0, totalLines + offset);
     endIdx = Math.min(totalLines, startIdx + normalizedLimit);
   } else {
-    startIdx = Math.max(0, (Number.isFinite(offset) ? offset : 1) - 1);
+    // Clamp to totalLines, not just to 0: an offset past EOF used to
+    // yield startLine > endLine (e.g. offset 50 on a 10-line file gave
+    // startLine 50, endLine 10) -- an inverted range the model then
+    // tried to reason about. A past-EOF offset is a legitimate "read
+    // from here" that simply has nothing left.
+    startIdx = Math.min(
+      totalLines,
+      Math.max(0, (Number.isFinite(offset) ? offset : 1) - 1),
+    );
     endIdx = Math.min(totalLines, startIdx + normalizedLimit);
   }
 

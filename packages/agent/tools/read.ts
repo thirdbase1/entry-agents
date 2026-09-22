@@ -215,6 +215,22 @@ EXAMPLES:
         // per-line clamp (minified bundles), byte budget (logs).
         let selection: SelectedLinesResult & { nextOffset?: number | null } =
           selectLines(lines, { offset, limit });
+
+        // A past-EOF offset selects nothing. Without this the tool
+        // returned success with empty content, which reads as "the file
+        // is blank" rather than "you asked past the end".
+        if (selection.lines.length === 0 && lines.length > 0) {
+          return {
+            success: true,
+            path: displayPath,
+            totalLines: lines.length,
+            startLine: lines.length + 1,
+            endLine: lines.length,
+            contentHash,
+            content: `Nothing to read: offset ${offset} is past the end of this file (${lines.length} lines). Use offset ${lines.length} or lower, or a negative offset to read the tail.`,
+          };
+        }
+
         const clamped = selection.lines.map((line) => clampLine(line));
         selection = applyByteCeiling({
           ...selection,

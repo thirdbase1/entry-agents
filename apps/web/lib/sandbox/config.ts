@@ -14,16 +14,23 @@ import type { DriveMountConfig } from "@open-agents/sandbox/vercel/config.js";
 export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
 
 /**
- * Per-session drive size: 750 MiB.
+ * Per-session drive size: 1 GiB -- the SMALLEST the API accepts.
  *
- * Deliberately small. The team's drive storage is capped at 15 GiB in
- * total (verified against the drives API: 15 GiB succeeds, 16 GiB is
- * refused with `payment_required`), so the per-session size directly
- * limits how many sessions can hold a workspace at once. 750 MiB fits a
- * cloned repo plus node_modules for a typical TypeScript project and
- * allows ~20 concurrent drives instead of one.
+ * Two hard limits meet here:
+ *   - Per-drive floor: the drives API rejects anything under
+ *     1,073,741,824 bytes with
+ *     `maxSizeBytes should be >= 1073741824`. A 750 MiB value ships a
+ *     400 on every provisioning attempt (seen in production 2026-09-22).
+ *   - Team ceiling: total drive storage is capped at 15 GiB, so the
+ *     per-session size directly caps concurrent sessions.
+ *
+ * 1 GiB is therefore the most session-friendly legal choice: 15 GiB / 1
+ * GiB = 15 concurrent drives. Anything larger trades sessions away for
+ * headroom (1.5 GiB -> 10, 2 GiB -> 7), which is a product call rather
+ * than a constant to tune silently -- raise it deliberately if real
+ * workspaces outgrow 1 GiB.
  */
-const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = Math.round(750 * 1024 ** 2);
+const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 1024 ** 3;
 
 /**
  * A drive is reclaimable once it has not been updated for this long.

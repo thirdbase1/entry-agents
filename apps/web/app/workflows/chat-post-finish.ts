@@ -496,6 +496,7 @@ export async function recordWorkflowUsage(
     // can only ever leave at most one cent uncharged per turn,
     // which is the safe direction to err for the user.
     const subagentAccrual: UsageAccrualState = { carryCents: 0 };
+    const billingCatalog = await fetchModelCostCatalog().catch(
       (error) => {
         console.error(
           "[workflow] Failed to fetch pricing catalog for billing debit:",

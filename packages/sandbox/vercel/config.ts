@@ -159,4 +159,13 @@ export interface VercelSandboxConnectConfig {
   resume?: boolean;
   /** Whether the connected sandbox uses persistent filesystem state. */
   persistent?: boolean;
+  /**
+   * Drives to attach to this sandbox.
+   *
+   * Lets a session acquire workspace storage it did not get at create
+   * time -- an existing chat whose sandbox has no drive, or a session
+   * created while drive creation was failing. Resolved best-effort via
+   * `update({ mounts })`; a failure never breaks the connection.
+   */
+  drives?: DriveMountConfig;
 }

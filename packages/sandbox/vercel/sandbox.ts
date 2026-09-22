@@ -18,6 +18,7 @@ import type { SandboxStatus } from "../types.ts";
 import type {
   VercelSandboxConfig,
   VercelSandboxConnectConfig,
+  DriveMountConfig,
 } from "./config.ts";
 import type { VercelState } from "./state.ts";
 import {
@@ -79,6 +80,47 @@ interface CredentialBrokeringGrants {
 // a failed resume just means the sandbox is gone, and credential brokering
 // on a dead VM is moot. Treat it as best-effort: warn and drop the grant
 // rather than throwing into the chat turn.
+/**
+ * Resolve declared drives into SDK mount handles.
+ *
+ * Shared by create() (passes the result straight into Sandbox.create) and
+ * connect() (passes it into Sandbox.update). Each drive is created on first
+ * use and then reused.
+ *
+ * Best-effort BY DESIGN: a drive that fails to resolve is logged and
+ * skipped, and if every drive in the list fails the result is undefined so
+ * the caller simply creates/updates without any mount. Storage is an
+ * optimisation, never a precondition for a sandbox to work.
+ */
+async function resolveDriveMounts(
+  drives: DriveMountConfig | undefined,
+): Promise<SandboxMounts | undefined> {
+  if (!drives?.mounts?.length) {
+    return undefined;
+  }
+
+  const mounts: SandboxMounts = {};
+  for (const spec of drives.mounts) {
+    try {
+      const drive = await VercelDrive.getOrCreate({
+        name: spec.driveName,
+        ...(spec.maxSizeBytes !== undefined && {
+          maxSize: spec.maxSizeBytes,
+        }),
+      });
+      mounts[spec.mountPath] =
+        spec.mode === "snapshot" ? drive.snapshot() : drive;
+    } catch (error) {
+      console.warn(
+        `[VercelSandbox] Failed to resolve drive '${spec.driveName}' for mount '${spec.mountPath}'; continuing without it.`,
+        error,
+      );
+    }
+  }
+
+  return Object.keys(mounts).length > 0 ? mounts : undefined;
+}
+
 function isDeadSnapshotResumeError(error: unknown): boolean {
   const raw =
     error instanceof Error
@@ -692,35 +734,12 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
       let sdk: VercelSandboxSDK;
 
-      // Resolve declared drives to mount handles before creating. Each drive
-      // is created on first use and then reused, so a workspace mounted at
-      // e.g. /vercel/sandbox survives sandbox stop/expiry without depending
-      // on snapshot storage. Skipped entirely when `drives` is absent, so
-      // behaviour is unchanged for callers that do not opt in.
-      let mounts: SandboxMounts | undefined;
-      if (drives?.mounts?.length) {
-        mounts = {};
-        for (const spec of drives.mounts) {
-          try {
-            const drive = await VercelDrive.getOrCreate({
-              name: spec.driveName,
-              ...(spec.maxSizeBytes !== undefined && {
-                maxSize: spec.maxSizeBytes,
-              }),
-            });
-            mounts[spec.mountPath] =
-              spec.mode === "snapshot" ? drive.snapshot() : drive;
-          } catch (error) {
-            console.warn(
-              `[VercelSandbox] Failed to resolve drive '${spec.driveName}' for mount '${spec.mountPath}'; continuing without it.`,
-              error,
-            );
-          }
-        }
-        if (Object.keys(mounts).length === 0) {
-          mounts = undefined;
-        }
-      }
+      // Each drive is created on first use and then reused, so a workspace
+      // mounted at e.g. /vercel/sandbox survives sandbox stop/expiry
+      // without depending on snapshot storage. Skipped entirely when
+      // `drives` is absent, so behaviour is unchanged for callers that do
+      // not opt in.
+      let mounts = await resolveDriveMounts(drives);
 
       if (restoreSnapshotId) {
         sdk = await VercelSandboxSDK.create({
@@ -910,6 +929,23 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       remainingTimeout?: number;
       /** Ports that were declared at creation time (for preview URL display) */
       ports?: number[];
+      /**
+       * Drives to attach to this sandbox (see DriveMountConfig).
+       *
+       * `Sandbox.get()` cannot add mounts -- only `create()`,
+       * `getOrCreate()` and `update()` accept them -- so without this,
+       * a session whose sandbox is RE-connected (rather than created)
+       * could never acquire a workspace drive at all.
+       *
+       * Attaching happens via `update({ mounts })`, which the SDK
+       * documents as "replaces all current mounts and applies to the
+       * NEXT session". The live session keeps whatever mounts it
+       * started with, so this is a store for the next migration rather
+       * than a live mount. Callers must treat it as best-effort: a
+       * failure is logged and the sandbox is returned without the
+       * drive, never thrown.
+       */
+      drives?: DriveMountConfig;
       /** Whether to explicitly resume a stopped sandbox. */
       resume?: boolean;
       /**
@@ -927,6 +963,23 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       resume: options.persistent === false ? false : (options.resume ?? false),
     });
     await syncGitHubCredentialBrokering(sdk, undefined);
+
+    // Best-effort drive adoption for re-connected sandboxes (see the
+    // `drives` option). Deliberately non-fatal: this exists so an
+    // existing session can pick up workspace storage it never got at
+    // create time, and a session without storage must still work.
+    if (options.drives?.mounts?.length) {
+      try {
+        const mounts = await resolveDriveMounts(options.drives);
+        await sdk.update({ mounts });
+      } catch (error) {
+        console.warn(
+          `[VercelSandbox] Failed to attach drives to '${sandboxName}'; continuing without them:`,
+          error,
+        );
+      }
+    }
+
     const session = sdk.currentSession();
 
     if (

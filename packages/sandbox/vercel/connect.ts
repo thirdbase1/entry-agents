@@ -15,11 +15,16 @@ interface ConnectOptions {
   baseSnapshotId?: string;
   resume?: boolean;
   createIfMissing?: boolean;
-    persistent?: boolean;
-    snapshotExpiration?: number;
-    skipGitWorkspaceBootstrap?: boolean;
-    drives?: DriveMountConfig;
-  }
+  persistent?: boolean;
+  snapshotExpiration?: number;
+  skipGitWorkspaceBootstrap?: boolean;
+  /**
+   * Drives to attach to a RE-connected sandbox (create-time drives are
+   * declared on the config side). Lets an existing session acquire
+   * workspace storage it did not get when first created. Best-effort.
+   */
+  drives?: DriveMountConfig;
+}
 
 function getRemainingTimeout(
   expiresAt: number | undefined,
@@ -400,6 +405,9 @@ async function connectNamedSandbox(
       ports: options?.ports,
       resume: options?.resume,
       persistent: state.persistent ?? options?.persistent,
+      // Only passed when the caller supplies it: absent means the
+      // re-connected sandbox keeps whatever mounts it already has.
+      ...(options?.drives ? { drives: options.drives } : {}),
     });
   } catch (error) {
     if (!options?.createIfMissing) {

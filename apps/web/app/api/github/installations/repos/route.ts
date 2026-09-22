@@ -108,14 +108,28 @@ export async function GET(request: NextRequest) {
     // Cache-first (upstream open-agents #840): serve from the DB when
     // fresh, and only page GitHub on a miss or explicit refresh. The
     // full list is cached unfiltered so every subsequent selector query
-    // is a pure local filter — no more per-keystroke GitHub round-trips.
+    // is a pure local filter -- no more per-keystroke GitHub round-trips.
+    //
+    // The cache is a pure optimisation and is treated as such on BOTH
+    // sides: a read miss or write failure must never fail the request.
+    // Found 2026-09-22 in production -- `github_repo_index` was missing
+    // (migration file present but never registered in drizzle's journal),
+    // so the INSERT below threw 42P01 and took down the entire repo
+    // selector with a 500. GitHub had answered fine; the cache write was
+    // the only thing that broke, and it cost the user the whole flow.
     let allRepos: InstallationRepository[] | null = null;
 
     if (!forceRefresh) {
       const cached = await getCachedUserRepoIndex(
         session.user.id,
         installationId,
-      );
+      ).catch((error) => {
+        console.warn(
+          "[github/repos] Repo index cache read failed; falling back to GitHub:",
+          error,
+        );
+        return null;
+      });
       if (cached) {
         allRepos = cached.repos;
       }
@@ -127,7 +141,17 @@ export async function GET(request: NextRequest) {
         userToken,
         limit: 100,
       });
-      await saveUserRepoIndex(session.user.id, installationId, allRepos);
+      await saveUserRepoIndex(session.user.id, installationId, allRepos).catch(
+        (error) => {
+          // Deliberately swallowed: the live GitHub response in
+          // `allRepos` is already correct, so the selector works fine
+          // without the cache row. Only the next lookup pays for it.
+          console.warn(
+            "[github/repos] Failed to cache repo index (non-fatal):",
+            error,
+          );
+        },
+      );
     }
 
     const lastRepo = await getLastRepoByUserId(session.user.id).catch(

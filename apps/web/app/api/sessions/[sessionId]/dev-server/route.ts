@@ -2,9 +2,16 @@ import path from "node:path";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
   requireAuthenticatedUser,
-  requireOwnedSessionWithSandboxGuard,
+  requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
-import { updateSession } from "@/lib/db/sessions";
+import {
+  getSessionById,
+  updateSession,
+} from "@/lib/db/sessions";
+import {
+  kickSandboxProvisioningWorkflow,
+  waitForSandboxProvisioningRun,
+} from "@/lib/sandbox/provisioning-kick";
 import { DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
 import {
   clearUnavailableSandboxState,
@@ -868,41 +875,64 @@ async function connectDevServerSandboxForSession(
   sessionId: string,
   userId: string,
 ) {
-  const sessionContext = await requireOwnedSessionWithSandboxGuard({
-    userId,
-    sessionId,
-    sandboxGuard: isSandboxActive,
-    sandboxErrorMessage: "Resume the sandbox before running a dev server",
-    sandboxErrorStatus: 409,
-  });
+  // Owner request 2026-09-22: "when i click the start dev server if no
+  // sandbox it should automatically create new sandbox". This used to
+  // guard on isSandboxActive and 409 the user with "Resume the sandbox
+  // before running a dev server", which made the dev-server button a
+  // dead end on any session whose sandbox had expired or never
+  // provisioned. Provision it instead, using the exact same durable
+  // workflow kick/wait the chat runtime uses, so there is one path for
+  // "get me a sandbox for this session" and not two that can drift.
+  const sessionContext = await requireOwnedSession({ userId, sessionId });
   if (!sessionContext.ok) {
     return sessionContext;
   }
 
   const sandboxState = sessionContext.sessionRecord.sandboxState;
-  if (!sandboxState) {
-    return {
-      ok: false as const,
-      response: Response.json(
-        { error: "Resume the sandbox before running a dev server" },
-        { status: 409 },
-      ),
-    };
+  if (!isSandboxActive(sandboxState)) {
+    const kick = await kickSandboxProvisioningWorkflow(sessionId);
+    if (kick.runId) {
+      await waitForSandboxProvisioningRun(kick.runId);
+    }
+
+    const refreshed = await getSessionById(sessionId);
+    if (!refreshed) {
+      return {
+        ok: false as const,
+        response: Response.json({ error: "Session not found" }, { status: 404 }),
+      };
+    }
+    if (!isSandboxActive(refreshed.sandboxState)) {
+      return {
+        ok: false as const,
+        response: Response.json(
+          {
+            error:
+              refreshed.lifecycleError ?? "Failed to provision a sandbox",
+          },
+          { status: 503 },
+        ),
+      };
+    }
+    sessionContext.sessionRecord = refreshed;
   }
 
   let sandbox;
   try {
-    sandbox = await connectSandbox(sandboxState, {
-      ports: DEFAULT_SANDBOX_PORTS,
-      // Found 2026-08-30 in production: a session whose saved sandbox
-      // snapshot expired/cleaned-up comes back as 400 "Cannot resume
-      // sandbox: no snapshot available" from the implicit resume that
-      // connectSandbox triggers for a named sandbox. createIfMissing lets
-      // the connect fallback provision a fresh sandbox instead of wedging
-      // the dev-server launch inside a bare 500.
-      resume: true,
-      createIfMissing: true,
-    });
+    sandbox = await connectSandbox(
+      sessionContext.sessionRecord.sandboxState,
+      {
+        ports: DEFAULT_SANDBOX_PORTS,
+        // Found 2026-08-30 in production: a session whose saved sandbox
+        // snapshot expired/cleaned-up comes back as 400 "Cannot resume
+        // sandbox: no snapshot available" from the implicit resume that
+        // connectSandbox triggers for a named sandbox. createIfMissing lets
+        // the connect fall back to a fresh sandbox instead of wedging the
+        // dev-server launch inside a bare 500.
+        resume: true,
+        createIfMissing: true,
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!isSandboxUnavailableError(message)) {
@@ -913,8 +943,9 @@ async function connectDevServerSandboxForSession(
     // poisoned resume state so the next connect provisions a fresh one,
     // then tell the UI to resume/reprovision rather than surfacing a
     // generic 500 on every retry.
-    const clearedState = clearUnavailableSandboxState(sandboxState, message);
-    if (clearedState !== sandboxState) {
+    const liveState = sessionContext.sessionRecord.sandboxState;
+    const clearedState = clearUnavailableSandboxState(liveState, message);
+    if (clearedState !== liveState) {
       await updateSession(sessionId, { sandboxState: clearedState }).catch(
         () => undefined,
       );

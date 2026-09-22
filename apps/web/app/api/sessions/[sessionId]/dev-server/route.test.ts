@@ -115,10 +115,17 @@ const requireAuthenticatedUserMock = mock(async () => ({
   ok: true as const,
   userId: "user-1",
 }));
-const requireOwnedSessionWithSandboxGuardMock = mock(async () => ({
+// 2026-09-22: dev-server now provisions a sandbox when none exists
+// instead of 409-ing, so the guard variant is no longer used here.
+const requireOwnedSessionMock = mock(async () => ({
   ok: true as const,
   sessionRecord: currentSessionRecord,
 }));
+const kickSandboxProvisioningWorkflowMock = mock(async () => ({
+  status: "started" as const,
+  runId: "run-1",
+}));
+const waitForSandboxProvisioningRunMock = mock(async () => undefined);
 const execMock = mock(async (command: string) => {
   if (command.includes("find .")) {
     return successResult(currentFindOutput);
@@ -212,16 +219,28 @@ const connectSandboxMock = mock(async () => buildMockConnectedSandbox());
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: requireAuthenticatedUserMock,
-  requireOwnedSessionWithSandboxGuard: requireOwnedSessionWithSandboxGuardMock,
+  requireOwnedSession: requireOwnedSessionMock,
 }));
 
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox: connectSandboxMock,
 }));
 
+mock.module("@/lib/sandbox/provisioning-kick", () => ({
+  kickSandboxProvisioningWorkflow: kickSandboxProvisioningWorkflowMock,
+  waitForSandboxProvisioningRun: waitForSandboxProvisioningRunMock,
+}));
+
 mock.module("@/lib/db/sessions", () => ({
   updateSession: async () => ({ id: "session-1" }),
+  // Reads a mutable holder so a test can change what the route sees on
+  // its post-provisioning re-read without patching the (frozen) module
+  // namespace.
+  getSessionById: async () => sessionReReadResult ?? currentSessionRecord,
 }));
+
+/** What getSessionById returns after the provisioning kick; null = use the base record. */
+let sessionReReadResult: unknown = null;
 
 const routeModulePromise = import("./route");
 
@@ -244,7 +263,8 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     connectSandboxError = null;
     currentSessionRecord.sandboxState.expiresAt = Date.now() + 60_000;
     requireAuthenticatedUserMock.mockClear();
-    requireOwnedSessionWithSandboxGuardMock.mockClear();
+    requireOwnedSessionMock.mockClear();
+    kickSandboxProvisioningWorkflowMock.mockClear();
     connectSandboxMock.mockClear();
     execMock.mockClear();
     readFileMock.mockClear();
@@ -543,6 +563,85 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
 
     expect(response.status).toBe(409);
     expect(body.error).toContain("no longer available");
+  });
+
+  test("provisions a sandbox when the session has none instead of 409-ing", async () => {
+    // Owner request 2026-09-22: "when i click the start dev server if no
+    // sandbox it should automatically create new sandbox". This used to
+    // return 409 "Resume the sandbox before running a dev server", which
+    // made the button a dead end on any session whose sandbox had expired
+    // or never provisioned.
+    const { POST } = await routeModulePromise;
+
+    kickSandboxProvisioningWorkflowMock.mockImplementation(async () => ({
+      status: "started",
+      runId: "run-new",
+    }));
+    try {
+      // Before: session has no runtime sandbox at all.
+      // After: the durable provisioning workflow has written one, which
+      // is what the route sees on its re-read.
+      sessionReReadResult = {
+        userId: "user-1",
+        sandboxState: {
+          type: "vercel" as const,
+          sandboxId: "sandbox-fresh",
+          expiresAt: Date.now() + 60_000,
+        },
+        lifecycleError: null,
+      };
+      requireOwnedSessionMock.mockImplementation(async () => ({
+        ok: true as const,
+        sessionRecord: { userId: "user-1", sandboxState: null },
+      }));
+
+      const response = await POST(
+        new Request("http://localhost/api/sessions/session-1/dev-server", {
+          method: "POST",
+        }),
+        createRouteContext(),
+      );
+
+      expect(kickSandboxProvisioningWorkflowMock).toHaveBeenCalledTimes(1);
+      expect(waitForSandboxProvisioningRunMock).toHaveBeenCalledTimes(1);
+      expect(response.status).toBe(200);
+    } finally {
+      sessionReReadResult = null;
+    }
+  });
+
+  test("surfaces a 503 with the real reason when provisioning fails", async () => {
+    const { POST } = await routeModulePromise;
+
+    kickSandboxProvisioningWorkflowMock.mockImplementation(async () => ({
+      status: "started",
+      runId: "run-fail",
+    }));
+    try {
+      // Still no sandbox after provisioning, but with a real reason why.
+      sessionReReadResult = {
+        userId: "user-1",
+        sandboxState: null,
+        lifecycleError: "Sandbox.create failed: 400 timeout too large",
+      };
+      requireOwnedSessionMock.mockImplementation(async () => ({
+        ok: true as const,
+        sessionRecord: { userId: "user-1", sandboxState: null },
+      }));
+
+      const response = await POST(
+        new Request("http://localhost/api/sessions/session-1/dev-server", {
+          method: "POST",
+        }),
+        createRouteContext(),
+      );
+
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toContain("400 timeout too large");
+    } finally {
+      sessionReReadResult = null;
+    }
   });
 });
 

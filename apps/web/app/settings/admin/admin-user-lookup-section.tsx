@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatUsd, formatUsdCents } from "@/lib/format-usd";
 import {
   Table,
   TableBody,
@@ -25,14 +26,6 @@ import {
 import { lookupAdminUsers } from "@/lib/admin/actions";
 import { getPlanDefinition } from "@/lib/billing/plans";
 import type { AdminUserLookupRow } from "@/lib/db/admin-directory";
-
-function formatUsd(amount: number): string {
-  return `$${amount.toFixed(amount < 1 ? 4 : 2)}`;
-}
-
-function formatUsdCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
 
 /** Tailwind color classes per plan, so a support admin can eyeball tier
  * at a glance in the results table without reading the label -- free

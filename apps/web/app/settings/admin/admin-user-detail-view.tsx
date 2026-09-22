@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { formatUsd, formatUsdCents } from "@/lib/format-usd";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,10 +59,6 @@ import { cn } from "@/lib/utils";
 
 const USAGE_CHART_HEIGHT_PX = 72;
 const USAGE_CHART_MIN_BAR_PX = 3;
-
-function formatUsd(amount: number): string {
-  return `$${amount.toFixed(amount < 1 ? 4 : 2)}`;
-}
 
 function formatDate(date: Date): string {
   return new Date(date).toLocaleDateString("en-US", {
@@ -146,11 +143,6 @@ function UsageTrendChart({
  * signups tables so "how much has this person used, and on what" is one
  * click away instead of a database query.
  */
-function formatUsdCents(cents: number): string {
-  const dollars = cents / 100;
-  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
 /**
  * Admin-only plan override control. Lets support change a user's plan
  * tier directly (model access takes effect immediately -- see

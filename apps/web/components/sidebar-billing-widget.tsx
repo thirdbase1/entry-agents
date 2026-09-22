@@ -3,20 +3,13 @@
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
+import { formatUsdCents } from "@/lib/format-usd";
 
 interface BillingMeResponse {
   plan: string;
   planName: string;
   creditBalanceCents: number;
   creditGrantCents: number;
-}
-
-function formatUsd(cents: number) {
-  return (cents / 100).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
-  });
 }
 
 /**
@@ -80,7 +73,7 @@ export function SidebarBalancePill() {
       title="Current credit balance"
       className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-foreground"
     >
-      {formatUsd(data.creditBalanceCents)}
+      {formatUsdCents(data.creditBalanceCents)}
     </div>
   );
 }

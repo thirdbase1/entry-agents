@@ -649,13 +649,21 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
   private getCommandEnv(): Record<string, string> | undefined {
     const runtimePreviewEnv = this.getRuntimePreviewEnv();
-    if (!this.env && Object.keys(runtimePreviewEnv).length === 0) {
-      return undefined;
-    }
-
     return {
       ...this.env,
       ...runtimePreviewEnv,
+      // Git refuses to operate on a repository it believes is owned by
+      // someone else ("fatal: detected dubious ownership"), which is
+      // exactly what happens when the workspace is restored onto a
+      // drive: the repo's files can end up owned by a different uid
+      // than the process running git. Every git read the app does --
+      // diffs, lint, `git ls-files`, status -- then fails with a
+      // message the user can't act on. Pointing git at a throwaway
+      // config that marks the workspace as trusted makes this a
+      // non-issue without touching the sandbox's real git config.
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "safe.directory",
+      GIT_CONFIG_VALUE_0: "*",
     };
   }
 

@@ -124,11 +124,28 @@ export async function performSandboxMigration(
   try {
     const payload = await packWorkspacePayload(oldSandbox);
 
+    // A drive can only be attached read-write to ONE sandbox at a time.
+    // Creating the fresh sandbox while the old one still holds the
+    // session's drive gets rejected with a 409 drive_attached, so the
+    // old sandbox has to release it first. Stopping it here is safe:
+    // the workspace is already captured in `payload` above, and this
+    // sandbox is about to hard-expire anyway. It also means the
+    // stop() failure below can no longer lose the migration.
+    await oldSandbox.stop().catch((error) => {
+      console.warn(
+        `[sandbox-migration] Failed to stop old sandbox for session ${sessionId} before creating its replacement (continuing, the new sandbox may reject the drive mount):`,
+        error,
+      );
+    });
+
     // Deliberately no sandboxName / source here: this must create a
     // genuinely new sandbox rather than resume/reconnect to the one
     // that's about to expire, and we're restoring the workspace from
     // the tarball rather than a fresh git clone, so the bootstrap clone
     // step is skipped too.
+    //
+    // Deliberately AFTER oldSandbox.stop() above: the drive mount is
+    // what makes this ordering load-bearing, not the sandbox creation.
     const freshSandbox = await connectSandbox(
       { type: "vercel" } as SandboxState,
       {
@@ -139,12 +156,12 @@ export async function performSandboxMigration(
         persistent: false,
         createIfMissing: true,
         skipGitWorkspaceBootstrap: true,
-          // Mount the same per-session drive the old sandbox used, so the
-          // restore below writes into durable storage. Undefined when
-          // drives are disabled.
-          ...(getSandboxDriveConfig(sessionId) && {
-            drives: getSandboxDriveConfig(sessionId),
-          }),
+        // Mount the same per-session drive the old sandbox used, so the
+        // restore below writes into durable storage. Undefined when
+        // drives are disabled.
+        ...(getSandboxDriveConfig(sessionId) && {
+          drives: getSandboxDriveConfig(sessionId),
+        }),
       },
     );
 
@@ -157,16 +174,6 @@ export async function performSandboxMigration(
         "Fresh sandbox did not return a usable state after restore",
       );
     }
-
-    // Best-effort: the old sandbox is about to hard-expire anyway, so a
-    // failure here shouldn't block reporting the migration as
-    // successful -- the workspace is already safely on the new one.
-    await oldSandbox.stop().catch((error) => {
-      console.warn(
-        `[sandbox-migration] Failed to stop old sandbox for session ${sessionId} after migrating (harmless, it will expire on its own):`,
-        error,
-      );
-    });
 
     await updateSession(sessionId, {
       sandboxState: newSandboxState,

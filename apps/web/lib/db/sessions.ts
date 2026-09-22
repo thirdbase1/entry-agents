@@ -114,6 +114,23 @@ export type SessionRecord = NonNullable<
   Awaited<ReturnType<typeof getSessionById>>
 >;
 
+/**
+ * Batch variant of getSessionById, for callers that already hold a set of
+ * ids (e.g. drive cleanup reconciling Vercel drives against sessions).
+ * Missing ids are simply absent from the result.
+ */
+export async function getSessionByIds(sessionIds: string[]) {
+  if (sessionIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db.query.sessions.findMany({
+    where: inArray(sessions.id, sessionIds),
+  });
+
+  return rows.map(normalizeSessionRecord);
+}
+
 export async function getShareById(shareId: string) {
   return db.query.shares.findFirst({
     where: eq(shares.id, shareId),

@@ -13,11 +13,15 @@ import type { DriveMountConfig } from "@open-agents/sandbox/vercel/config.js";
  */
 export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
 
+/** Per-session drive size. */
+const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 8 * 1024 ** 3;
+
 /**
- * Per-session drive size. 20 GiB is enough for a cloned repo plus
- * node_modules and build output for a typical TypeScript project.
+ * Maximum age of a session's drive before it is deleted. Drives are only
+ * needed while a session is live or resumable, so anything untouched for
+ * longer than this is reclaimable. Four days.
  */
-const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 20 * 1024 ** 3;
+export const SANDBOX_DRIVE_MAX_AGE_MS = 4 * 24 * 60 * 60 * 1000;
 
 /**
  * Drive name for a session's persistent workspace.

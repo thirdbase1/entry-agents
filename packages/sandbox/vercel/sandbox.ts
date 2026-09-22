@@ -30,7 +30,12 @@ import {
 const MAX_OUTPUT_LENGTH = 50_000;
 const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
 const TIMEOUT_BUFFER_MS = 30_000; // 30 seconds buffer for beforeStop hook
-const MAX_SDK_TIMEOUT_MS = 18_000_000; // Vercel API limit: 5 hours
+// Vercel API limit: 45 MINUTES, hard. Not plan-gated -- Hobby and Pro both
+// cap here. Anything higher is rejected with
+//   `400 bad_request: timeout should be <= 45m`
+// This constant was previously 18_000_000 (5h) on the assumption the ceiling
+// scaled with plan, which broke every new chat on a Pro team (2026-09-22).
+const MAX_SDK_TIMEOUT_MS = 45 * 60 * 1000;
 const MAX_PROACTIVE_TIMEOUT_MS = MAX_SDK_TIMEOUT_MS - TIMEOUT_BUFFER_MS;
 
 // Vercel's own SDK default snapshot expiration is 30 days, but every

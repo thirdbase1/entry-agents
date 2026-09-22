@@ -111,9 +111,23 @@ export function getSandboxDriveConfig(
 /** SDK safety buffer reserved for sandbox before-stop hooks (30 seconds) */
 const VERCEL_SANDBOX_TIMEOUT_BUFFER_MS = 30 * 1000;
 
-/** Standard timeout for new cloud sandboxes (5 hours minus hook buffer) */
+/**
+ * Timeout for new cloud sandboxes on the "standard" (non-hobby) profile.
+ *
+ * 45 MINUTES IS A HARD API CEILING, NOT A PLAN TIER. The sandbox API
+ * rejects anything above it with:
+ *   400 bad_request: `timeout` should be <= 45m
+ *
+ * Confirmed in production 2026-09-22: every new chat failed with exactly
+ * that error because this constant requested 5h on the assumption that
+ * the ceiling was plan-gated. It is not. Hobby and Pro both cap at 45m,
+ * so "standard" and "hobby" now resolve to the same value and the
+ * distinction is meaningless for timeout purposes (it still matters for
+ * vcpus, see DEFAULT_SANDBOX_VCPUS).
+ */
+const MAX_SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
 const STANDARD_SANDBOX_TIMEOUT_MS =
-  5 * 60 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
+  MAX_SANDBOX_TIMEOUT_MS - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
 
 /**
  * Hobby-compatible timeout for new cloud sandboxes -- Hobby's documented

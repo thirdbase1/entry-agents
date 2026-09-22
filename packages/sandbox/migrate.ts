@@ -10,6 +10,10 @@ import type { Sandbox } from "./interface.ts";
  *   git bundle (works with no remote/network access needed on the
  *   destination), plus the uncommitted diff and untracked files
  *   separately, since a bundle only captures committed history.
+ *   bundleBase64 is null when the repo has NO COMMITS AT ALL -- a bundle
+ *   is impossible then, so the destination re-inits instead of cloning.
+ *   Not a rare edge case: a brand-new session's repo is exactly this
+ *   until its first commit.
  * - "plain": no git repo (e.g. a scratch/chat sandbox). We transfer a
  *   full tarball of the workspace, excluding regenerable junk
  *   (node_modules, build output, etc.) to keep the payload small.
@@ -17,7 +21,8 @@ import type { Sandbox } from "./interface.ts";
 export type WorkspacePayload =
   | {
       kind: "git";
-      bundleBase64: string;
+      /** Null when the source repo has no commits -- nothing to bundle. */
+      bundleBase64: string | null;
       diffText: string;
       untrackedTarBase64: string | null;
     }
@@ -51,26 +56,66 @@ async function isGitRepo(sandbox: Sandbox): Promise<boolean> {
   return result.stdout.trim() === "true";
 }
 
+/**
+ * Does this repo have at least one commit?
+ *
+ * A freshly-created session's workspace is a git repo with ZERO commits
+ * until the first commit lands, and that state breaks three separate
+ * commands this packer used to run unconditionally (all verified against
+ * a real empty repo):
+ *   git bundle create --all   -> "fatal: Refusing to create empty bundle"
+ *   git diff HEAD             -> "fatal: ambiguous argument 'HEAD'"
+ *   git ls-files --others     -> returns NOTHING for staged files
+ * The first one is what failed migration 45 times in a row in
+ * production; the third is a silent data-loss bug on top of it, since
+ * work the user staged but never committed was simply never carried
+ * over. Probe first and take the no-commit path when that is the case.
+ */
+async function hasCommits(sandbox: Sandbox): Promise<boolean> {
+  const result = await sandbox.exec(
+    "git rev-parse --verify HEAD",
+    sandbox.workingDirectory,
+    PACK_TIMEOUT_MS,
+  );
+  return result.success;
+}
+
 async function packGitWorkspace(
   sandbox: Sandbox,
 ): Promise<WorkspacePayload & { kind: "git" }> {
   const cwd = sandbox.workingDirectory;
 
-  const bundleResult = await sandbox.exec(
-    `git bundle create ${BUNDLE_PATH} --all`,
-    cwd,
-    PACK_TIMEOUT_MS,
-  );
-  if (!bundleResult.success) {
-    throw new Error(`Failed to create git bundle: ${bundleResult.stderr}`);
-  }
-  const bundleBase64 = (await sandbox.readFileBuffer(BUNDLE_PATH)).toString(
-    "base64",
-  );
+  const repoHasCommits = await hasCommits(sandbox);
 
-  const diffResult = await sandbox.exec("git diff HEAD", cwd, PACK_TIMEOUT_MS);
+  // No commits yet: there is no history to bundle, so git refuses the
+  // command outright. Carry the files instead and let the destination
+  // re-init an empty repo. bundleBase64 null is the signal for that.
+  let bundleBase64: string | null = null;
+  if (repoHasCommits) {
+    const bundleResult = await sandbox.exec(
+      `git bundle create ${BUNDLE_PATH} --all`,
+      cwd,
+      PACK_TIMEOUT_MS,
+    );
+    if (!bundleResult.success) {
+      throw new Error(`Failed to create git bundle: ${bundleResult.stderr}`);
+    }
+    bundleBase64 = (await sandbox.readFileBuffer(BUNDLE_PATH)).toString(
+      "base64",
+    );
+  }
+
+  // `git diff HEAD` needs a HEAD, which a no-commit repo does not have.
+  // `--cached` diffs the index against the empty tree, which is exactly
+  // the staged-not-yet-committed work we would otherwise drop.
+  const diffCommand = repoHasCommits ? "git diff HEAD" : "git diff --cached";
+  const diffResult = await sandbox.exec(diffCommand, cwd, PACK_TIMEOUT_MS);
   const diffText = diffResult.stdout;
 
+  // Stays `--others` even in the no-commit case: the staged files are
+  // already carried by diffText above (git diff --cached), so adding
+  // --cached here would restore them a second time from the tarball
+  // and any disagreement between the two would silently let the tar win.
   const untrackedList = await sandbox.exec(
     "git ls-files --others --exclude-standard",
     cwd,
@@ -92,7 +137,6 @@ async function packGitWorkspace(
 
   return { kind: "git", bundleBase64, diffText, untrackedTarBase64 };
 }
-
 async function packPlainWorkspace(
   sandbox: Sandbox,
 ): Promise<WorkspacePayload & { kind: "plain" }> {
@@ -136,19 +180,31 @@ export async function restoreWorkspacePayload(
   const cwd = sandbox.workingDirectory;
 
   if (payload.kind === "git") {
-    await sandbox.writeFileBuffer(
-      BUNDLE_PATH,
-      Buffer.from(payload.bundleBase64, "base64"),
-    );
-    const cloneResult = await sandbox.exec(
-      `git clone ${BUNDLE_PATH} .`,
-      cwd,
-      PACK_TIMEOUT_MS,
-    );
-    if (!cloneResult.success) {
-      throw new Error(
-        `Failed to restore git bundle into new sandbox: ${cloneResult.stderr}`,
+    if (payload.bundleBase64 !== null) {
+      await sandbox.writeFileBuffer(
+        BUNDLE_PATH,
+        Buffer.from(payload.bundleBase64, "base64"),
       );
+      const cloneResult = await sandbox.exec(
+        `git clone ${BUNDLE_PATH} .`,
+        cwd,
+        PACK_TIMEOUT_MS,
+      );
+      if (!cloneResult.success) {
+        throw new Error(
+          `Failed to restore git bundle into new sandbox: ${cloneResult.stderr}`,
+        );
+      }
+    } else {
+      // No bundle because the source repo had no commits. There is
+      // nothing to clone, so stand up an empty repo for the files and
+      // diff below to land in.
+      const initResult = await sandbox.exec("git init", cwd, PACK_TIMEOUT_MS);
+      if (!initResult.success) {
+        throw new Error(
+          `Failed to initialise git repo in new sandbox: ${initResult.stderr}`,
+        );
+      }
     }
 
     if (payload.diffText.trim().length > 0) {

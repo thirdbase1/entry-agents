@@ -254,11 +254,11 @@ export async function provisionSessionSandbox(params: {
         persistent: false,
         resume: true,
         // Opt-in via OPEN_AGENTS_SANDBOX_DRIVE=true. Mounts the
-        // workspace on a persistent drive so files survive sandbox
-        // stop/expiry. Undefined when disabled, so the field is simply
-        // absent and behaviour is unchanged.
-        ...(getSandboxDriveConfig() && {
-          drives: getSandboxDriveConfig(),
+        // per-session drive so files survive sandbox stop/expiry.
+        // Undefined when disabled, so the field is simply absent and
+        // behaviour is unchanged.
+        ...(getSandboxDriveConfig(session.id) && {
+          drives: getSandboxDriveConfig(session.id),
         }),
         createIfMissing: true,
       },

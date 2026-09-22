@@ -139,12 +139,12 @@ export async function performSandboxMigration(
         persistent: false,
         createIfMissing: true,
         skipGitWorkspaceBootstrap: true,
-        // Mount the same workspace drive the old sandbox used, so the
-        // restore below writes into durable storage. Undefined when
-        // drives are disabled.
-        ...(getSandboxDriveConfig() && {
-          drives: getSandboxDriveConfig(),
-        }),
+          // Mount the same per-session drive the old sandbox used, so the
+          // restore below writes into durable storage. Undefined when
+          // drives are disabled.
+          ...(getSandboxDriveConfig(sessionId) && {
+            drives: getSandboxDriveConfig(sessionId),
+          }),
       },
     );
 

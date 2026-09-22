@@ -7,21 +7,30 @@ import { isHobbyResourceProfile } from "../deployment/resource-profile.ts";
 import type { DriveMountConfig } from "@open-agents/sandbox/vercel/config.js";
 
 /**
- * Drive name for the persistent session workspace. Created on first use
- * via `Drive.getOrCreate()` and reused by every sandbox, so a workspace
- * survives sandbox stop/expiry without depending on snapshot storage.
- */
-export const DEFAULT_SANDBOX_DRIVE_NAME = "entry-agents-workspace";
-
-/**
  * Mount path for the session workspace drive. This is the same directory
  * the sandbox clones repos into, so a drive mounted here makes the whole
  * workspace durable across sandbox lifetimes.
  */
 export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
 
-/** 1 TiB default, matching Vercel's own drive default. */
-const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 1024 ** 4;
+/**
+ * Per-session drive size. 20 GiB is enough for a cloned repo plus
+ * node_modules and build output for a typical TypeScript project.
+ */
+const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 20 * 1024 ** 3;
+
+/**
+ * Drive name for a session's persistent workspace.
+ *
+ * A drive attaches to exactly ONE sandbox at a time (the SDK's
+ * `currentSessionId` / `currentSandboxName` are singular), and sandboxes
+ * are named `session_<sessionId>` -- one per user session. So each
+ * session needs its OWN drive; a shared drive would serialise concurrent
+ * users behind each other and let one workspace exhaust another's space.
+ */
+export function getSessionDriveName(sessionId: string): string {
+  return `entry-agents-session-${sessionId}`;
+}
 
 /**
  * Whether new sandboxes should mount the persistent workspace drive.
@@ -40,17 +49,27 @@ export function isSandboxDriveEnabled(): boolean {
 
 /**
  * Drive mount config passed to `connectSandbox()`. Returns undefined when
- * drives are disabled so callers can spread it unconditionally.
+ * drives are disabled or no session is in play, so callers can spread it
+ * unconditionally.
+ *
+ * @param sessionId - The session whose workspace should be persisted.
  */
-export function getSandboxDriveConfig(): DriveMountConfig | undefined {
+export function getSandboxDriveConfig(
+  sessionId?: string,
+): DriveMountConfig | undefined {
   if (!isSandboxDriveEnabled()) {
+    return undefined;
+  }
+
+  if (!sessionId) {
+    // No session in play (e.g. a benchmark run) -- no drive.
     return undefined;
   }
 
   return {
     mounts: [
       {
-        driveName: DEFAULT_SANDBOX_DRIVE_NAME,
+        driveName: getSessionDriveName(sessionId),
         mountPath: DEFAULT_SANDBOX_DRIVE_MOUNT_PATH,
         mode: "read-write",
         maxSizeBytes: DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES,

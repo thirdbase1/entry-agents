@@ -15,8 +15,9 @@
  * a genuinely working default instead of pointing at a disabled model.
  *
  * Changed 2026-09-22: gpt-5.6-luna was retired as the free-tier model
- * (owner request) in favour of qwen3.8-flash, so this follows it. Keep in
- * sync with FREE_PLAN_MODEL_ID -- that constant is the real gate, this is
- * only the display/placeholder label.
+ * (owner request) in favour of the ":free" gateway route
+ * qwen3.8-flash:free, so this follows it. Keep in sync with
+ * FREE_PLAN_MODEL_ID -- that constant is the real gate, this is only the
+ * display/placeholder label.
  */
-export const defaultModelLabel = "qwen3.8-flash" as const;
+export const defaultModelLabel = "qwen3.8-flash:free" as const;

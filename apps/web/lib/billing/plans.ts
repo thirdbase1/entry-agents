@@ -290,32 +290,31 @@ export const PLAN_IDS = Object.keys(PLAN_CATALOG) as PlanId[];
  * zero, exactly like a paid user. The previous owner-sponsored $0 model
  * pattern (Luna, ling-3.0-flash-free) is intentionally NOT applied here.
  */
-export const FREE_PLAN_MODEL_ID = "qwen3.8-flash";
+export const FREE_PLAN_MODEL_ID = "qwen3.8-flash:free";
 
 /**
- * Empty by owner request 2026-09-22.
+ * Free-plan model selection.
  *
- * This list used to hold owner-sponsored $0 models -- models Entry let
- * Free-plan users pick without force-swapping them back to the free
- * default, because entry-gateway's `EXTRA_MODEL_ROUTES_JSON_4` set their
- * cost.input/output to 0 and the owner paid the tokens directly.
+ * Originally this held owner-sponsored $0 models: routes whose
+ * cost.input/output entry-gateway set to 0 in `EXTRA_MODEL_ROUTES_JSON_4`,
+ * with the owner paying the tokens directly. That arrangement was removed
+ * 2026-09-22 ("the free model cost should be zero, I don't like it").
  *
- * The owner removed that arrangement: "The free model cost should be
- * zero. I don't like it. Free model must be from the actual free model."
- * So the free tier no longer leans on artificially zero-priced routes.
- * Free-plan users get qwen3.8-flash as their selectable model and spend
- * their real credit against its real cost.
+ * It is now an explicit allow-list on top of FREE_PLAN_MODEL_ID --
+ * Free-plan users may pick any of these WITHOUT being force-swapped by the
+ * luna-only gate in app/workflows/chat.ts. These are the ":free" gateway
+ * route ids (a colon suffix, e.g. `qwen3.8-flash:free`), which is a
+ * different convention from the older `-free` hyphen suffix.
  *
- * gpt-5.6-luna and ling-3.0-flash-free were both removed from here.
- *
- * It is kept as an exported list rather than deleted because
- * `app/workflows/chat.ts` still reads it for the luna-only gate; an empty
- * array means every Free-plan user is force-swapped to
- * FREE_PLAN_MODEL_ID. Reintroduce an entry only if a genuinely $0-cost
- * upstream returns to the catalog.
+ * NOT VERIFIED AGAINST THE LIVE GATEWAY: entry-gateway-six.vercel.app
+ * returns 401 (GATEWAY_API_KEY is stale), so GET /v1/debug/routes could not
+ * be dumped to confirm these ids exist. lessons-learned.md 2026-08-21
+ * records dead ids producing a deterministic 0/N with no useful signal, so
+ * re-verify once the gateway key is working.
  */
 export const FREE_TIER_ALLOWED_MODEL_IDS: readonly string[] = [
   FREE_PLAN_MODEL_ID,
+  "mimo-v2.6-flash:free",
 ];
 
 export function getPlanDefinition(

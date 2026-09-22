@@ -1,3 +1,4 @@
 export { default, alt, size, contentType } from "./opengraph-image";
 
-export const runtime = "edge";
+// Keep in sync with ./opengraph-image: Node runtime, Edge is deprecated.
+export const runtime = "nodejs";

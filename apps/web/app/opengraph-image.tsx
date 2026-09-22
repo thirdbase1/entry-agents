@@ -3,7 +3,9 @@ import { ImageResponse } from "next/og";
 export const alt = "Entry Agent — Spawn coding agents that run in the cloud";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const runtime = "edge";
+// Node runtime rather than the deprecated Edge runtime. This image uses
+// only static JSX and inline styles, so nothing here needs Edge APIs.
+export const runtime = "nodejs";
 
 export default function OgImage() {
   return new ImageResponse(

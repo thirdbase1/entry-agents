@@ -13,5 +13,10 @@
  * the same day -- swapped to gpt-5.6-luna (the actual free-tier model,
  * see FREE_PLAN_MODEL_ID in apps/web/lib/billing/plans.ts) so this stays
  * a genuinely working default instead of pointing at a disabled model.
+ *
+ * Changed 2026-09-22: gpt-5.6-luna was retired as the free-tier model
+ * (owner request) in favour of qwen3.8-flash, so this follows it. Keep in
+ * sync with FREE_PLAN_MODEL_ID -- that constant is the real gate, this is
+ * only the display/placeholder label.
  */
-export const defaultModelLabel = "gpt-5.6-luna" as const;
+export const defaultModelLabel = "qwen3.8-flash" as const;

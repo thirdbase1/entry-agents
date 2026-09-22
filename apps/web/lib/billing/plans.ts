@@ -272,30 +272,50 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
 
 export const PLAN_IDS = Object.keys(PLAN_CATALOG) as PlanId[];
 
-/** The only model a Free-plan user may select. Gateway route id (see entry-gateway EXTRA_MODEL_ROUTES_JSON_2). */
-export const FREE_PLAN_MODEL_ID = "gpt-5.6-luna";
+/**
+ * The only model a Free-plan user may select. Gateway route id.
+ *
+ * Changed 2026-09-22 (owner request): gpt-5.6-luna -> qwen3.8-flash.
+ *
+ * Luna is gone deliberately. Its upstream FreeModel pool went down
+ * repeatedly (2026-08-21, 2026-08-26, 2026-08-29), and it is retired here
+ * rather than merely deprioritised, so no code path still treats it as
+ * the free-tier model.
+ *
+ * IMPORTANT -- this is a SELECTION gate only, not a price. It does not
+ * make qwen3.8-flash free. Cost comes from the gateway's route config
+ * (`EXTRA_MODEL_ROUTES_JSON_*` in entry-gateway, a separate deployment),
+ * and qwen3.8-flash is billed at its real rate: a Free-plan user spends
+ * their $1 trial credit against actual token cost and is hard-blocked at
+ * zero, exactly like a paid user. The previous owner-sponsored $0 model
+ * pattern (Luna, ling-3.0-flash-free) is intentionally NOT applied here.
+ */
+export const FREE_PLAN_MODEL_ID = "qwen3.8-flash";
 
 /**
- * Owner-sponsored free models (2026-08-19): in addition to
- * FREE_PLAN_MODEL_ID, Free-plan users may also select any model listed
- * here WITHOUT it being forced back to Luna by the luna-only gate below.
- * These models are $0 cost for every plan (Free AND paid) -- see
- * entry-gateway's EXTRA_MODEL_ROUTES_JSON_4, which sets cost.input/output
- * to 0 for these route ids -- the owner is paying for the underlying
- * tokens directly via their own Vercel AI Gateway account balance rather
- * than through Entry's credit ledger, so no per-plan billing logic is
- * needed here beyond just not force-swapping the model away from a
- * Free-plan user who picked it.
+ * Empty by owner request 2026-09-22.
  *
- * ling-3.0-flash-free: routed through entry-gateway to Vercel's own AI
- * Gateway (inclusionai/ling-3.0-flash), re-enabled 2026-08-19 after being
- * admin-disabled since 2026-08-15 following an outage on its old
- * OpenCode Zen upstream -- that old route is kept as an automatic
- * lower-priority fallback candidate in the gateway config, not removed.
+ * This list used to hold owner-sponsored $0 models -- models Entry let
+ * Free-plan users pick without force-swapping them back to the free
+ * default, because entry-gateway's `EXTRA_MODEL_ROUTES_JSON_4` set their
+ * cost.input/output to 0 and the owner paid the tokens directly.
+ *
+ * The owner removed that arrangement: "The free model cost should be
+ * zero. I don't like it. Free model must be from the actual free model."
+ * So the free tier no longer leans on artificially zero-priced routes.
+ * Free-plan users get qwen3.8-flash as their selectable model and spend
+ * their real credit against its real cost.
+ *
+ * gpt-5.6-luna and ling-3.0-flash-free were both removed from here.
+ *
+ * It is kept as an exported list rather than deleted because
+ * `app/workflows/chat.ts` still reads it for the luna-only gate; an empty
+ * array means every Free-plan user is force-swapped to
+ * FREE_PLAN_MODEL_ID. Reintroduce an entry only if a genuinely $0-cost
+ * upstream returns to the catalog.
  */
 export const FREE_TIER_ALLOWED_MODEL_IDS: readonly string[] = [
   FREE_PLAN_MODEL_ID,
-  "ling-3.0-flash-free",
 ];
 
 export function getPlanDefinition(

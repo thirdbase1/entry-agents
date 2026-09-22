@@ -77,7 +77,7 @@ export function useModelOptions(config: UseModelOptionsConfig = {}) {
     // hard balance<=0 throw plus runAgentStep's real-time mid-turn abort.
     creditGate: modelsData?.creditGate ?? null,
     userPlan: modelsData?.userPlan ?? null,
-    freePlanModelId: modelsData?.freePlanModelId ?? "gpt-5.6-luna",
+    freePlanModelId: modelsData?.freePlanModelId ?? "qwen3.8-flash",
     loading:
       initialModelOptions.length === 0 &&
       !hasCompleteFetchedData &&

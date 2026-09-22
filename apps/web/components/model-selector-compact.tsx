@@ -43,13 +43,13 @@ interface ModelSelectorCompactProps {
    * upgrade prompt instead of being selectable. Omit/false for every
    * other plan, where the picker behaves exactly as before. */
   isFreeTierLocked?: boolean;
-  /** The one model ID Free-tier users can still pick (Luna) -- required
-   * when isFreeTierLocked is true so that model doesn't render locked. */
+  /** The one model ID Free-tier users can still pick (qwen3.8-flash) --
+   * required when isFreeTierLocked is true so that model doesn't render locked. */
   freePlanModelId?: string;
   /** Additional model IDs Free-tier users may also pick without being
-   * locked -- e.g. owner-sponsored $0 models like ling-3.0-flash-free
-   * (see FREE_TIER_ALLOWED_MODEL_IDS in lib/billing/plans.ts). Merged
-   * with freePlanModelId when checking lock state; omit for no extras. */
+   * locked. Merged with freePlanModelId when checking lock state; omit for
+   * no extras. Empty in practice since 2026-09-22 -- the owner-sponsored
+   * $0 model list was cleared (see FREE_TIER_ALLOWED_MODEL_IDS). */
   freeTierUnlockedModelIds?: readonly string[];
   /** Called when a Free-tier user clicks "Upgrade" inside the locked-
    * model popup -- typically routes to /billing/plans. */

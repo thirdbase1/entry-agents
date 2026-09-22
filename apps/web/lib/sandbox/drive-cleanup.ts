@@ -1,25 +1,25 @@
 import "server-only";
 
-import { Drive } from "@vercel/sandbox";
-import { getSessionByIds, type SessionRecord } from "@/lib/db/sessions";
-import { SANDBOX_DRIVE_MAX_AGE_MS } from "@/lib/sandbox/config";
+import {
+  cleanupStaleDrives,
+  type DriveSessionStatus,
+} from "@open-agents/sandbox";
+import { getSessionByIds } from "@/lib/db/sessions";
+import {
+  getSessionDrivePrefix,
+  SANDBOX_DRIVE_MAX_AGE_MS,
+} from "@/lib/sandbox/config";
 
 /**
- * Reclaim per-session drives that are no longer needed.
+ * Reclaim per-session workspace drives that are no longer needed.
  *
- * Drives are created lazily by `getSandboxDriveConfig()` when a session
- * provisions a sandbox, one per session. Nothing deletes them otherwise,
- * so without this they accumulate forever -- 8 GiB of provisioned
- * capacity per abandoned session.
+ * Drives are created lazily by getSandboxDriveConfig() when a session
+ * provisions a sandbox, one per session, and nothing else deletes them.
+ * Without this they accumulate at 8 GiB of provisioned capacity each.
  *
- * A drive is deleted when BOTH hold:
- *   1. It is not attached to any sandbox (currentSandboxName is unset).
- *   2. Its session is archived, missing, or has been idle for longer than
- *      SANDBOX_DRIVE_MAX_AGE_MS.
- *
- * Deliberately conservative: a drive belonging to a live session is never
- * touched, and an in-use drive cannot be deleted anyway (the API rejects
- * it), so the attachment check is mainly to skip work.
+ * The Vercel SDK is only declared by @open-agents/sandbox, so the sweep
+ * itself lives there; this wrapper resolves session liveness from the
+ * database and applies this app's retention policy.
  */
 export async function cleanupStaleSessionDrives(): Promise<{
   scanned: number;
@@ -27,97 +27,41 @@ export async function cleanupStaleSessionDrives(): Promise<{
   skipped: number;
   failed: number;
 }> {
-  const result = { scanned: 0, deleted: 0, skipped: 0, failed: 0 };
+  const prefix = getSessionDrivePrefix();
 
-  let drives: Drive[];
-  try {
-    drives = await Drive.list({ limit: 100 }).then((p) => p.toArray());
-  } catch (error) {
-    console.warn(
-      "[drive-cleanup] Failed to list drives; aborting this run:",
-      error,
-    );
-    return result;
-  }
+  // Resolved lazily and cached: the sweep asks per drive, so we never
+  // load sessions we do not need.
+  const cache = new Map<string, DriveSessionStatus>();
 
-  // Only consider drives this app owns.
-  const sessionDrives = drives.filter((d) => d.name.startsWith("entry-agents-session-"));
-  if (sessionDrives.length === 0) {
-    return result;
-  }
+  return cleanupStaleDrives({
+    namePrefix: prefix,
+    maxIdleMs: SANDBOX_DRIVE_MAX_AGE_MS,
+    resolveStatus: async (sessionId) => {
+      const cached = cache.get(sessionId);
+      if (cached) {
+        return cached;
+      }
 
-  // Map drive -> session id so we can look up liveness in one query.
-  const prefix = "entry-agents-session-";
-  const sessionIds = sessionDrives
-    .map((d) => d.name.slice(prefix.length))
-    .filter((id) => id.length > 0);
+      const records = await getSessionByIds([sessionId]);
+      const session = records[0];
 
-  let sessions = new Map<string, SessionRecord>();
-  try {
-    const records = await getSessionByIds(sessionIds);
-    sessions = new Map(records.map((r) => [r.id, r]));
-  } catch (error) {
-    console.warn(
-      "[drive-cleanup] Failed to load sessions; treating all as unknown:",
-      error,
-    );
-  }
+      const status: DriveSessionStatus = session
+        ? {
+            exists: true,
+            archived: session.status === "archived",
+            lastTouchedAt: session.updatedAt?.getTime() ?? 0,
+          }
+        : { exists: false, archived: false, lastTouchedAt: 0 };
 
-  const now = Date.now();
-
-  for (const drive of sessionDrives) {
-    result.scanned++;
-
-    // Never race an attached drive -- the API would reject the delete, and
-    // more importantly the session is actively using it.
-    if (drive.currentSandboxName) {
-      result.skipped++;
-      continue;
-    }
-
-    const sessionId = drive.name.slice(prefix.length);
-    const session = sessions.get(sessionId);
-
-    if (!session) {
-      // Session is gone entirely; its drive is reclaimable.
-      await deleteDrive(drive, result, "session-missing");
-      continue;
-    }
-
-    if (session.status === "archived") {
-      await deleteDrive(drive, result, "session-archived");
-      continue;
-    }
-
-    const lastTouched = Math.max(
-      session.updatedAt?.getTime() ?? 0,
-      drive.updatedAt.getTime(),
-    );
-    if (now - lastTouched > SANDBOX_DRIVE_MAX_AGE_MS) {
-      await deleteDrive(drive, result, "idle-too-long");
-      continue;
-    }
-
-    result.skipped++;
-  }
-
-  return result;
-}
-
-async function deleteDrive(
-  drive: Drive,
-  result: { deleted: number; failed: number },
-  reason: string,
-): Promise<void> {
-  try {
-    await drive.delete();
-    result.deleted++;
-    console.log(`[drive-cleanup] Deleted ${drive.name} (${reason}).`);
-  } catch (error) {
-    result.failed++;
-    console.warn(
-      `[drive-cleanup] Failed to delete ${drive.name} (${reason}):`,
-      error,
-    );
-  }
+      cache.set(sessionId, status);
+      return status;
+    },
+    onDecision: (driveName, action, reason) => {
+      if (action === "deleted") {
+        console.log("[drive-cleanup] Deleted " + driveName + " (" + reason + ").");
+      } else if (action === "failed") {
+        console.warn("[drive-cleanup] " + driveName + " failed: " + reason);
+      }
+    },
+  });
 }

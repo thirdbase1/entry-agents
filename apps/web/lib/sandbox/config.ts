@@ -36,6 +36,11 @@ export function getSessionDriveName(sessionId: string): string {
   return `entry-agents-session-${sessionId}`;
 }
 
+/** Prefix shared by every drive this app creates. */
+export function getSessionDrivePrefix(): string {
+  return "entry-agents-session-";
+}
+
 /**
  * Whether new sandboxes should mount the persistent workspace drive.
  *

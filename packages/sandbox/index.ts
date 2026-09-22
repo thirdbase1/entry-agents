@@ -19,6 +19,14 @@ export {
   type WorkspacePayload,
 } from "./migrate.ts";
 
+// drive reclamation
+export {
+  cleanupStaleDrives,
+  type DriveCleanupOptions,
+  type DriveCleanupResult,
+  type DriveSessionStatus,
+} from "./drive-cleanup.ts";
+
 // shared types
 export type { Source, FileEntry, SandboxStatus } from "./types.ts";
 

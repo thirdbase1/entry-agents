@@ -13,19 +13,29 @@ import type { DriveMountConfig } from "@open-agents/sandbox/vercel/config.js";
  */
 export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
 
-/** Per-session drive size. */
-const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 8 * 1024 ** 3;
+/**
+ * Per-session drive size: 750 MiB.
+ *
+ * Deliberately small. The team's drive storage is capped at 15 GiB in
+ * total (verified against the drives API: 15 GiB succeeds, 16 GiB is
+ * refused with `payment_required`), so the per-session size directly
+ * limits how many sessions can hold a workspace at once. 750 MiB fits a
+ * cloned repo plus node_modules for a typical TypeScript project and
+ * allows ~20 concurrent drives instead of one.
+ */
+const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = Math.round(750 * 1024 ** 2);
 
 /**
  * A drive is reclaimable once it has not been updated for this long.
  *
  * Measured against the DRIVE's own `updatedAt`, not the session's: a
  * drive stops being touched the moment its sandbox detaches, so drive
- * age is the honest signal that nothing is actively writing to it. Three
- * days of no writes is far longer than any real session goes idle, so
- * active work is never caught by this.
+ * age is the honest signal that nothing is actively writing to it. 38
+ * hours (reduced by 34h from the original 3 days, per owner) is far
+ * longer than any real session goes idle, so active work is never caught
+ * by this.
  */
-export const SANDBOX_DRIVE_MAX_IDLE_MS = 3 * 24 * 60 * 60 * 1000;
+export const SANDBOX_DRIVE_MAX_IDLE_MS = 38 * 60 * 60 * 1000;
 
 /**
  * Drive name for a session's persistent workspace.

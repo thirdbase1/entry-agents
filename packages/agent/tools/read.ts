@@ -3,7 +3,6 @@ import { z } from "zod";
 import { wrapExternalFileContent } from "./content-boundary";
 import { ensureReadFileState } from "./read-state";
 import {
-  READ_BYTE_CEILING,
   checkUnchangedRead,
   type SelectedLines as SelectedLinesResult,
   clampLine,
@@ -13,6 +12,7 @@ import {
   normalizeFileContent,
   recordRead,
   selectLines,
+  splitLines,
   applyByteCeiling,
 } from "./read-ceilings";
 import { getSandbox, toDisplayPath } from "./utils";
@@ -167,7 +167,7 @@ EXAMPLES:
         // BOM stripped, CRLF normalized — so line numbers and offsets
         // agree with what cat -n and other tools see.
         const content = normalizeFileContent(raw);
-        const lines = content.split("\n");
+        const lines = splitLines(content);
         const displayPath = toDisplayPath(absolutePath, workingDirectory);
         const contentHash = hashFileContent(content);
         // Read-gate state (read-state.ts): hash of the FULL file so

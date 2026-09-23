@@ -1341,6 +1341,88 @@ async function provisionSandboxStep(
   return { kickStatus: kick.status, started: Boolean(kick.runId) };
 }
 
+async function reconnectSandboxStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { hasResumableSandboxState, hasRuntimeSandboxState } =
+    await import("@/lib/sandbox/utils");
+
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+  if (session.status === "archived") {
+    throw new Error("Session is archived");
+  }
+
+  // Nothing to resume from -- say so rather than silently provisioning a
+  // brand-new workspace (reconnect and provision are different intents).
+  if (
+    !hasRuntimeSandboxState(session.sandboxState) &&
+    !hasResumableSandboxState(session.sandboxState)
+  ) {
+    return {
+      reconnected: false,
+      reason: "no-resumable-workspace",
+      hint: "No paused or running workspace to reconnect to. Use the provision action instead.",
+    };
+  }
+
+  // Reuses the session's own provisioning/resume path, so a reconnect behaves
+  // exactly like the UI's reconnect button.
+  const { provisionSessionSandbox } =
+    await import("@/lib/sandbox/provisioning");
+  const result = await provisionSessionSandbox({ sessionId });
+  return { ...result, reconnected: true };
+}
+
+async function snapshotSandboxStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { getSessionById, updateSession } = await import("@/lib/db/sessions");
+  const { connectSandbox } = await import("@open-agents/sandbox");
+  const { canOperateOnSandbox, hasResumableSandboxState } =
+    await import("@/lib/sandbox/utils");
+
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+  if (!canOperateOnSandbox(session.sandboxState)) {
+    throw new Error(
+      "There is no running workspace to snapshot. Start one with the provision action first.",
+    );
+  }
+
+  const sandbox = await connectSandbox(session.sandboxState);
+  if (!sandbox.snapshot) {
+    return {
+      snapshotted: false,
+      reason: "unsupported",
+      hint: "This sandbox does not support snapshots.",
+    };
+  }
+
+  const result = await sandbox.snapshot();
+  // Persist the snapshot id so a later reconnect can restore it, and move the
+  // lifecycle into the same hibernated state the status route uses.
+  const currentState = session.sandboxState;
+  await updateSession(sessionId, {
+    snapshotUrl: result.snapshotId,
+    snapshotCreatedAt: new Date(),
+    lifecycleState: hasResumableSandboxState(currentState)
+      ? "hibernated"
+      : "provisioning",
+  });
+
+  return { snapshotted: true, snapshotId: result.snapshotId };
+}
+
 async function migrateSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
@@ -2180,7 +2262,9 @@ export async function runAgentWorkflow(options: Options) {
       sandboxControl: {
         status: () => getSandboxStatusStep(options.sessionId),
         provision: () => provisionSandboxStep(options.sessionId),
+        reconnect: () => reconnectSandboxStep(options.sessionId),
         migrate: () => migrateSandboxStep(options.sessionId),
+        snapshot: () => snapshotSandboxStep(options.sessionId),
         extend: () => extendSandboxStep(options.sessionId),
         delete: () => deleteSandboxStep(options.sessionId),
       },

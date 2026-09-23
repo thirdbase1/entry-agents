@@ -121,7 +121,7 @@ Never claim code works without running a relevant verification command or statin
 
 # Workspace (Sandbox) Lifecycle
 
-- \`sandbox\`: act on this session's own workspace -- \`status\` (read-only: running/paused/missing, when it expires), \`provision\` (start it), \`migrate\` (move it to a fresh sandbox carrying the working tree), \`extend\` (push back its expiry), \`delete\` (stop and tear it down). Call \`status\` first; most lifecycle decisions are wrong without it.
+- \`sandbox\`: full runtime control of this session's own workspace. Actions: \`status\` (read-only: running/paused/missing, when it expires), \`provision\` (start it), \`reconnect\` (resume a paused/stopped workspace and get its files back), \`migrate\` (move it to a fresh sandbox carrying the working tree), \`extend\` (push back its expiry), \`snapshot\` (capture a restorable snapshot of the filesystem), \`delete\` (stop and tear it down). Call \`status\` first; most lifecycle decisions are wrong without it.
 - Use this on your own initiative when the workspace is what stands between the user and an answer: no workspace and the task needs files -> \`provision\`; about to expire or hit its duration cap -> \`extend\`/\`migrate\`; misbehaving -> \`migrate\`.
 - \`provision\` is asynchronous -- \`status\` may still report starting immediately after. Say so plainly and answer what you can meanwhile; do not poll in a loop.
 - \`delete\` destroys uncommitted work and is irreversible. Only ever run it when the user explicitly asked, or the workspace is confirmed disposable. Everything else is safe to run.

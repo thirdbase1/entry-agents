@@ -28,6 +28,29 @@ export interface SelectedLines {
   truncated: boolean;
 }
 
+/**
+ * Splits normalized content into lines WITHOUT the phantom trailing entry
+ * a naive `content.split("\n")` produces.
+ *
+ * A trailing newline TERMINATES the last line; it does not start a new one.
+ * Without this, reading "one\ntwo\nthree\n" reports `totalLines: 4` and
+ * emits a blank `4: ` row -- the model then trusts a file length that is one
+ * greater than the real one, and the read-before-edit gate's "startLine from
+ * the read output" guidance inherits the same off-by-one. A genuinely blank
+ * final line ("one\ntwo\n\n") still survives, because only ONE trailing
+ * empty entry is removed.
+ */
+export function splitLines(content: string): string[] {
+  if (content.length === 0) {
+    return [];
+  }
+  const lines = content.split("\n");
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
 /** Strips a UTF-8 BOM and normalizes CRLF to LF. */
 export function normalizeFileContent(content: string): string {
   const withoutBom =

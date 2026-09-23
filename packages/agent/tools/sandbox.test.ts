@@ -12,6 +12,8 @@ function contextWith(overrides: {
   migrate?: () => Promise<Record<string, unknown>>;
   extend?: () => Promise<Record<string, unknown>>;
   delete?: () => Promise<Record<string, unknown>>;
+  reconnect?: () => Promise<Record<string, unknown>>;
+  snapshot?: () => Promise<Record<string, unknown>>;
 }) {
   return {
     sandbox: {
@@ -22,7 +24,9 @@ function contextWith(overrides: {
     sandboxControl: {
       status: overrides.status ?? (async () => ({ status: "running" })),
       provision: overrides.provision ?? (async () => ({ started: true })),
+      reconnect: overrides.reconnect ?? (async () => ({ reconnected: true })),
       migrate: overrides.migrate ?? (async () => ({ action: "migrated" })),
+      snapshot: overrides.snapshot ?? (async () => ({ snapshotId: "snap-1" })),
       extend: overrides.extend ?? (async () => ({ extended: true })),
       delete: overrides.delete ?? (async () => ({ deleted: true })),
     },
@@ -67,6 +71,14 @@ describe("sandboxControlTool", () => {
         calls.push("migrate");
         return { action: "migrated" };
       },
+      reconnect: async () => {
+        calls.push("reconnect");
+        return { reconnected: true };
+      },
+      snapshot: async () => {
+        calls.push("snapshot");
+        return { snapshotId: "snap-1" };
+      },
       extend: async () => {
         calls.push("extend");
         return { extended: true };
@@ -79,8 +91,10 @@ describe("sandboxControlTool", () => {
 
     for (const action of [
       "provision",
+      "reconnect",
       "migrate",
       "extend",
+      "snapshot",
       "delete",
     ] as const) {
       const result = await sandboxControlTool().execute?.(
@@ -90,7 +104,14 @@ describe("sandboxControlTool", () => {
       expect(result).toMatchObject({ success: true, action });
     }
 
-    expect(calls).toEqual(["provision", "migrate", "extend", "delete"]);
+    expect(calls).toEqual([
+      "provision",
+      "reconnect",
+      "migrate",
+      "extend",
+      "snapshot",
+      "delete",
+    ]);
   });
 
   test("a host failure becomes a tool error, not a thrown turn", async () => {

@@ -6,8 +6,10 @@ import type { SandboxControlToolResult } from "../types";
 const sandboxActionSchema = z.enum([
   "status",
   "provision",
+  "reconnect",
   "migrate",
   "extend",
+  "snapshot",
   "delete",
 ]);
 
@@ -57,7 +59,9 @@ export function sandboxControlTool() {
 ACTIONS:
 - status: read-only. Returns whether the workspace is running, paused, or missing, its lifecycle state, and when it expires. ALWAYS call this first -- most lifecycle decisions are wrong without it.
 - provision: start the workspace for this session. Use when status reports no workspace and the task needs file or shell access.
+- reconnect: resume a paused/stopped workspace from its persisted state. Use when status reports paused and the task needs the files back.
 - migrate: move the current workspace to a fresh sandbox, carrying the working tree across. Use when the workspace is about to hit its duration cap, or is misbehaving.
+- snapshot: capture a restorable snapshot of the workspace filesystem. Use before a risky change, or to preserve state you want to come back to.
 - extend: push back the workspace's expiry. Use when it is about to expire mid-task.
 - delete: stop and tear down the workspace. This DESTROYS uncommitted work -- only use it when the user explicitly asks, or when the workspace is confirmed empty/disposable.
 
@@ -94,9 +98,17 @@ IMPORTANT:
             const provisioned = await control.provision();
             return hostResult(provisioned, input.action);
           }
+          case "reconnect": {
+            const reconnected = await control.reconnect();
+            return hostResult(reconnected, input.action);
+          }
           case "migrate": {
             const migrated = await control.migrate();
             return hostResult(migrated, input.action);
+          }
+          case "snapshot": {
+            const snapshotted = await control.snapshot();
+            return hostResult(snapshotted, input.action);
           }
           case "extend": {
             const extended = await control.extend();

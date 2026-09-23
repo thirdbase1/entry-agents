@@ -2259,42 +2259,58 @@ export function SessionChatContent({
   // moved on since this item was queued. Non-text parts (images, file
   // parts, snippet attachments) are preserved untouched.
   function updateQueuedMessageText(id: string, nextText: string) {
-    setQueuedMessages((prev) =>
-      prev.map((item) => {
+    setQueuedMessages((prev) => {
+      const next: QueuedComposerMessage[] = [];
+      for (const item of prev) {
         if (item.id !== id) {
-          return item;
+          next.push(item);
+          continue;
         }
 
         const payload = item.payload;
-        if (!payload) {
-          return item;
-        }
-
-        let nextPayload: ComposerMessagePayload;
-        if ("parts" in payload) {
-          // Explicit annotation + push (rather than .filter/.unshift chained
-          // straight off payload.parts) so TS keeps the full
-          // WebAgentUIMessagePart union on this array -- letting inference
-          // narrow it via the `part.type !== "text"` filter would otherwise
-          // drop the "text" variant from the type, making the re-add below
-          // a type error.
-          const parts: WebAgentUIMessagePart[] = [];
-          for (const part of payload.parts ?? []) {
-            if (part.type !== "text") {
-              parts.push(part);
+        if (payload) {
+          let nextPayload: ComposerMessagePayload;
+          if ("parts" in payload) {
+            // Explicit annotation + push (rather than .filter/.unshift
+            // chained straight off payload.parts) so TS keeps the full
+            // WebAgentUIMessagePart union on this array -- letting inference
+            // narrow it via the `part.type !== "text"` filter would otherwise
+            // drop the "text" variant from the type, making the re-add below
+            // a type error.
+            const parts: WebAgentUIMessagePart[] = [];
+            for (const part of payload.parts ?? []) {
+              if (part.type !== "text") {
+                parts.push(part);
+              }
             }
+            if (nextText.trim()) {
+              parts.unshift({ type: "text", text: nextText });
+            }
+            nextPayload = { parts };
+          } else {
+            nextPayload = { ...payload, text: nextText };
           }
-          if (nextText.trim()) {
-            parts.unshift({ type: "text", text: nextText });
+
+          // Clearing the text of a prompt that carried nothing else leaves
+          // an item with an empty payload -- one that would send nothing when
+          // it drains and reads as a phantom row in the panel. Treat a
+          // fully-emptied edit as a delete instead. Attachment-only prompts
+          // are unaffected: they keep their non-text parts, so the item
+          // survives with an empty displayText (shown as "attachment only").
+          const partCount =
+            "parts" in nextPayload ? (nextPayload.parts?.length ?? 0) : 1;
+          if (nextText.trim().length === 0 && partCount === 0) {
+            continue;
           }
-          nextPayload = { parts };
-        } else {
-          nextPayload = { ...payload, text: nextText };
+
+          next.push({ ...item, displayText: nextText, payload: nextPayload });
+          continue;
         }
 
-        return { ...item, displayText: nextText, payload: nextPayload };
-      }),
-    );
+        next.push(item);
+      }
+      return next;
+    });
   }
 
   function reorderQueuedMessages(nextOrder: QueuedComposerMessage[]) {

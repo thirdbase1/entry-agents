@@ -77,7 +77,7 @@ export type GithubCliToolInput = z.infer<typeof githubCliInputSchema>;
 export function githubCliTool() {
   return tool({
     description:
-      "Take a GitHub action on the connected repository for this session: commit_and_push (commit and push all current uncommitted sandbox changes, using the exact same verified path as the UI's 'Commit & Push' button), api (call any GitHub REST API endpoint -- PRs, issues, comments, reviews, labels, merges, branches, releases, anything), or cli (run an arbitrary authenticated `gh <args>` command for anything the api action can't express as one REST call). Use 'api' for simple one-shot REST reads/writes (fetching PR comments, adding a label). Use 'cli' for multi-step or file-upload gh workflows (gh pr create with a body from a file, gh release create with asset uploads, gh run watch, gh workflow run with typed -f inputs). If no repository is connected yet, this returns a clear error -- relay that to the user (repo icon next to the chat), don't try to work around it with raw git commands.",
+      "Take GitHub actions for this user: commit_and_push (commit and push all current uncommitted sandbox changes, using the exact same verified path as the UI's 'Commit & Push' button), api (call any GitHub REST API endpoint -- PRs, issues, comments, reviews, labels, merges, branches, releases, anything), or cli (run an arbitrary authenticated `gh <args>` command for anything the api action can't express as one REST call).\n\nThe 'api' action works even when NO repository is connected to this chat -- it acts on the user's GitHub account. Paths are resolved as follows: a path starting with '/' is an absolute API path resolved as-is ('/user', '/repos/{owner}/{repo}/pulls'), while a repo-relative path is expanded against the connected repository. If no repo is connected, use absolute paths.\n\nUse 'api' for simple one-shot REST reads/writes (fetching PR comments, adding a label). Use 'cli' for multi-step or file-upload gh workflows (gh pr create with a body from a file, gh release create with asset uploads, gh run watch, gh workflow run with typed -f inputs). commit_and_push and cli require a connected repository and return a clear error otherwise -- relay that to the user (repo icon next to the chat), don't try to work around it with raw git commands.",
     inputSchema: githubCliInputSchema,
     execute: async (
       input,
@@ -95,12 +95,27 @@ export function githubCliTool() {
       }
 
       const { github } = experimental_context;
-      if (!github.hasRepo) {
+
+      // Per-action gating, NOT a blanket "no repo" refusal. The toolset
+      // only exists when the user's GitHub account is connected (apps/web
+      // builds the context from account connectivity, not from this
+      // session's repo), so `api` works account-wide: absolute paths like
+      // "/user" or "/repos/{owner}/{repo}/..." resolve as-is, while
+      // repo-relative paths still need a linked repository to expand.
+      // commit_and_push and cli inherently need one, so they stay gated.
+      const requestPath = input.path ?? "";
+      const needsRepo =
+        input.action === "commit_and_push" ||
+        input.action === "cli" ||
+        !requestPath.startsWith("/");
+      if (needsRepo && !github.hasRepo) {
         return {
           success: false,
           action: input.action,
           error:
-            "No GitHub repository is connected to this session yet. Ask the user to connect one via the repo icon next to the chat, then try again.",
+            input.action === "api"
+              ? "No repository is connected to this session, and this path is repo-relative. Use an absolute path (e.g. '/user', '/repos/{owner}/{repo}/pulls') to act on the user's GitHub account directly, or connect a repository via the repo icon next to the chat."
+              : "No GitHub repository is connected to this session yet. Ask the user to connect one via the repo icon next to the chat, then try again.",
         };
       }
 

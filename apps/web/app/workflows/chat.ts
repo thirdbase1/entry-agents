@@ -9,6 +9,7 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
+import type { SandboxState } from "@open-agents/sandbox";
 import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
@@ -143,7 +144,9 @@ function attachLiveModelContextWindow(
   }
 
   const modelId = typeof selection === "string" ? selection : selection.id;
-  const contextWindow = catalog.find((model) => model.id === modelId)?.context_window;
+  const contextWindow = catalog.find(
+    (model) => model.id === modelId,
+  )?.context_window;
 
   if (
     typeof contextWindow !== "number" ||
@@ -1181,7 +1184,7 @@ async function sendDataPart(
  * not the connected client) since step boundaries are checkpointed.
  */
 async function performAgentCommitAndPush(params: {
-  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  sandboxState: NonNullable<OpenAgentCallOptions["sandbox"]>["state"];
   userId: string;
   sessionId: string;
   sessionTitle: string;
@@ -1265,6 +1268,180 @@ async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
   return fetchModelCostCatalog();
 }
 
+/**
+ * Sandbox-dependent tool closures (commit/push, gh, vercel CLI) need a real
+ * workspace connection, and the turn may have started without one. Rather
+ * than a TypeError on `undefined.state`, fail as a tool error the model can
+ * read and recover from -- the workspace only needs to still be coming up.
+ */
+function requireSandboxContext(
+  agentOptions: WorkflowAgentOptions,
+): NonNullable<WorkflowAgentOptions["sandbox"]> {
+  if (!agentOptions.sandbox) {
+    throw new Error(
+      "The workspace for this session is still starting up -- provisioning runs in the background. " +
+        "Retry this action once it is ready.",
+    );
+  }
+  return agentOptions.sandbox;
+}
+
+/**
+ * Workspace lifecycle control for the agent's `sandbox` tool.
+ *
+ * Each action maps 1:1 onto the server-side implementation the UI and the
+ * scheduled sandboxLifecycleWorkflow already use -- there is deliberately no
+ * second code path here, so an agent-driven provision/migrate/delete behaves
+ * exactly like the button press or the cron tick the user already trusts.
+ * Every step is a separate "use step" for the usual reason: these modules
+ * pull in the drizzle client ("postgres") and the Vercel Sandbox SDK, which
+ * the Workflow SDK's restricted "use workflow" bundle refuses to include.
+ */
+async function getSandboxStatusStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { hasResumableSandboxState, canOperateOnSandbox } =
+    await import("@/lib/sandbox/utils");
+
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+
+  const state = session.sandboxState;
+  return {
+    status: !state
+      ? "missing"
+      : canOperateOnSandbox(state)
+        ? "running"
+        : hasResumableSandboxState(state)
+          ? "paused"
+          : "missing",
+    lifecycleState: session.lifecycleState,
+    sandboxExpiresAt: session.sandboxExpiresAt ?? null,
+    hasRepo: Boolean(session.repoOwner && session.repoName),
+    isArchived: session.status === "archived",
+  };
+}
+
+async function provisionSandboxStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { kickSandboxProvisioningWorkflow } =
+    await import("@/lib/sandbox/provisioning-kick");
+
+  // Reuses the session's own provisioning claim-lock, so a concurrent UI
+  // click or lifecycle run can't double-provision.
+  const kick = await kickSandboxProvisioningWorkflow(sessionId);
+  return { kickStatus: kick.status, started: Boolean(kick.runId) };
+}
+
+async function migrateSandboxStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { performSandboxMigration } = await import("@/lib/sandbox/migration");
+
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+  // A migration run owns the workspace; reusing the session's existing run
+  // id keeps the safety net that force-kills in-flight commands intact.
+  const result = await performSandboxMigration(
+    sessionId,
+    session.lifecycleRunId ?? `agent-migrate-${sessionId}`,
+  );
+  return { ...result };
+}
+
+async function extendSandboxStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { connectSandbox } = await import("@open-agents/sandbox");
+
+  const session = await getSessionById(sessionId);
+  if (!session?.sandboxState) {
+    throw new Error("There is no workspace to extend yet.");
+  }
+
+  const sandbox = await connectSandbox(session.sandboxState);
+  if (!sandbox.extendTimeout) {
+    return {
+      extended: false,
+      reason: "This sandbox does not support extending its timeout.",
+    };
+  }
+
+  const result = await sandbox.extendTimeout(60 * 60 * 1000);
+  return { extended: true, expiresAt: result.expiresAt };
+}
+
+async function deleteSandboxStep(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  "use step";
+
+  const { getSessionById, updateSession } = await import("@/lib/db/sessions");
+  const { connectSandbox } = await import("@open-agents/sandbox");
+  const { canOperateOnSandbox, clearSandboxState, hasResumableSandboxState } =
+    await import("@/lib/sandbox/utils");
+
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+  if (!canOperateOnSandbox(session.sandboxState)) {
+    // Idempotent, matching DELETE /api/sandbox.
+    return { deleted: true, alreadyStopped: true };
+  }
+
+  const sandbox = await connectSandbox(session.sandboxState);
+  await sandbox.stop();
+
+  const clearedState = clearSandboxState(session.sandboxState);
+  await updateSession(sessionId, {
+    sandboxState: clearedState,
+    snapshotUrl: null,
+    snapshotCreatedAt: null,
+    lifecycleState: hasResumableSandboxState(clearedState)
+      ? "hibernated"
+      : "provisioning",
+    sandboxExpiresAt: null,
+    hibernateAfter: null,
+    lifecycleRunId: null,
+    lifecycleError: null,
+  });
+
+  return {
+    deleted: true,
+    lifecycleState: hasResumableSandboxState(clearedState)
+      ? "hibernated"
+      : "provisioning",
+  };
+}
+
+async function checkGithubConnectedStep(userId: string): Promise<boolean> {
+  "use step";
+
+  const { getUserOctokit } = await import("@/lib/github/client");
+  // A null Octokit means no usable GitHub token -- the same signal
+  // hasVercelAccountLinked gives for Vercel, and deliberately NOT a token
+  // refresh (better-auth refreshes from the stored (providerId, userId)
+  // refresh token; no request-scoped headers involved).
+  return (await getUserOctokit(userId)) !== null;
+}
+
 async function checkVercelConnectedStep(userId: string): Promise<boolean> {
   "use step";
 
@@ -1285,8 +1462,11 @@ async function checkVercelConnectedStep(userId: string): Promise<boolean> {
  */
 async function performAgentGithubApiRequest(params: {
   userId: string;
-  repoOwner: string;
-  repoName: string;
+  // Optional since GitHub was decoupled from the session's repo: an
+  // absolute API path ("/user", "/repos/{owner}/{repo}/...") needs
+  // neither. Only repo-relative paths use them.
+  repoOwner?: string;
+  repoName?: string;
   method: string;
   path: string;
   params?: Record<string, unknown>;
@@ -1304,9 +1484,12 @@ async function performAgentGithubApiRequest(params: {
   }
 
   const rawPath = params.path.trim();
+  // Absolute paths pass through untouched (account-level API calls with no
+  // connected repository); repo-relative ones expand against the session's
+  // repo, which the caller has already verified is present.
   const fullPath = rawPath.startsWith("/")
     ? rawPath
-    : `/repos/${params.repoOwner}/${params.repoName}/${rawPath.replace(/^\/+/, "")}`;
+    : `/repos/${params.repoOwner ?? ""}/${params.repoName ?? ""}/${rawPath.replace(/^\/+/, "")}`;
 
   try {
     const response = await octokit.request(
@@ -1393,7 +1576,7 @@ const ENSURE_VERCEL_CLI_INSTALLED =
 
 async function performAgentVercelCli(params: {
   userId: string;
-  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  sandboxState: NonNullable<OpenAgentCallOptions["sandbox"]>["state"];
   workingDirectory: string;
   repoOwner?: string;
   repoName?: string;
@@ -1541,7 +1724,7 @@ const ENSURE_GH_CLI_INSTALLED = [
  */
 async function performAgentGithubCli(params: {
   userId: string;
-  sandboxState: OpenAgentCallOptions["sandbox"]["state"];
+  sandboxState: NonNullable<OpenAgentCallOptions["sandbox"]>["state"];
   workingDirectory: string;
   repoOwner: string;
   repoName: string;
@@ -1725,9 +1908,26 @@ export async function runAgentWorkflow(options: Options) {
     authSession: options.authSession,
     workflowRunId,
   });
+  // AGENT-FIRST (owner 2026-09-19): the model turn must start -- and be
+  // able to finish -- whether or not the workspace came up. This used to be
+  // awaited unconditionally before the first agent step, so any
+  // provisioning failure, timeout, or migration wait killed the turn
+  // outright and the user got no reply at all.
+  //
+  // resolveChatSandboxRuntime still kicks provisioning and reaps its
+  // result, so when it rejects we simply carry on with no sandbox: the
+  // workspace tools then self-heal on their own via
+  // sandboxLifecycleHooks.beforeCommand()'s live-state read the moment
+  // provisioning finishes, and the user keeps getting answers meanwhile.
   const runtimePromise = resolveChatSandboxRuntime({
     userId: options.userId,
     sessionId: options.sessionId,
+  }).catch((error) => {
+    console.error(
+      `[workflow] Sandbox runtime unavailable for session ${options.sessionId}; continuing without a workspace:`,
+      error,
+    );
+    return null;
   });
   // Cheap existence check only (no live token refresh -- see
   // hasVercelAccountLinked's own comment on why) so the workflow can
@@ -1749,6 +1949,15 @@ export async function runAgentWorkflow(options: Options) {
   const vercelConnectedPromise = checkVercelConnectedStep(options.userId).catch(
     () => false,
   );
+  // Account-level GitHub connectivity -- deliberately independent of
+  // whether this session has a repo linked. Owner request: the agent must
+  // be able to work with the user's GitHub (issues, PRs, reviews, anything
+  // via the api action) even in a chat with no connected repository.
+  // Best-effort: a failed lookup just hides the toolset rather than
+  // failing the turn.
+  const githubConnectedPromise = checkGithubConnectedStep(options.userId).catch(
+    () => false,
+  );
 
   // Fast path (the common case, no attachments): convert messages straight
   // away, fully in parallel with sandbox resolution below. Only when there
@@ -1762,6 +1971,13 @@ export async function runAgentWorkflow(options: Options) {
     pendingImageAttachments.length === 0
       ? convertMessages(options.messages)
       : runtimePromise.then(async (runtime) => {
+          if (!runtime) {
+            // No workspace yet -- keep the attachments as they are rather
+            // than dropping them or failing the turn. The model still gets
+            // a usable reply; the upload just happens next time it has a
+            // workspace to write into.
+            return convertMessages(options.messages);
+          }
           const paths = await persistImageAttachmentsToSandbox({
             sandboxState: runtime.sandboxState,
             images: pendingImageAttachments,
@@ -1849,19 +2065,27 @@ export async function runAgentWorkflow(options: Options) {
   let workflowStatus: WorkflowRunStatus = "completed";
   let caughtError: unknown;
   let isRepeatFailure = false;
-  let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
+  let sandboxState: SandboxState | undefined;
   let shouldRefreshCachedDiff = false;
 
   try {
-    const [, runtime, modelRuntime, modelMessages, , vercelConnected] =
-      await Promise.all([
-        activeStreamClaimPromise,
-        runtimePromise,
-        modelRuntimePromise,
-        modelMessagesPromise,
-        inputMessagesPersistPromise,
-        vercelConnectedPromise,
-      ]);
+    const [
+      ,
+      runtime,
+      modelRuntime,
+      modelMessages,
+      ,
+      vercelConnected,
+      githubConnected,
+    ] = await Promise.all([
+      activeStreamClaimPromise,
+      runtimePromise,
+      modelRuntimePromise,
+      modelMessagesPromise,
+      inputMessagesPersistPromise,
+      vercelConnectedPromise,
+      githubConnectedPromise,
+    ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
     let remainingBalanceCents = modelRuntime.startingBalanceCents;
@@ -1878,7 +2102,7 @@ export async function runAgentWorkflow(options: Options) {
       ),
     };
 
-    const hasRepo = Boolean(runtime.repoOwner && runtime.repoName);
+    const hasRepo = Boolean(runtime?.repoOwner && runtime?.repoName);
     // NOTE: `github` here is intentionally the serializable-only shape
     // (no `commitAndPush` closure) -- see WorkflowAgentOptions above.
     // The real closure is rebuilt inside runAgentStep, right before it's
@@ -1913,24 +2137,55 @@ export async function runAgentWorkflow(options: Options) {
             ),
           }
         : {}),
-      sandbox: {
-        state: runtime.sandboxState,
-        workingDirectory: runtime.workingDirectory,
-        currentBranch: runtime.currentBranch,
-        environmentDetails: runtime.environmentDetails,
-      },
-      ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
+      // Optional: absent when the workspace is not ready yet (see
+      // runtimePromise above). Every workspace tool resolves its own
+      // connection per call and recovers from the session's live state, so
+      // a missing sandbox here degrades those tools -- never the turn.
+      ...(runtime
+        ? {
+            sandbox: {
+              state: runtime.sandboxState,
+              workingDirectory: runtime.workingDirectory,
+              currentBranch: runtime.currentBranch,
+              environmentDetails: runtime.environmentDetails,
+            },
+          }
+        : {}),
+      ...(runtime && runtime.skills.length > 0
+        ? { skills: runtime.skills }
+        : {}),
       ...(guidedFrontendWorkflow ? { guidedFrontendWorkflow: true } : {}),
-      github: {
-        hasRepo,
-        repoOwner: runtime.repoOwner,
-        repoName: runtime.repoName,
-      },
+      // Only surface the GitHub toolset when the user's account is
+      // actually connected. `hasRepo` inside it stays false for a chat
+      // with no linked repository -- the tool then gates per action
+      // instead of blacking out the whole toolset, so github_api still
+      // works account-wide (the whole point of decoupling it).
+      ...(githubConnected
+        ? {
+            github: {
+              hasRepo,
+              repoOwner: runtime?.repoOwner,
+              repoName: runtime?.repoName,
+            },
+          }
+        : {}),
       vercel: {
         connected: vercelConnected,
       },
+      // Workspace lifecycle control for the agent's `sandbox` tool. Built
+      // from plain data (see the Serializable* types above) and the steps
+      // defined near performAgentCommitAndPush -- the agent can act on the
+      // session's own workspace without any new permission surface: every
+      // action is the same server-side call the UI button makes.
+      sandboxControl: {
+        status: () => getSandboxStatusStep(options.sessionId),
+        provision: () => provisionSandboxStep(options.sessionId),
+        migrate: () => migrateSandboxStep(options.sessionId),
+        extend: () => extendSandboxStep(options.sessionId),
+        delete: () => deleteSandboxStep(options.sessionId),
+      },
     };
-    sandboxState = runtime.sandboxState;
+    sandboxState = runtime?.sandboxState;
 
     for (
       let step = 0;
@@ -1972,7 +2227,7 @@ export async function runAgentWorkflow(options: Options) {
           options.chatId,
           options.sessionId,
           options.userId,
-          runtime.sessionTitle,
+          runtime?.sessionTitle ?? "",
           selectedModelId,
           modelId,
           stepAgentOptions,
@@ -2120,8 +2375,8 @@ export async function runAgentWorkflow(options: Options) {
       finalFinishReason !== "tool-calls";
     const commitPartId = `${assistantId}:commit`;
     const prPartId = `${assistantId}:pr`;
-    const repoOwner = runtime.repoOwner;
-    const repoName = runtime.repoName;
+    const repoOwner = runtime?.repoOwner;
+    const repoName = runtime?.repoName;
     let didUpdateGitData = false;
 
     let autoCommitResult: Awaited<ReturnType<typeof runAutoCommitStep>> | null =
@@ -2134,7 +2389,7 @@ export async function runAgentWorkflow(options: Options) {
       repoOwner != null &&
       repoName != null;
 
-    if (canAutoCommit) {
+    if (canAutoCommit && sandboxState) {
       const hasAutoCommitChanges = await hasAutoCommitChangesStep({
         sandboxState,
       });
@@ -2153,7 +2408,7 @@ export async function runAgentWorkflow(options: Options) {
         autoCommitResult = await runAutoCommitStep({
           userId: options.userId,
           sessionId: options.sessionId,
-          sessionTitle: runtime.sessionTitle,
+          sessionTitle: runtime?.sessionTitle ?? "",
           repoOwner,
           repoName,
           sandboxState,
@@ -2186,6 +2441,7 @@ export async function runAgentWorkflow(options: Options) {
 
     if (
       canAutoCommit &&
+      sandboxState &&
       (options.autoCreatePrEnabled ?? modelRuntime.autoCreatePrEnabled)
     ) {
       if (canAutoCreatePr) {
@@ -2202,7 +2458,7 @@ export async function runAgentWorkflow(options: Options) {
         const autoPrResult = await runAutoCreatePrStep({
           userId: options.userId,
           sessionId: options.sessionId,
-          sessionTitle: runtime.sessionTitle,
+          sessionTitle: runtime?.sessionTitle ?? "",
           repoOwner,
           repoName,
           sandboxState,
@@ -2436,9 +2692,9 @@ const runAgentStep = async (
   // how much account balance remains.
   let turnSpendCapped = false;
   // Per-turn sub-cent accrual state, threaded through every step so
-      // fractional cost is never dropped between the ledger's integer
-      // cents. Declared outside the try below because the finish-step
-      // handler (and the flush in `finally`) both live past that scope.
+  // fractional cost is never dropped between the ledger's integer
+  // cents. Declared outside the try below because the finish-step
+  // handler (and the flush in `finally`) both live past that scope.
   const usageAccrual: UsageAccrualState = { carryCents: 0 };
   const pendingDebits: Promise<void>[] = [];
   // Hoisted above the try/catch/finally on purpose -- `let` inside the
@@ -2550,8 +2806,9 @@ const runAgentStep = async (
                   ? `${input.commitTitle}\n\n${input.commitBody}`
                   : input.commitTitle
                 : undefined;
+              const sandbox = requireSandboxContext(agentOptions);
               return performAgentCommitAndPush({
-                sandboxState: agentOptions.sandbox.state,
+                sandboxState: sandbox.state,
                 userId,
                 sessionId,
                 sessionTitle,
@@ -2561,21 +2818,28 @@ const runAgentStep = async (
               });
             },
             request: async (input) => {
+              // Absolute API paths need no repository at all -- that is
+              // what makes github_api usable account-wide. Repo-relative
+              // paths still expand against the connected repo, and fall
+              // through to the tool's own error when there isn't one.
               if (
-                !githubContext.hasRepo ||
-                !githubContext.repoOwner ||
-                !githubContext.repoName
+                !input.path.startsWith("/") &&
+                (!githubContext.repoOwner || !githubContext.repoName)
               ) {
                 return {
                   success: false,
                   error:
-                    "No GitHub repository is connected to this session yet.",
+                    "No repository is connected to this session, and this path is repo-relative. Use an absolute path (e.g. '/user', '/repos/{owner}/{repo}/pulls') to act on the user's GitHub account directly.",
                 };
               }
               return performAgentGithubApiRequest({
                 userId,
-                repoOwner: githubContext.repoOwner,
-                repoName: githubContext.repoName,
+                ...(githubContext.repoOwner && githubContext.repoName
+                  ? {
+                      repoOwner: githubContext.repoOwner,
+                      repoName: githubContext.repoName,
+                    }
+                  : {}),
                 method: input.method,
                 path: input.path,
                 params: input.params,
@@ -2593,10 +2857,11 @@ const runAgentStep = async (
                     "No GitHub repository is connected to this session yet.",
                 };
               }
+              const sandbox = requireSandboxContext(agentOptions);
               return performAgentGithubCli({
                 userId,
-                sandboxState: agentOptions.sandbox.state,
-                workingDirectory: agentOptions.sandbox.workingDirectory,
+                sandboxState: sandbox.state,
+                workingDirectory: sandbox.workingDirectory,
                 repoOwner: githubContext.repoOwner,
                 repoName: githubContext.repoName,
                 args: input.args,
@@ -2614,10 +2879,11 @@ const runAgentStep = async (
                   error: "No Vercel account is connected for this user.",
                 };
               }
+              const sandbox = requireSandboxContext(agentOptions);
               return performAgentVercelCli({
                 userId,
-                sandboxState: agentOptions.sandbox.state,
-                workingDirectory: agentOptions.sandbox.workingDirectory,
+                sandboxState: sandbox.state,
+                workingDirectory: sandbox.workingDirectory,
                 repoOwner: githubContext?.repoOwner,
                 repoName: githubContext?.repoName,
                 args: input.args,
@@ -2648,6 +2914,8 @@ const runAgentStep = async (
       sandboxLifecycleHooks: {
         beforeCommand: async () => {
           const { getSessionById } = await import("@/lib/db/sessions");
+          const { hasResumableSandboxState } =
+            await import("@/lib/sandbox/utils");
           const deadline = Date.now() + 180_000;
           let waitedForMigration = false;
           let migrationRunId: string | undefined;
@@ -2655,15 +2923,39 @@ const runAgentStep = async (
           while (true) {
             const current = await getSessionById(sessionId);
             if (!current) {
-              throw new Error("Session disappeared while preparing a sandbox operation");
+              throw new Error(
+                "Session disappeared while preparing a sandbox operation",
+              );
             }
-            if (current.status === "archived" || current.lifecycleState === "archived") {
+            if (
+              current.status === "archived" ||
+              current.lifecycleState === "archived"
+            ) {
               throw new Error("Session is archived");
             }
 
             if (current.lifecycleState !== "migrating") {
+              // No (usable) workspace yet is a normal agent-first state,
+              // not an error -- but it still has to fail this tool call
+              // with a readable message. Two reasons, both fatal if
+              // ignored:
+              //  1. a TypeError on `.state` instead of a sentence;
+              //  2. connectSandbox() on a state with no sandboxName would
+              //     CREATE a brand-new, untracked sandbox rather than
+              //     waiting for this session's provisioning run.
+              // hasResumableSandboxState is the exact predicate for
+              // "connecting will resume an existing workspace, not make
+              // one" (see lib/sandbox/utils.ts).
+              const gateState =
+                current.sandboxState ?? agentOptions.sandbox?.state;
+              if (!gateState || !hasResumableSandboxState(gateState)) {
+                throw new Error(
+                  "The workspace for this session is still starting up -- provisioning runs in the background. " +
+                    "Retry this tool once it is ready.",
+                );
+              }
               return {
-                sandboxState: current.sandboxState ?? agentOptions.sandbox.state,
+                sandboxState: gateState,
                 ...(waitedForMigration ? { waitedForMigration: true } : {}),
                 ...(migrationRunId ? { migrationRunId } : {}),
               };
@@ -2720,7 +3012,7 @@ const runAgentStep = async (
           // session vanished/archived mid-retry -- exec() against a
           // stale-but-real state at least fails with a clear error
           // instead of throwing here and losing the tool result.
-          return current?.sandboxState ?? agentOptions.sandbox.state;
+          return current?.sandboxState ?? agentOptions.sandbox?.state ?? null;
         },
       },
     };

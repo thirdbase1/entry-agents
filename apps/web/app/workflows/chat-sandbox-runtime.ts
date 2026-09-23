@@ -116,6 +116,16 @@ async function getReadySessionSandbox(params: {
   return { session, didSetupWorkspace: true };
 }
 
+/**
+ * Resolves the session's workspace runtime, PROVISIONING it if it is not
+ * active yet (kick + wait), and rejecting when that fails.
+ *
+ * Rejecting here is still correct -- but the caller (`runtimePromise` in
+ * apps/web/app/workflows/chat.ts) must catch it: a workspace that never
+ * comes up should cost the turn its sandbox, never its reply. See the
+ * sandbox skill (.agents/skills/sandbox/SKILL.md) for the agent-facing
+ * half of that rule.
+ */
 export async function resolveChatSandboxRuntime(params: {
   userId: string;
   sessionId: string;

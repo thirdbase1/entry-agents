@@ -30,9 +30,8 @@ export interface SelectedLines {
 
 /** Strips a UTF-8 BOM and normalizes CRLF to LF. */
 export function normalizeFileContent(content: string): string {
-  const withoutBom = content.charCodeAt(0) === 0xfeff
-    ? content.slice(1)
-    : content;
+  const withoutBom =
+    content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
   return withoutBom.replace(/\r\n/g, "\n");
 }
 
@@ -46,7 +45,9 @@ export function isDevicePath(filePath: string): boolean {
   return (
     /^\/dev\/(stdin|stdout|stderr|zero|full|random|urandom|null)(\/|$)/.test(
       filePath,
-    ) || /^\/dev\/[^/]+$/.test(filePath) || /^\/proc\/\d+\/fd/.test(filePath)
+    ) ||
+    /^\/dev\/[^/]+$/.test(filePath) ||
+    /^\/proc\/\d+\/fd/.test(filePath)
   );
 }
 
@@ -70,10 +71,14 @@ export function clampLine(
  */
 export function selectLines(
   lines: string[],
-  { offset = 1, limit = READ_MAX_LINES }: { offset?: number; limit?: number } = {},
+  {
+    offset = 1,
+    limit = READ_MAX_LINES,
+  }: { offset?: number; limit?: number } = {},
 ): SelectedLines {
   const totalLines = lines.length;
-  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? limit : READ_MAX_LINES;
+  const normalizedLimit =
+    Number.isFinite(limit) && limit > 0 ? limit : READ_MAX_LINES;
 
   let startIdx: number;
   let endIdx: number;
@@ -133,9 +138,10 @@ export function applyByteCeiling(
   // should pass as the next offset to continue reading. When the byte
   // budget cut mid-window, resume right after the last KEPT line; when
   // only the line window cut, resume right after the window.
-  const nextOffset = kept.length < selection.lines.length
-    ? selection.startLine + kept.length
-    : selection.endLine + 1;
+  const nextOffset =
+    kept.length < selection.lines.length
+      ? selection.startLine + kept.length
+      : selection.endLine + 1;
 
   return {
     ...selection,
@@ -170,6 +176,11 @@ export function resetReadDedupStoreForTests(): void {
  * consecutive re-read of an unchanged file returns a cheap notice
  * instead of the full content; the very next read returns content
  * again, so the agent is never locked out of a file.
+ *
+ * `key` is the caller's responsibility and MUST include the requested
+ * window (path + offset + limit), not just the file: a range the model
+ * has never seen must never be answered with the "unchanged" notice,
+ * or the model ends up reasoning about content it never received.
  */
 export function checkUnchangedRead(key: string, contentHash: string): boolean {
   const seen = readDedupStore.get(key);

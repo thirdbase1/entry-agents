@@ -4,11 +4,20 @@ import * as path from "path";
 import type { AgentContext } from "../types";
 
 export function isAgentContext(value: unknown): value is AgentContext {
+  // `model` only -- NOT `sandbox`. A turn can legitimately start with no
+  // workspace yet (agent-first, see OpenAgentCallOptions.sandbox), and
+  // requiring the sandbox key here would classify a perfectly valid
+  // context as "not a context", losing the lifecycle hooks that let the
+  // very next tool call recover once provisioning finishes.
+  return typeof value === "object" && value !== null && "model" in value;
+}
+
+function workspacePendingError(toolName?: string): string {
+  const toolInfo = toolName ? ` (tool: ${toolName})` : "";
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "sandbox" in value &&
-    "model" in value
+    `The workspace for this session is still starting up${toolInfo}. ` +
+    "Provisioning runs in the background: answer whatever you can without " +
+    "the workspace, then retry this tool later in the same turn."
   );
 }
 
@@ -70,29 +79,42 @@ export function toDisplayPath(
  * @returns The sandbox instance
  * @throws Error if sandbox is not available in context
  */
-async function resolveSandboxForOperation(experimental_context: unknown, toolName?: string) {
-  const context = isAgentContext(experimental_context) ? experimental_context : undefined;
-  if (!context?.sandbox) {
-    const toolInfo = toolName ? ` (tool: ${toolName})` : "";
-    const contextInfo = context
-      ? `Context exists but sandbox is missing. Context keys: ${Object.keys(context).join(", ")}`
-      : "Context is undefined or null";
-    throw new Error(
-      `Sandbox not initialized in context${toolInfo}. ${contextInfo}. ` +
-        "Ensure the agent's prepareCall sets experimental_context: { sandbox, ... }",
-    );
-  }
+async function resolveSandboxForOperation(
+  experimental_context: unknown,
+  toolName?: string,
+) {
+  const context = isAgentContext(experimental_context)
+    ? experimental_context
+    : undefined;
 
-  const hooks = context.sandboxLifecycleHooks
+  const hooks = context?.sandboxLifecycleHooks
     ? {
         onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
         onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
       }
     : undefined;
 
-  const commandGate = context.sandboxLifecycleHooks
+  // Agent-first turns can start before the workspace finishes
+  // provisioning, so experimental_context may carry no sandbox at all.
+  // Every tool resolves its connection per call anyway, so prefer the
+  // host's live session state: the moment provisioning finishes, the very
+  // next tool call connects to a real workspace with no extra work and no
+  // retry bookkeeping from the model.
+  const commandGate = context?.sandboxLifecycleHooks
     ? await context.sandboxLifecycleHooks.beforeCommand()
-    : { sandboxState: context.sandbox.state };
+    : context?.sandbox
+      ? { sandboxState: context.sandbox.state }
+      : undefined;
+
+  if (!commandGate) {
+    // No host hooks AND no snapshot sandbox: this context predates the
+    // agent-first rework, or a host wired up neither. Either way there is
+    // nothing safe to connect to -- fail as a tool error, never by
+    // connecting a never-provisioned state (connectSandbox would CREATE a
+    // brand-new, untracked sandbox; the host rejects that case in
+    // beforeCommand(), which is why the hook path is preferred first).
+    throw new Error(workspacePendingError(toolName));
+  }
 
   return {
     sandbox: await connectSandbox(
@@ -107,7 +129,10 @@ export async function getSandbox(
   experimental_context: unknown,
   toolName?: string,
 ): Promise<Sandbox> {
-  const resolved = await resolveSandboxForOperation(experimental_context, toolName);
+  const resolved = await resolveSandboxForOperation(
+    experimental_context,
+    toolName,
+  );
   return resolved.sandbox;
 }
 
@@ -143,6 +168,10 @@ export async function reconnectSandboxAfterMigration(
   }
 
   const freshState = await context.sandboxLifecycleHooks.refreshSandboxState();
+  if (!freshState) {
+    // No workspace yet -- nothing to reconnect to.
+    return undefined;
+  }
   const hooks = {
     onCommandStart: context.sandboxLifecycleHooks.onCommandStart,
     onCommandEnd: context.sandboxLifecycleHooks.onCommandEnd,
@@ -167,14 +196,10 @@ export function getSandboxContext(
     ? experimental_context
     : undefined;
   if (!context?.sandbox) {
-    const toolInfo = toolName ? ` (tool: ${toolName})` : "";
-    const contextInfo = context
-      ? `Context exists but sandbox is missing. Context keys: ${Object.keys(context).join(", ")}`
-      : "Context is undefined or null";
-    throw new Error(
-      `Sandbox context not initialized${toolInfo}. ${contextInfo}. ` +
-        "Ensure the agent's prepareCall sets experimental_context: { sandbox, ... }",
-    );
+    // Subagents are spawned from the parent's sandbox, so this only fires
+    // when the workspace is not ready yet. Same contract as
+    // resolveSandboxForOperation: a tool error, not a dead turn.
+    throw new Error(workspacePendingError(toolName));
   }
 
   return {

@@ -4,10 +4,7 @@ import {
   requireAuthenticatedUser,
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
-import {
-  getSessionById,
-  updateSession,
-} from "@/lib/db/sessions";
+import { getSessionById, updateSession } from "@/lib/db/sessions";
 import {
   kickSandboxProvisioningWorkflow,
   waitForSandboxProvisioningRun,
@@ -899,7 +896,10 @@ async function connectDevServerSandboxForSession(
     if (!refreshed) {
       return {
         ok: false as const,
-        response: Response.json({ error: "Session not found" }, { status: 404 }),
+        response: Response.json(
+          { error: "Session not found" },
+          { status: 404 },
+        ),
       };
     }
     if (!isSandboxActive(refreshed.sandboxState)) {
@@ -907,8 +907,7 @@ async function connectDevServerSandboxForSession(
         ok: false as const,
         response: Response.json(
           {
-            error:
-              refreshed.lifecycleError ?? "Failed to provision a sandbox",
+            error: refreshed.lifecycleError ?? "Failed to provision a sandbox",
           },
           { status: 503 },
         ),
@@ -918,21 +917,33 @@ async function connectDevServerSandboxForSession(
   }
 
   let sandbox;
+  // The re-read above guarantees an active state on the provisioning path,
+  // but TS cannot narrow through the mutable sessionContext object. Assert
+  // it explicitly: connecting a never-provisioned state would CREATE a
+  // brand-new sandbox, which is not what this route is for.
+  const activeSandboxState = sessionContext.sessionRecord.sandboxState;
+  if (!isSandboxActive(activeSandboxState)) {
+    return {
+      ok: false as const,
+      response: Response.json(
+        { error: "Failed to provision a sandbox" },
+        { status: 503 },
+      ),
+    };
+  }
+
   try {
-    sandbox = await connectSandbox(
-      sessionContext.sessionRecord.sandboxState,
-      {
-        ports: DEFAULT_SANDBOX_PORTS,
-        // Found 2026-08-30 in production: a session whose saved sandbox
-        // snapshot expired/cleaned-up comes back as 400 "Cannot resume
-        // sandbox: no snapshot available" from the implicit resume that
-        // connectSandbox triggers for a named sandbox. createIfMissing lets
-        // the connect fall back to a fresh sandbox instead of wedging the
-        // dev-server launch inside a bare 500.
-        resume: true,
-        createIfMissing: true,
-      },
-    );
+    sandbox = await connectSandbox(activeSandboxState, {
+      ports: DEFAULT_SANDBOX_PORTS,
+      // Found 2026-08-30 in production: a session whose saved sandbox
+      // snapshot expired/cleaned-up comes back as 400 "Cannot resume
+      // sandbox: no snapshot available" from the implicit resume that
+      // connectSandbox triggers for a named sandbox. createIfMissing lets
+      // the connect fall back to a fresh sandbox instead of wedging the
+      // dev-server launch inside a bare 500.
+      resume: true,
+      createIfMissing: true,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!isSandboxUnavailableError(message)) {

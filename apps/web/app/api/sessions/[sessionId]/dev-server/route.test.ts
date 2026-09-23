@@ -592,7 +592,23 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       };
       requireOwnedSessionMock.mockImplementation(async () => ({
         ok: true as const,
-        sessionRecord: { userId: "user-1", sandboxState: null },
+        // Cast rather than duplicate a full Vercel sandbox state: the point
+        // of this mock is "no usable sandbox yet", and the route's own
+        // isSandboxActive guard is what rejects it.
+        sessionRecord: {
+          userId: "user-1",
+          // Cast to the narrow shape the mock's callers expect: this mock's
+          // whole point is "no usable sandbox yet", and the route's own
+          // isSandboxActive guard is what rejects it.
+          sandboxState: null,
+        } as unknown as {
+          userId: string;
+          sandboxState: {
+            type: "vercel";
+            sandboxId: string;
+            expiresAt: number;
+          };
+        },
       }));
 
       const response = await POST(
@@ -626,7 +642,23 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       };
       requireOwnedSessionMock.mockImplementation(async () => ({
         ok: true as const,
-        sessionRecord: { userId: "user-1", sandboxState: null },
+        // Cast rather than duplicate a full Vercel sandbox state: the point
+        // of this mock is "no usable sandbox yet", and the route's own
+        // isSandboxActive guard is what rejects it.
+        sessionRecord: {
+          userId: "user-1",
+          // Cast to the narrow shape the mock's callers expect: this mock's
+          // whole point is "no usable sandbox yet", and the route's own
+          // isSandboxActive guard is what rejects it.
+          sandboxState: null,
+        } as unknown as {
+          userId: string;
+          sandboxState: {
+            type: "vercel";
+            sandboxId: string;
+            expiresAt: number;
+          };
+        },
       }));
 
       const response = await POST(

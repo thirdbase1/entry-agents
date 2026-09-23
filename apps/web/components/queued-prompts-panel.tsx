@@ -1,6 +1,13 @@
 "use client";
 
-import { Check, GripVertical, Pencil, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Pencil,
+  X,
+} from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +15,23 @@ export type QueuedPrompt = {
   id: string;
   displayText: string;
 };
+
+/**
+ * Blur-vs-explicit-action ordering, extracted so it can be tested without a
+ * DOM. The browser fires `blur` BEFORE the `click` that follows it, so a
+ * plain "commit on blur" makes every Cancel press silently SAVE instead --
+ * the blur handler ran first and committed before Cancel ever saw the click.
+ *
+ * The action buttons claim the blur (onMouseDown/onTouchStart both precede
+ * blur); this rule is what honours that claim. Returns false when there is
+ * nothing to commit OR when an explicit action already owns the blur.
+ */
+export function shouldCommitOnBlur(params: {
+  editingId: string | null;
+  claimedByAction: boolean;
+}): boolean {
+  return params.editingId !== null && !params.claimedByAction;
+}
 
 export type QueuedPromptsPanelProps<T extends QueuedPrompt> = {
   prompts: T[];
@@ -48,6 +72,23 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Blur fires BEFORE the click that follows it, so without this the
+  // blur-commit would land first and Cancel would never actually cancel --
+  // every X press would silently save the draft instead of discarding it.
+  // The action buttons claim the blur via onMouseDown (which precedes
+  // blur), and commitEdit honours that claim.
+  const claimBlurRef = useRef(false);
+
+  // Autosize the editor to its content so a long queued prompt is fully
+  // editable instead of trapped in a fixed-height scroll box.
+  useEffect(() => {
+    const node = editInputRef.current;
+    if (!node) {
+      return;
+    }
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
+  }, [draftText, editingId]);
 
   useEffect(() => {
     if (editingId && editInputRef.current) {
@@ -66,10 +107,25 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
   }
 
   function commitEdit() {
-    if (editingId) {
-      onEdit(editingId, draftText);
+    const id = editingId;
+    if (
+      !shouldCommitOnBlur({
+        editingId: id,
+        claimedByAction: claimBlurRef.current,
+      })
+    ) {
+      // Either nothing was being edited, or an explicit Save/Cancel claimed
+      // this blur and is about to run its own handler. Release the claim so a
+      // stale flag can never suppress a later edit's blur-commit.
+      claimBlurRef.current = false;
+      setEditingId(null);
+      return;
     }
+    claimBlurRef.current = false;
     setEditingId(null);
+    if (id) {
+      onEdit(id, draftText);
+    }
   }
 
   function cancelEdit() {
@@ -180,19 +236,21 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
                   type="button"
                   onClick={() => moveBy(prompt.id, -1)}
                   disabled={index === 0}
-                  className="rounded px-0.5 text-[9px] leading-none text-muted-foreground/30 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-0"
+                  className="rounded p-0.5 text-muted-foreground/30 transition-colors hover:bg-muted-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-0"
                   aria-label="Move up"
+                  title="Move up"
                 >
-                  ▲
+                  <ChevronUp className="h-3 w-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => moveBy(prompt.id, 1)}
                   disabled={index === prompts.length - 1}
-                  className="rounded px-0.5 text-[9px] leading-none text-muted-foreground/30 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-0"
+                  className="rounded p-0.5 text-muted-foreground/30 transition-colors hover:bg-muted-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-0"
                   aria-label="Move down"
+                  title="Move down"
                 >
-                  ▼
+                  <ChevronDown className="h-3 w-3" />
                 </button>
               </div>
 
@@ -207,8 +265,7 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
                   onChange={(event) => setDraftText(event.target.value)}
                   onKeyDown={handleEditKeyDown}
                   onBlur={commitEdit}
-                  rows={Math.min(4, Math.max(1, draftText.split("\n").length))}
-                  className="min-w-0 flex-1 resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/40"
+                  className="max-h-40 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-sm leading-snug text-foreground outline-none placeholder:text-muted-foreground/40"
                   placeholder="Edit queued message…"
                 />
               ) : (
@@ -227,17 +284,31 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
                   <>
                     <button
                       type="button"
+                      onMouseDown={() => {
+                        claimBlurRef.current = true;
+                      }}
+                      onTouchStart={() => {
+                        claimBlurRef.current = true;
+                      }}
                       onClick={commitEdit}
                       className="rounded p-0.5 text-emerald-500/70 transition-colors hover:bg-emerald-500/10 hover:text-emerald-500"
                       aria-label="Save edit"
+                      title="Save (Enter)"
                     >
                       <Check className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
+                      onMouseDown={() => {
+                        claimBlurRef.current = true;
+                      }}
+                      onTouchStart={() => {
+                        claimBlurRef.current = true;
+                      }}
                       onClick={cancelEdit}
                       className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-muted-foreground/10 hover:text-foreground"
                       aria-label="Cancel edit"
+                      title="Discard changes (Esc)"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>

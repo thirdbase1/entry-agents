@@ -36,7 +36,7 @@ interface BillingMeResponse {
 const PLAN_BLURB: Record<string, string> = {
   free: "Try Entry with GPT-5.6 Luna. $1 trial credit, no card required.",
   plus: "Full model access. $10 of credit every month.",
-  goat: "The flagship plan. $10 buys $50 of credit (5x) every month. Runs on Entry Windows -- usage paced over rolling 5-hour ($10), weekly ($25), and monthly ($50) limits, a limit style no other plan uses.",
+  goat: "The flagship Entry plan. $13/mo grants $50 of usage credit (5x). Your $10 / 5-hour, $25 / 7-day, and $50 / 30-day limits are rolling windows -- usage does not reset all at once; older usage drops out continuously and capacity returns.",
   pro: "$100 of credit every month for heavy builders.",
   max: "$180 of credit. Our biggest monthly pool.",
 };
@@ -72,7 +72,7 @@ function EntryWindowsCard({
           Entry Windows
         </p>
         <p className="text-xs text-(--l-fg-3)">
-          Refill continuously as oldest usage slides out
+          Rolling limits -- no fixed reset time
         </p>
       </div>
       <div className="mt-3 flex flex-col gap-3">

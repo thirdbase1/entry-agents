@@ -92,7 +92,7 @@ USAGE:
 - Negative offset reads the tail: offset=-50 is the last 50 lines
 - Three ceilings protect the context window: 2000 lines, 128KB per read, and 2000 chars per line (over-long lines are clamped with a visible marker)
 - If the file was cut, the result includes nextOffset — pass it as the next offset to resume exactly where it stopped
-- Re-reading an UNCHANGED file returns a cheap "unchanged" notice instead of the full content; read again for the full content
+- Re-reading the SAME range of an unchanged file returns a cheap "unchanged" notice instead of the full content; a different offset/limit always returns the requested lines
 - Results include line numbers starting at 1 in "N: content" format
 
 IMPORTANT:
@@ -197,7 +197,16 @@ EXAMPLES:
         // has not changed since the immediately previous read returns
         // a cheap notice. Consumes itself on hit, so the next read
         // returns full content again.
-        const dedupKey = `${workingDirectory}:${absolutePath}`;
+        //
+        // The key MUST include the requested window (offset/limit), not
+        // just the file: without it, asking for a range the model has
+        // never seen -- e.g. "show me lines 400-450 again" right after
+        // reading the head -- returned this notice instead of the lines,
+        // which reads as "the tool is broken" and pushes the model into
+        // reasoning about content it never actually saw (the exact
+        // failure the read-before-edit gate exists to prevent). The same
+        // request on an unchanged file still short-circuits.
+        const dedupKey = `${workingDirectory}:${absolutePath}:${offset}:${limit}`;
         if (checkUnchangedRead(dedupKey, contentHash)) {
           return {
             success: true,

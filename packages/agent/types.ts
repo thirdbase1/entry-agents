@@ -64,9 +64,33 @@ export interface SandboxLifecycleHooksContext {
    * `experimental_context` is a point-in-time snapshot taken at the
    * start of the turn and would still point at the old, now-stopped
    * sandbox, not the fresh one the workspace was actually migrated to.
+   *
+   * Resolves to null when the session has no sandbox state at all -- the
+   * normal case for a turn that started before the workspace finished
+   * provisioning (agent-first, lazy workspace). Callers must fall back to
+   * the snapshot state rather than assume a value.
    */
-  refreshSandboxState: () => Promise<SandboxState>;
+  refreshSandboxState: () => Promise<SandboxState | null>;
 }
+
+/**
+ * Host callbacks backing sandboxControlTool. apps/web implements each one
+ * with the same server-side code the UI and the scheduled lifecycle workflow
+ * use (kickSandboxProvisioningWorkflow / performSandboxMigration /
+ * archiveSession), so there is exactly one implementation of every
+ * workspace operation. All of them may reject; the tool surfaces the
+ * rejection as a tool error rather than killing the turn.
+ */
+export interface SandboxControlContext {
+  status: () => Promise<Record<string, unknown>>;
+  provision: () => Promise<Record<string, unknown>>;
+  migrate: () => Promise<Record<string, unknown>>;
+  extend: () => Promise<Record<string, unknown>>;
+  delete: () => Promise<Record<string, unknown>>;
+}
+
+export type SandboxControlToolResult = Record<string, unknown> &
+  ({ success: true } | { success: false; error: string }) & { action: string };
 
 export interface GithubApiRequestInput {
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -246,7 +270,17 @@ export interface SubagentBudgetGuard {
 }
 
 export interface AgentContext {
-  sandbox: AgentSandboxContext;
+  /** Host-backed workspace lifecycle control (tools/sandbox.ts). */
+  sandboxControl?: SandboxControlContext;
+  /**
+   * Optional since the agent-first rework: a turn can start before the
+   * workspace finishes provisioning, so experimental_context may carry no
+   * sandbox at all. Every tool resolves its connection per call and
+   * recovers via sandboxLifecycleHooks.beforeCommand()'s live-state read,
+   * so a missing sandbox here degrades the workspace tools -- never the
+   * whole turn.
+   */
+  sandbox?: AgentSandboxContext;
   skills?: SkillMetadata[];
   model: LanguageModel;
   subagentModel?: LanguageModel;
@@ -257,7 +291,13 @@ export interface AgentContext {
 }
 
 export interface SandboxExecutionContext {
-  sandbox: AgentSandboxContext;
+  /**
+   * Optional for the same reason as AgentContext.sandbox: the parent turn
+   * may have started before the workspace existed. Subagents then fail
+   * their own tool calls with a clear "workspace is starting" error
+   * instead of taking the parent turn down with them.
+   */
+  sandbox?: AgentSandboxContext;
 }
 
 export function isSandboxState(value: unknown): value is SandboxState {

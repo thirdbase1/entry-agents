@@ -54,7 +54,7 @@ describe("tools/utils", () => {
     });
 
     expect(context.workingDirectory).toBe("/repo");
-    expect(context.sandbox.workingDirectory).toBe("/repo");
+    expect(context.sandbox?.workingDirectory).toBe("/repo");
   });
 
   test("getSandbox connects using the sandbox state from context", async () => {

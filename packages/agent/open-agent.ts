@@ -19,6 +19,7 @@ import type { SkillMetadata } from "./skills/types";
 import type {
   SubagentBudgetGuard,
   GithubToolContext,
+  SandboxControlContext,
   SandboxLifecycleHooksContext,
   VercelToolContext,
 } from "./types";
@@ -31,6 +32,7 @@ import {
   globTool,
   grepTool,
   readFileTool,
+  sandboxControlTool,
   skillTool,
   taskTool,
   todoWriteTool,
@@ -63,7 +65,13 @@ export interface AgentSandboxContext {
 }
 
 const callOptionsSchema = z.object({
-  sandbox: z.custom<AgentSandboxContext>(),
+  // Optional since the agent-first rework (owner 2026-09-19): the model
+  // turn must be able to start -- and finish -- before the workspace is
+  // provisioned. buildSystemPrompt already treats every sandbox-derived
+  // field as optional, and the workspace tools resolve + self-heal their
+  // connection per call, so omitting this degrades the turn's workspace
+  // tools rather than the turn itself.
+  sandbox: z.custom<AgentSandboxContext>().optional(),
   model: z.custom<OpenAgentModelInput>().optional(),
   subagentModel: z.custom<OpenAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
@@ -93,6 +101,11 @@ const callOptionsSchema = z.object({
   // sandbox-migration safety net. Undefined in any host that doesn't
   // wire it up (e.g. tests) -- getSandbox() just skips passing hooks.
   sandboxLifecycleHooks: z.custom<SandboxLifecycleHooksContext>().optional(),
+  // Host-backed workspace lifecycle control (tools/sandbox.ts) -- lets the
+  // agent provision/migrate/extend/delete this session's own sandbox
+  // through the server's own code paths. Optional: non-web hosts and tests
+  // simply don't offer the tool.
+  sandboxControl: z.custom<SandboxControlContext>().optional(),
   // Extra tools merged on top of the built-in set for this call only
   // (e.g. tools/mcp.ts's createMcpToolSet() output). The caller owns
   // the full lifecycle -- resolving which servers to connect to,
@@ -166,6 +179,7 @@ const tools = {
   github_cli: githubCliTool(),
   vercel_cli: vercelCliTool(),
   vercel_api: vercelApiTool(),
+  sandbox: sandboxControlTool(),
 } satisfies ToolSet;
 
 export const openAgent = new ToolLoopAgent({
@@ -237,10 +251,10 @@ export const openAgent = new ToolLoopAgent({
     const skills = options.skills ?? [];
 
     const instructions = buildSystemPrompt({
-      cwd: sandbox.workingDirectory,
-      currentBranch: sandbox.currentBranch,
+      cwd: sandbox?.workingDirectory,
+      currentBranch: sandbox?.currentBranch,
       customInstructions,
-      environmentDetails: sandbox.environmentDetails,
+      environmentDetails: sandbox?.environmentDetails,
       skills,
       modelId: mainSelection.id,
       guidedFrontendWorkflow: options.guidedFrontendWorkflow,
@@ -261,7 +275,11 @@ export const openAgent = new ToolLoopAgent({
         model: callModel,
       }),
       experimental_context: {
-        sandbox,
+        // Key omitted entirely when there is no workspace yet: an
+        // explicitly-undefined sandbox would make `"sandbox" in context`
+        // lie about readiness, and the lazy resolver in tools/utils.ts
+        // already treats "absent" as the pending case.
+        ...(sandbox ? { sandbox } : {}),
         skills,
         model: callModel,
         subagentModel,
@@ -270,6 +288,7 @@ export const openAgent = new ToolLoopAgent({
         github: options.github,
         vercel: options.vercel,
         sandboxLifecycleHooks: options.sandboxLifecycleHooks,
+        sandboxControl: options.sandboxControl,
         billingGuard: options.billingGuard,
       },
     };

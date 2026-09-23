@@ -84,7 +84,9 @@ export interface SandboxLifecycleHooksContext {
 export interface SandboxControlContext {
   status: () => Promise<Record<string, unknown>>;
   provision: () => Promise<Record<string, unknown>>;
+  reconnect: () => Promise<Record<string, unknown>>;
   migrate: () => Promise<Record<string, unknown>>;
+  snapshot: () => Promise<Record<string, unknown>>;
   extend: () => Promise<Record<string, unknown>>;
   delete: () => Promise<Record<string, unknown>>;
 }

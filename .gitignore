@@ -46,3 +46,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .open-agents-dev-server-state.json
 .open-agents-dev-server-*.pid
 .env*
+
+# Agent tool scratch (web-fetch cache etc) -- never commit
+.open-harness/

@@ -197,9 +197,31 @@ type SerializableGithubContext = {
 type SerializableVercelContext = {
   connected: boolean;
 };
-type WorkflowAgentOptions = Omit<OpenAgentCallOptions, "github" | "vercel"> & {
+/**
+ * Plain-data stand-in for `SandboxControlContext`.
+ *
+ * The real context is seven closures. PR #13 put them straight into
+ * `agentOptions`, which is passed to `runAgentStep` as a STEP ARGUMENT --
+ * and functions cannot cross that boundary (see the
+ * SerializableGithubContext note above). The result was the production
+ * failure "Serialization failed / context step arguments / problematicValue
+ * undefined", a non-retryable USER_ERROR that killed the run on the first
+ * mid-turn suspension.
+ *
+ * Only the session id travels; `runAgentStep` rebuilds the closures inside
+ * the step, exactly like `github.commitAndPush` and `vercel.run`.
+ */
+type SerializableSandboxControlContext = {
+  sessionId: string;
+};
+
+type WorkflowAgentOptions = Omit<
+  OpenAgentCallOptions,
+  "github" | "vercel" | "sandboxControl"
+> & {
   github?: SerializableGithubContext;
   vercel?: SerializableVercelContext;
+  sandboxControl?: SerializableSandboxControlContext;
 };
 
 const shouldPauseForToolInteraction = (parts: WebAgentUIMessage["parts"]) =>
@@ -2292,19 +2314,16 @@ export async function runAgentWorkflow(options: Options) {
       vercel: {
         connected: vercelConnected,
       },
-      // Workspace lifecycle control for the agent's `sandbox` tool. Built
-      // from plain data (see the Serializable* types above) and the steps
-      // defined near performAgentCommitAndPush -- the agent can act on the
-      // session's own workspace without any new permission surface: every
-      // action is the same server-side call the UI button makes.
+      // Workspace lifecycle control for the agent's `sandbox` tool.
+      //
+      // ONLY THE PLAIN DATA CROSSES HERE. The comment above this line used
+      // to say "built from plain data" while the value below was seven
+      // closures -- which is precisely what made the Workflow SDK fail the
+      // run ("context step arguments / problematicValue undefined") the
+      // first time a turn suspended mid-step. `runAgentStep` rebuilds the
+      // real SandboxControlContext from this session id, inside the step.
       sandboxControl: {
-        status: () => getSandboxStatusStep(options.sessionId),
-        provision: () => provisionSandboxStep(options.sessionId),
-        reconnect: () => reconnectSandboxStep(options.sessionId),
-        migrate: () => migrateSandboxStep(options.sessionId),
-        snapshot: () => snapshotSandboxStep(options.sessionId),
-        extend: () => extendSandboxStep(options.sessionId),
-        delete: () => deleteSandboxStep(options.sessionId),
+        sessionId: options.sessionId,
       },
     };
     sandboxState = runtime?.sandboxState;
@@ -2928,6 +2947,7 @@ const runAgentStep = async (
     // Node/DB access since we're already inside a step.
     const githubContext = agentOptions.github;
     const vercelContext = agentOptions.vercel;
+    const controlContext = agentOptions.sandboxControl;
     const fullAgentOptions: OpenAgentCallOptions = {
       ...agentOptions,
       billingGuard: subagentBudgetGuard,
@@ -3062,6 +3082,23 @@ const runAgentStep = async (
                 params: input.params ?? {},
               });
             },
+          }
+        : undefined,
+      // Rebuilt here for exactly the same reason as commitAndPush and
+      // vercel.run above: `agentOptions.sandboxControl` crosses the
+      // workflow -> step boundary as a STEP ARGUMENT and may therefore
+      // only carry plain data (a session id). The seven real closures are
+      // reconstructed inside this step, where full Node/DB access exists
+      // and nothing further is serialized.
+      sandboxControl: controlContext
+        ? {
+            status: () => getSandboxStatusStep(controlContext.sessionId),
+            provision: () => provisionSandboxStep(controlContext.sessionId),
+            reconnect: () => reconnectSandboxStep(controlContext.sessionId),
+            migrate: () => migrateSandboxStep(controlContext.sessionId),
+            snapshot: () => snapshotSandboxStep(controlContext.sessionId),
+            extend: () => extendSandboxStep(controlContext.sessionId),
+            delete: () => deleteSandboxStep(controlContext.sessionId),
           }
         : undefined,
       // Rebuilt here for the same reason as commitAndPush above --

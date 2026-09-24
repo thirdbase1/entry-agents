@@ -145,3 +145,51 @@ describe("the workflow source keeps the step boundary undefined-free", () => {
     expect(source).not.toContain("params?: Record<string, unknown>;");
   });
 });
+
+describe("closures never cross the workflow -> step boundary", () => {
+  const readChatSource = () =>
+    Bun.file(new URL("./chat.ts", import.meta.url)).text();
+
+  /**
+   * Regression for PR #13 (6f336cd), which put the sandbox-lifecycle
+   * callbacks directly into `agentOptions`:
+   *
+   *   sandboxControl: {
+   *     status: () => getSandboxStatusStep(options.sessionId),
+   *     ...
+   *   }
+   *
+   * `agentOptions` is passed to `runAgentStep` as a STEP ARGUMENT, and
+   * functions are not serializable -- the repo documents this twice
+   * (SerializableGithubContext, SerializableVercelContext) precisely
+   * because the SDK then fails the run with
+   *
+   *   Serialization failed / context step arguments / problematicValue
+   *   undefined
+   *
+   * a non-retryable USER_ERROR that dies on the first mid-turn
+   * suspension. The fix keeps only plain data in `agentOptions` and
+   * rebuilds the closures inside the step.
+   */
+  test("sandboxControl crosses as plain data, not as closures", async () => {
+    const source = await readChatSource();
+    expect(source).toContain('sandboxControl: {\n        sessionId:');
+    expect(source).not.toContain(
+      "status: () => getSandboxStatusStep(options.sessionId)",
+    );
+  });
+
+  test("WorkflowAgentOptions omits every field that holds functions", async () => {
+    const source = await readChatSource();
+    expect(source).toContain(
+      '"github" | "vercel" | "sandboxControl"',
+    );
+  });
+
+  test("the closures are rebuilt inside runAgentStep", async () => {
+    const source = await readChatSource();
+    // Rebuild happens from `controlContext`, the plain-data carrier.
+    expect(source).toContain("status: () => getSandboxStatusStep(");
+    expect(source).toContain("controlContext.sessionId");
+  });
+});

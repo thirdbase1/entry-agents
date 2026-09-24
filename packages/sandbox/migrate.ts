@@ -185,8 +185,27 @@ export async function restoreWorkspacePayload(
         BUNDLE_PATH,
         Buffer.from(payload.bundleBase64, "base64"),
       );
+
+      // `git clone <bundle> .` refuses a destination that already has
+      // entries. The target workspace is normally empty, but a base
+      // snapshot can leave files behind (and it is not a git repo), so
+      // the very first restore already hit "destination path '.' already
+      // exists and is not an empty directory" and failed the migration.
+      // Clone into a scratch dir and merge in when `.` is not empty,
+      // instead of failing.
+      const emptyCheck = await sandbox.exec(
+        '[ -z "$(ls -A)" ]',
+        cwd,
+        PACK_TIMEOUT_MS,
+      );
+      const scratch = "/tmp/entry-ws-restore";
+      const cloneCommand = emptyCheck.success
+        ? `git clone ${BUNDLE_PATH} .`
+        : `rm -rf ${scratch} && git clone ${BUNDLE_PATH} ${scratch} && ` +
+          `cp -a ${scratch}/. . && rm -rf ${scratch}`;
+
       const cloneResult = await sandbox.exec(
-        `git clone ${BUNDLE_PATH} .`,
+        cloneCommand,
         cwd,
         PACK_TIMEOUT_MS,
       );

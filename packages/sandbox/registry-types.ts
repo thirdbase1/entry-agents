@@ -145,10 +145,16 @@ export const SANDBOX_TYPES = [
   "local",
 ] as const satisfies readonly SandboxProviderId[];
 
-/** Providers a user may pick in the UI. `local` is dev/test only. */
+/**
+ * Providers a user may pick in the UI. `local` is dev/test only.
+ *
+ * Ordered so the registry default (`boat`) leads: this list drives the
+ * selector and settings dropdown, and showing the default provider first
+ * is what makes "which sandbox am I on" readable at a glance.
+ */
 export const USER_SELECTABLE_SANDBOX_TYPES = [
-  "vercel",
   "boat",
+  "vercel",
 ] as const satisfies readonly SandboxProviderId[];
 
 export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "boat";

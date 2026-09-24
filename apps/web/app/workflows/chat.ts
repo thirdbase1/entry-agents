@@ -2072,11 +2072,12 @@ export async function runAgentWorkflow(options: Options) {
     pendingImageAttachments.length === 0
       ? convertMessages(options.messages)
       : runtimePromise.then(async (runtime) => {
-          if (!runtime) {
-            // No workspace yet -- keep the attachments as they are rather
-            // than dropping them or failing the turn. The model still gets
-            // a usable reply; the upload just happens next time it has a
-            // workspace to write into.
+          if (!runtime?.workingDirectory) {
+            // No live workspace this turn (still provisioning, migrating, or
+            // failed) -- keep the attachments as they are rather than
+            // dropping them or blocking the turn on a VM. The model still
+            // gets a usable reply; the upload just happens next time it has
+            // a workspace to write into.
             return convertMessages(options.messages);
           }
           const paths = await persistImageAttachmentsToSandbox({
@@ -2238,17 +2239,26 @@ export async function runAgentWorkflow(options: Options) {
             ),
           }
         : {}),
-      // Optional: absent when the workspace is not ready yet (see
+      // Optional: absent when there is no live workspace this turn (see
       // runtimePromise above). Every workspace tool resolves its own
       // connection per call and recovers from the session's live state, so
       // a missing sandbox here degrades those tools -- never the turn.
-      ...(runtime
+      //
+      // Optional fields are OMITTED rather than set to `undefined`: this
+      // object becomes a `runAgentStep` argument, and the Workflow SDK
+      // fails the run with a non-retryable SerializationError on an
+      // `undefined` step argument value.
+      ...(runtime?.workingDirectory
         ? {
             sandbox: {
               state: runtime.sandboxState,
               workingDirectory: runtime.workingDirectory,
-              currentBranch: runtime.currentBranch,
-              environmentDetails: runtime.environmentDetails,
+              ...(runtime.currentBranch !== undefined
+                ? { currentBranch: runtime.currentBranch }
+                : {}),
+              ...(runtime.environmentDetails !== undefined
+                ? { environmentDetails: runtime.environmentDetails }
+                : {}),
             },
           }
         : {}),
@@ -2265,8 +2275,11 @@ export async function runAgentWorkflow(options: Options) {
         ? {
             github: {
               hasRepo,
-              repoOwner: runtime?.repoOwner,
-              repoName: runtime?.repoName,
+              // Omitted when the session has no linked repository: an
+              // explicit `undefined` here is not serializable as a step
+              // argument and would fail the run.
+              ...(runtime?.repoOwner ? { repoOwner: runtime.repoOwner } : {}),
+              ...(runtime?.repoName ? { repoName: runtime.repoName } : {}),
             },
           }
         : {}),

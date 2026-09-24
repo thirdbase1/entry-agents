@@ -121,6 +121,16 @@ export class BoatSandbox implements Sandbox {
   private readonly hostedPorts = new Map<number, string>();
   private currentState: string;
   /**
+   * Current git branch of the workspace.
+   *
+   * Populated by `refreshWorkspaceMetadata()` right after the workspace is
+   * bootstrapped. Deliberately present rather than left undefined: this
+   * value is returned from a `"use step"` and passed back in as step
+   * arguments, and the Workflow SDK refuses to serialize `undefined`
+   * across those boundaries.
+   */
+  currentBranch?: string;
+  /**
    * Auto-stop deadline (ms). Public because it is part of the shared
    * `Sandbox` contract (`expiresAt?`); `extendTimeout` updates it in place.
    */
@@ -159,6 +169,51 @@ export class BoatSandbox implements Sandbox {
 
   get id(): string {
     return this.sandboxId;
+  }
+
+  /**
+   * Environment description handed to the agent's system prompt. A getter
+   * (never `undefined`) so it always serializes cleanly across a
+   * workflow-step boundary, matching VercelSandbox's contract.
+   */
+  get environmentDetails(): string {
+    const lines = [
+      `Sandbox: Boat Linux VM (Ubuntu 24.04, 4 vCPU / 8 GB), working directory ${this.workingDirectory}`,
+    ];
+
+    for (const [port, url] of this.hostedPorts) {
+      if (url) lines.push(`  - Port ${port}: ${url}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  /**
+   * Fill in per-workspace metadata after the workspace exists. Called by
+   * `connectBoat` once the clone/bootstrap step has finished.
+   */
+  async refreshWorkspaceMetadata(): Promise<void> {
+    if (this.currentBranch !== undefined) return;
+
+    try {
+      const result = await this.exec(
+        "git rev-parse --abbrev-ref HEAD",
+        this.workingDirectory,
+        15_000,
+      );
+
+      if (result.success) {
+        const branch = result.stdout.trim();
+        // Detached HEAD (a fresh `git init` repo with no commits) reports
+        // "HEAD" -- that is not a branch name worth surfacing to the agent.
+        if (branch && branch !== "HEAD") {
+          this.currentBranch = branch;
+        }
+      }
+    } catch {
+      // Metadata is cosmetic for the system prompt; never fail a connect
+      // because a git probe could not run.
+    }
   }
 
   get state(): string {

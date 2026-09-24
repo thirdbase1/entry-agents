@@ -10,10 +10,7 @@ import {
   ensureUploadsGitignored,
   IMAGE_UPLOADS_DIR,
 } from "@/lib/sandbox/uploads-gitignore";
-import {
-  kickSandboxProvisioningWorkflow,
-  waitForSandboxProvisioningRun,
-} from "@/lib/sandbox/provisioning-kick";
+import { kickSandboxProvisioningWorkflow } from "@/lib/sandbox/provisioning-kick";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
@@ -23,7 +20,13 @@ type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
 
 export type ResolvedChatSandboxRuntime = {
   sandboxState: SandboxState;
-  workingDirectory: string;
+  /**
+   * Present only when a live sandbox was actually connected this turn.
+   * Absent when the sandbox is still provisioning, migrating, or failed --
+   * the turn must not block on any of those, so the agent starts without a
+   * workspace and its tools pick one up on their own later.
+   */
+  workingDirectory?: string;
   currentBranch?: string;
   environmentDetails?: string;
   skills: DiscoveredSkills;
@@ -56,11 +59,37 @@ async function loadSessionSkills(params: {
   return discoveredSkills;
 }
 
+async function cachedSessionSkills(params: {
+  sessionId: string;
+  sandboxState: SandboxState;
+}): Promise<DiscoveredSkills> {
+  return (await getCachedSkills(params.sessionId, params.sandboxState)) ?? [];
+}
+
+type ReadySessionSandbox = {
+  session: SessionRecord;
+  didSetupWorkspace: boolean;
+  /** True only when a usable sandbox is up right now. */
+  liveSandbox: boolean;
+};
+
+/**
+ * Validates the session and reports whether a sandbox is usable *without
+ * ever waiting for one to come up*.
+ *
+ * AGENT-FIRST: kicking provisioning returns immediately; the caller never
+ * blocks on it. Previously this waited (up to 120s for migration, then the
+ * full provisioning run), which meant a user's message could not reach the
+ * model until the VM existed. The sandbox is a tool, not a gate: real tool
+ * calls still serialise correctly behind `sandboxLifecycleHooks
+ * .beforeCommand()`, which reads live DB state at call time and self-heals
+ * the moment provisioning lands.
+ */
 async function getReadySessionSandbox(params: {
   sessionId: string;
   userId: string;
-}): Promise<{ session: SessionRecord; didSetupWorkspace: boolean }> {
-  let session = await getSessionById(params.sessionId);
+}): Promise<ReadySessionSandbox> {
+  const session = await getSessionById(params.sessionId);
   if (!session) {
     throw new Error("Session not found");
   }
@@ -71,60 +100,38 @@ async function getReadySessionSandbox(params: {
     throw new Error("Session is archived");
   }
 
-  // Migration owns the workspace while the non-persistent sandbox is being
-  // packed and replaced. Never provision/connect concurrently: doing so can
-  // start a new command on the old VM while migration is capturing it.
-  // Wait for the durable lifecycle workflow to finish and then re-read state.
-  if (session.lifecycleState === "migrating") {
-    const migrationDeadline = Date.now() + 120_000;
-    while (Date.now() < migrationDeadline) {
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-      session = await getSessionById(params.sessionId);
-      if (!session) {
-        throw new Error("Session not found");
-      }
-      if (
-        session.status === "archived" ||
-        session.lifecycleState !== "migrating"
-      ) {
-        break;
-      }
-    }
-
-    if (session.lifecycleState === "migrating") {
-      throw new Error("Workspace migration is still in progress");
-    }
-  }
-
   if (isSandboxActive(session.sandboxState)) {
-    return { session, didSetupWorkspace: false };
+    return { session, didSetupWorkspace: false, liveSandbox: true };
   }
 
-  const kick = await kickSandboxProvisioningWorkflow(params.sessionId);
-  if (kick.runId) {
-    await waitForSandboxProvisioningRun(kick.runId);
+  // Migration owns the workspace while the old sandbox is packed and
+  // replaced. Never connect (or start a competing provision) mid-migration
+  // -- just report "not live" and let this turn proceed without a
+  // workspace; beforeCommand() blocks the actual tool use until it ends.
+  if (session.lifecycleState === "migrating") {
+    return { session, didSetupWorkspace: false, liveSandbox: false };
   }
 
-  session = await getSessionById(params.sessionId);
-  if (!session) {
-    throw new Error("Session not found");
-  }
-  if (!isSandboxActive(session.sandboxState)) {
-    throw new Error(session.lifecycleError ?? "Workspace setup failed");
-  }
+  // Fire-and-forget: kick returns once the workflow run is claimed, without
+  // waiting for the VM to finish provisioning.
+  await kickSandboxProvisioningWorkflow(params.sessionId);
 
-  return { session, didSetupWorkspace: true };
+  return { session, didSetupWorkspace: true, liveSandbox: false };
 }
 
 /**
- * Resolves the session's workspace runtime, PROVISIONING it if it is not
- * active yet (kick + wait), and rejecting when that fails.
+ * Resolves the session's workspace runtime for this turn.
  *
- * Rejecting here is still correct -- but the caller (`runtimePromise` in
- * apps/web/app/workflows/chat.ts) must catch it: a workspace that never
- * comes up should cost the turn its sandbox, never its reply. See the
- * sandbox skill (.agents/skills/sandbox/SKILL.md) for the agent-facing
- * half of that rule.
+ * AGENT-FIRST CONTRACT: this never waits for a sandbox to start. When one
+ * is already active it connects and discovers skills; when one is not, it
+ * kicks provisioning in the background and returns the session context
+ * only (no `workingDirectory`), so the model turn begins immediately and a
+ * sandboxed tool call simply self-heals later via beforeCommand().
+ *
+ * Every value returned here crosses a `"use step"` boundary, so no property
+ * may be `undefined`: the Workflow SDK rejects `undefined` outright and
+ * fails the run with a non-retryable SerializationError. Optional fields
+ * are therefore *omitted*, not set to undefined.
  */
 export async function resolveChatSandboxRuntime(params: {
   userId: string;
@@ -132,14 +139,38 @@ export async function resolveChatSandboxRuntime(params: {
 }): Promise<ResolvedChatSandboxRuntime> {
   "use step";
 
-  const { session, didSetupWorkspace } = await getReadySessionSandbox({
-    sessionId: params.sessionId,
-    userId: params.userId,
-  });
+  const { session, didSetupWorkspace, liveSandbox } =
+    await getReadySessionSandbox({
+      sessionId: params.sessionId,
+      userId: params.userId,
+    });
+
   const sandboxState = session.sandboxState;
   if (!sandboxState) {
     throw new Error("Workspace setup failed");
   }
+
+  const sessionContext = {
+    sandboxState,
+    didSetupWorkspace,
+    sessionTitle: session.title,
+    ...(session.repoOwner ? { repoOwner: session.repoOwner } : {}),
+    ...(session.repoName ? { repoName: session.repoName } : {}),
+  };
+
+  if (!liveSandbox) {
+    // No VM yet: hand back session context plus whatever skills were
+    // already discovered on a previous turn. Omitting workingDirectory is
+    // what tells the caller to run this turn without a workspace attached.
+    return {
+      ...sessionContext,
+      skills: await cachedSessionSkills({
+        sessionId: params.sessionId,
+        sandboxState,
+      }),
+    };
+  }
+
   const sandbox = await connectSandbox(sandboxState);
 
   const skills = await loadSessionSkills({
@@ -149,15 +180,15 @@ export async function resolveChatSandboxRuntime(params: {
   });
 
   return {
-    sandboxState,
+    ...sessionContext,
     workingDirectory: sandbox.workingDirectory,
-    currentBranch: sandbox.currentBranch,
-    environmentDetails: sandbox.environmentDetails,
+    ...(sandbox.currentBranch !== undefined
+      ? { currentBranch: sandbox.currentBranch }
+      : {}),
+    ...(sandbox.environmentDetails !== undefined
+      ? { environmentDetails: sandbox.environmentDetails }
+      : {}),
     skills,
-    didSetupWorkspace,
-    sessionTitle: session.title,
-    repoOwner: session.repoOwner ?? undefined,
-    repoName: session.repoName ?? undefined,
   };
 }
 

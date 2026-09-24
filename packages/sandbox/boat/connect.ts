@@ -228,6 +228,11 @@ export async function connectBoat(
 
   await registerHostedPorts(sandbox, options?.ports);
 
+  // Populate currentBranch/environmentDetails before this sandbox crosses a
+  // workflow-step boundary: an `undefined` step value is not serializable
+  // and fails the whole run with a non-retryable SerializationError.
+  await sandbox.refreshWorkspaceMetadata();
+
   if (options?.hooks?.afterStart) {
     await options.hooks.afterStart(sandbox);
   }

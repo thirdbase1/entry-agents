@@ -1551,7 +1551,13 @@ async function performAgentGithubApiRequest(params: {
   repoName?: string;
   method: string;
   path: string;
-  params?: Record<string, unknown>;
+  // NOT optional: a step argument of `undefined` cannot be serialized by
+  // the Workflow SDK, and failing to serialize is a non-retryable
+  // USER_ERROR that kills the whole run. Callers pass `?? {}` so the
+  // type system enforces it. (The tool-level `params` in
+  // packages/agent/types.ts stays optional -- it is the *tool input*,
+  // which legitimately omits it.)
+  params: Record<string, unknown>;
 }): Promise<GithubApiResult> {
   "use step";
 
@@ -1903,7 +1909,9 @@ async function performAgentVercelApiRequest(params: {
   userId: string;
   method: string;
   path: string;
-  params?: Record<string, unknown>;
+  // NOT optional -- see performAgentGithubApiRequest above: an undefined
+  // step argument is unserializable and fatal, so callers pass `?? {}`.
+  params: Record<string, unknown>;
 }): Promise<VercelApiResult> {
   "use step";
 
@@ -2926,7 +2934,14 @@ const runAgentStep = async (
                   : {}),
                 method: input.method,
                 path: input.path,
-                params: input.params,
+                // `params` is optional in the tool schema, and the model
+                // legitimately omits it for calls that need no params.
+                // Passing that undefined straight into a step is fatal:
+                // the Workflow SDK cannot serialize an undefined step
+                // argument, so the run dies with "Serialization failed /
+                // context step arguments / problematicValue undefined"
+                // (a non-retryable USER_ERROR that fails every run).
+                params: input.params ?? {},
               });
             },
             cli: async (input): Promise<GithubRawCliResult> => {
@@ -2984,7 +2999,11 @@ const runAgentStep = async (
                 userId,
                 method: input.method,
                 path: input.path,
-                params: input.params,
+                // Same reason as performAgentGithubApiRequest above:
+                // `params` is optional in VercelApiRequestInput, and an
+                // omitted value must not cross the step boundary as
+                // undefined or the SDK's serializer fails the run.
+                params: input.params ?? {},
               });
             },
           }

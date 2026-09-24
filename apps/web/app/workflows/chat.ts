@@ -1349,7 +1349,14 @@ async function getSandboxStatusStep(
           ? "paused"
           : "missing",
     lifecycleState: session.lifecycleState,
-    sandboxExpiresAt: session.sandboxExpiresAt ?? null,
+    // MUST be a string, not a Date. This object is a tool RESULT, so it is
+    // replayed through convertToModelMessages on the next step -- and the
+    // ModelMessage schema accepts only string/number/boolean/null/record/
+    // array there, rejecting a Date with AI_InvalidPromptError ("messages
+    // do not match the ModelMessage[] schema") that killed the turn and
+    // surfaced as a generic failure. ISO-8601 is what the UI already
+    // expects (see session-chat-context's sandboxExpiresAt handling).
+    sandboxExpiresAt: session.sandboxExpiresAt?.toISOString() ?? null,
     hasRepo: Boolean(session.repoOwner && session.repoName),
     isArchived: session.status === "archived",
   };

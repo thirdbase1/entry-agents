@@ -59,6 +59,16 @@ export type ChatErrorCategory =
   | "timeout"
   | "network"
   | "provider_unavailable"
+  // Specific buckets added after the 2026-09-24 log review. Each one was
+  // falling through to "unknown" and showing the user a generic
+  // "Something went wrong", even though the real cause was both known and
+  // actionable. Keep these ABOVE the generic buckets in
+  // classifyChatError: classification is first-match-wins.
+  | "blocked"
+  | "model_unavailable"
+  | "invalid_prompt"
+  | "no_output"
+  | "workspace"
   | "unknown";
 
 const CATEGORY_MESSAGES: Record<ChatErrorCategory, string> = {
@@ -73,6 +83,16 @@ const CATEGORY_MESSAGES: Record<ChatErrorCategory, string> = {
     "Connection issue reaching the AI provider. Please check your connection and try again.",
   provider_unavailable:
     "The AI provider is temporarily unavailable. Please try again in a moment.",
+  blocked:
+    "The model provider refused this message under its content policy, so no reply was generated. That is a refusal at the provider, not a bug -- reword the message, or pick a different model and send it again.",
+  model_unavailable:
+    "Your selected model isn't available on the gateway right now, so the turn couldn't start. Open Settings > Models, pick a model that works, and resend.",
+  invalid_prompt:
+    "This chat's stored history is no longer in a shape the model accepts -- usually an interrupted or partially-failed previous turn. Send the message again; if it keeps happening, start a new chat from this session.",
+  no_output:
+    "The model connected but returned an empty response. Send the message again, or switch to a different model if it repeats.",
+  workspace:
+    "Your workspace (sandbox) isn't reachable, so the agent has no shell or file tools for this turn. It normally comes back on its own within a minute -- resend, or open the sandbox panel and start it manually.",
   unknown:
     "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models.",
 };
@@ -86,6 +106,78 @@ export function classifyChatError(error: unknown): ChatErrorCategory {
 
   if (matchesAny(signal, ["abort", "cancelled", "canceled", "stopped"])) {
     return "aborted";
+  }
+
+  // ---- Specific buckets (first-match-wins; see ChatErrorCategory) ----
+
+  // Provider content refusal (observed: HTTP 451 / type
+  // "censorship_blocked" from entry-gateway). Distinct from `quota`:
+  // the model did not run out of budget, it declined the content.
+  if (
+    matchesAny(signal, [
+      "censorship",
+      "content policy",
+      "content you provided",
+      "status code 451",
+      " 451 ",
+      "blocked by the provider",
+    ])
+  ) {
+    return "blocked";
+  }
+
+  // The conversation replayed into convertToModelMessages no longer
+  // satisfies the ModelMessage[] schema -- an interrupted/partial turn,
+  // or a tool result carrying a type the schema rejects (a Date).
+  if (
+    matchesAny(signal, [
+      "invalid prompt",
+      "modelmessage",
+      "messages do not match",
+      "type validation failed",
+    ])
+  ) {
+    return "invalid_prompt";
+  }
+
+  // Gateway has no route for the requested model (observed: "No
+  // openai-chat route is configured for qwen3.8-flash" -> 404).
+  if (
+    matchesAny(signal, [
+      "route is configured for",
+      "no such model",
+      "model not found",
+      "is not a valid model",
+      "unknown model",
+    ])
+  ) {
+    return "model_unavailable";
+  }
+
+  // Stream ended without producing a single token.
+  if (matchesAny(signal, ["no output generated", "no output"])) {
+    return "no_output";
+  }
+
+  // Workspace unreachable. Checked BEFORE `auth` because a scoped Boat key
+  // rejects calls with 403 "api_key_action_forbidden", which would
+  // otherwise be reported as an AI-provider auth problem -- the wrong
+  // subsystem entirely.
+  if (
+    matchesAny(signal, [
+      "sandbox not initialized",
+      "workspace for this session is still starting",
+      "workspace is not reachable",
+      "api_key_action_forbidden",
+      "api_key_expired",
+      "boat api error",
+      "cannot perform sandbox",
+      "sandbox.resume",
+      "boAt_configuration",
+      "boat_api_key is not set",
+    ])
+  ) {
+    return "workspace";
   }
 
   if (

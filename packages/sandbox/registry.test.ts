@@ -78,8 +78,9 @@ describe("sandbox provider registry", () => {
     expect(isKnownSandboxType(undefined)).toBe(false);
   });
 
-  test("default provider is vercel", () => {
-    expect(DEFAULT_SANDBOX_PROVIDER).toBe("vercel");
+  test("default provider is boat", () => {
+    expect(DEFAULT_SANDBOX_PROVIDER).toBe("boat");
+    expect(listUserSelectableSandboxProviders()[0]?.id).toBe("boat");
   });
 
   test("unknown provider fails safely instead of falling back", () => {
@@ -156,6 +157,10 @@ describe("provider state shape and persistence", () => {
     });
 
     expect(state).toEqual({ type: "vercel", sandboxName: "session_abc" });
+  });
+
+  test("a session with no persisted provider falls back to the registry default", () => {
+    expect(DEFAULT_SANDBOX_PROVIDER).toBe("boat");
   });
 
   test("vercel provision state promotes a legacy sandboxId to sandboxName", () => {

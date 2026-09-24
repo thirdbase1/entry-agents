@@ -151,7 +151,7 @@ export const USER_SELECTABLE_SANDBOX_TYPES = [
   "boat",
 ] as const satisfies readonly SandboxProviderId[];
 
-export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "vercel";
+export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "boat";
 
 export function isKnownSandboxType(value: unknown): value is SandboxProviderId {
   return (

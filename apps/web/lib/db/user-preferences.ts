@@ -34,7 +34,7 @@ export interface UserPreferencesData {
 const DEFAULT_PREFERENCES: UserPreferencesData = {
   defaultModelId: APP_DEFAULT_MODEL_ID,
   defaultSubagentModelId: null,
-  defaultSandboxType: "vercel",
+  defaultSandboxType: DEFAULT_SANDBOX_PROVIDER as SandboxType,
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,

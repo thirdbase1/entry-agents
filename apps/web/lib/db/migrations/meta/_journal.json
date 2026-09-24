@@ -414,6 +414,13 @@
       "when": 1789900000001,
       "tag": "0057_github_repo_index",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1790208000000,
+      "tag": "0058_boat_default_sandbox",
+      "breakpoints": true
     }
   ]
 }

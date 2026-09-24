@@ -27,6 +27,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * The only Boat machine size Entry creates: `default` = 4 vCPU / 8 GB /
+ * 50 GB disk at $0.036/h (docs.boat.dev/machines).
+ *
+ * Deliberately a constant rather than derived from `ConnectOptions.vcpus`:
+ * the Vercel-facing vCPU knob encodes a Vercel plan tier and has no
+ * meaningful crosswalk to Boat's sizes, and Entry only ever wants this one
+ * box. Resizing (small/large/xlarge) would be an explicit product decision
+ * rather than something a provider option silently does.
+ */
+const BOAT_MACHINE_TYPE = "default";
+
 function ttlSecondsFromTimeout(timeoutMs?: number): number | null {
   if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return null;
@@ -43,7 +55,6 @@ async function getRecord(sandboxId: string): Promise<BoatSandboxRecord> {
 
 async function createSandbox(options: {
   ttlSeconds: number | null;
-  machineType?: BoatSandboxConnectOptions["machineType"];
   env?: Record<string, string>;
 }): Promise<BoatSandboxRecord> {
   const response = await boatRequest<{ sandbox: BoatSandboxRecord }>(
@@ -51,8 +62,8 @@ async function createSandbox(options: {
     {
       method: "POST",
       body: {
+        type: BOAT_MACHINE_TYPE,
         ttlSeconds: options.ttlSeconds,
-        ...(options.machineType ? { type: options.machineType } : {}),
         ...(options.env && Object.keys(options.env).length > 0
           ? { env: options.env }
           : {}),
@@ -65,18 +76,17 @@ async function createSandbox(options: {
 
 async function resumeSandbox(
   sandboxId: string,
-  options: {
-    ttlSeconds?: number | null;
-    machineType?: BoatSandboxConnectOptions["machineType"];
-  },
+  options: { ttlSeconds?: number | null },
 ): Promise<void> {
+  // No `type` on resume: Boat keeps the size the sandbox was created with
+  // (always `default` here), and re-asserting one could refuse the resume
+  // with `type_too_small` if the disk no longer fits.
   await boatRequest(`/sandboxes/${sandboxId}/resume`, {
     method: "POST",
     body: {
       ...(options.ttlSeconds === undefined
         ? {}
         : { ttlSeconds: options.ttlSeconds }),
-      ...(options.machineType ? { type: options.machineType } : {}),
     },
   });
 }
@@ -183,10 +193,7 @@ export async function connectBoat(
   }
 
   if (record && record.state === "archived") {
-    await resumeSandbox(record.id, {
-      ttlSeconds,
-      ...(options?.machineType ? { machineType: options.machineType } : {}),
-    });
+    await resumeSandbox(record.id, { ttlSeconds });
     record = await waitUntilReady(record.id);
   } else if (record) {
     // ready/idle/running/provisioning/cloning -- wait for a usable state.
@@ -194,7 +201,6 @@ export async function connectBoat(
   } else {
     record = await createSandbox({
       ttlSeconds,
-      ...(options?.machineType ? { machineType: options.machineType } : {}),
       ...(options?.env ? { env: options.env } : {}),
     });
     record = await waitUntilReady(record.id);

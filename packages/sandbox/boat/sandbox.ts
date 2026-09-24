@@ -31,7 +31,7 @@ export interface BoatSandboxConnectOptions {
   timeout?: number;
   /** Ports to expose on public HTTPS URLs (registered best-effort). */
   ports?: number[];
-  /** Machine size. Boat supports `small | default | large | xlarge`. */
+  /** Machine size. Entry always creates Boat's `default` (4 vCPU / 8 GB). */
   machineType?: "small" | "default" | "large" | "xlarge";
   /** Git identity applied to commits made in the workspace. */
   gitUser?: { name: string; email: string };

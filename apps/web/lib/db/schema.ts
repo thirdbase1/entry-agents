@@ -444,7 +444,7 @@ export const userPreferences = pgTable("user_preferences", {
   defaultSubagentModelId: text("default_subagent_model_id"),
   defaultSandboxType: text("default_sandbox_type", {
     enum: ["vercel", "boat"],
-  }).default("vercel"),
+  }).default("boat"),
   defaultDiffMode: text("default_diff_mode", {
     enum: ["unified", "split"],
   }).default("unified"),

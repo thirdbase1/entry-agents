@@ -1,4 +1,5 @@
 import type { SandboxState } from "@open-agents/sandbox";
+import { isKnownSandboxType } from "@open-agents/sandbox/registry.js";
 import type { LanguageModel, LanguageModelUsage } from "ai";
 import { z } from "zod";
 import type { AgentSandboxContext } from "./open-agent";
@@ -307,7 +308,9 @@ export function isSandboxState(value: unknown): value is SandboxState {
     typeof value === "object" &&
     value !== null &&
     "type" in value &&
-    value.type === "vercel"
+    // Registry-driven so every registered provider (Vercel, Boat, ...) is
+    // accepted here without this package growing a vendor list.
+    isKnownSandboxType(value.type)
   );
 }
 

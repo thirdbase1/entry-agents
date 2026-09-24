@@ -1,6 +1,10 @@
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
+import {
+  DEFAULT_SANDBOX_PROVIDER,
+  isUserSelectableSandboxType,
+} from "@open-agents/sandbox/registry.js";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
   normalizeGlobalSkillRefs,
@@ -43,19 +47,15 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   enabledModelIds: [],
 };
 
-const VALID_SANDBOX_TYPES: SandboxType[] = ["vercel"];
 const VALID_DIFF_MODES: DiffMode[] = ["unified", "split"];
 
 function normalizeSandboxType(value: unknown): SandboxType {
   if (value === "hybrid") {
-    return "vercel";
+    return DEFAULT_SANDBOX_PROVIDER as SandboxType;
   }
 
-  if (
-    typeof value === "string" &&
-    VALID_SANDBOX_TYPES.includes(value as SandboxType)
-  ) {
-    return value as SandboxType;
+  if (isUserSelectableSandboxType(value)) {
+    return value;
   }
 
   return DEFAULT_PREFERENCES.defaultSandboxType;

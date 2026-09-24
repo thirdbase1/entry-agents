@@ -33,10 +33,42 @@ export type { Source, FileEntry, SandboxStatus } from "./types.ts";
 // factory
 export {
   connectSandbox,
-  type SandboxState,
   type ConnectOptions,
   type SandboxConnectConfig,
 } from "./factory.ts";
+
+export type { SandboxState } from "./state.ts";
+
+// provider registry -- provider metadata + capabilities are importable
+// from a browser bundle (no provider SDKs pulled in), while the
+// server-side bindings live behind ./registry.
+export {
+  SANDBOX_TYPES,
+  SANDBOX_PROVIDER_METADATA,
+  USER_SELECTABLE_SANDBOX_TYPES,
+  DEFAULT_SANDBOX_PROVIDER,
+  VERCEL_CAPABILITIES,
+  BOAT_CAPABILITIES,
+  LOCAL_CAPABILITIES,
+  getSandboxCapabilities,
+  getSandboxProviderMetadata,
+  isKnownSandboxType,
+  isUserSelectableSandboxType,
+  listUserSelectableSandboxProviders,
+  type SandboxCapabilities,
+  type SandboxProviderId,
+  type SandboxProviderMetadata,
+} from "./registry-types.ts";
+
+export {
+  SANDBOX_PROVIDERS,
+  getSandboxProvider,
+  requireSandboxProvider,
+  requireAvailableSandboxProvider,
+  UnsupportedSandboxProviderError,
+  type BuildProvisionStateInput,
+  type SandboxProvider,
+} from "./registry.ts";
 
 // git helpers
 export {
@@ -71,3 +103,16 @@ export {
 // local
 export { LocalSandbox, connectLocal } from "./local/sandbox.ts";
 export type { LocalState } from "./local/state.ts";
+
+// boat
+export {
+  BoatSandbox,
+  connectBoat,
+  BoatApiError,
+  BoatConfigurationError,
+  BOAT_DEFAULT_WORKING_DIRECTORY,
+  isBoatConfigured,
+  isBoatNotFoundError,
+  type BoatSandboxConnectOptions,
+  type BoatState,
+} from "./boat/index.ts";

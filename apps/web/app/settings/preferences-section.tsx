@@ -7,6 +7,7 @@ import {
   DEFAULT_SANDBOX_TYPE,
   type SandboxType,
 } from "@/components/sandbox-selector-compact";
+import { listUserSelectableSandboxProviders } from "@open-agents/sandbox/registry.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,9 +37,11 @@ import {
   withMissingModelOption,
 } from "@/lib/model-options";
 
-const SANDBOX_OPTIONS: Array<{ id: SandboxType; name: string }> = [
-  { id: "vercel", name: "Vercel" },
-];
+const SANDBOX_OPTIONS: Array<{ id: SandboxType; name: string }> =
+  listUserSelectableSandboxProviders().map((provider) => ({
+    id: provider.id as SandboxType,
+    name: provider.displayName,
+  }));
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; name: string }> = [
   { id: "system", name: "System" },

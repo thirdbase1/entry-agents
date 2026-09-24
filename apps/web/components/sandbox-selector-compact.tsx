@@ -15,8 +15,17 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  DEFAULT_SANDBOX_PROVIDER,
+  listUserSelectableSandboxProviders,
+  USER_SELECTABLE_SANDBOX_TYPES,
+} from "@open-agents/sandbox/registry.js";
 
-export type SandboxType = "vercel";
+/**
+ * Providers a user may pick. Derived from the sandbox registry, so adding
+ * a provider (or hiding one) is a registry change rather than a UI change.
+ */
+export type SandboxType = (typeof USER_SELECTABLE_SANDBOX_TYPES)[number];
 
 interface SandboxOption {
   id: SandboxType;
@@ -24,15 +33,14 @@ interface SandboxOption {
   description: string;
 }
 
-export const SANDBOX_OPTIONS: SandboxOption[] = [
-  {
-    id: "vercel",
-    name: "Vercel",
-    description: "Cloud sandbox",
-  },
-];
+export const SANDBOX_OPTIONS: SandboxOption[] =
+  listUserSelectableSandboxProviders().map((provider) => ({
+    id: provider.id as SandboxType,
+    name: provider.displayName,
+    description: provider.description,
+  }));
 
-export const DEFAULT_SANDBOX_TYPE: SandboxType = "vercel";
+export const DEFAULT_SANDBOX_TYPE: SandboxType = DEFAULT_SANDBOX_PROVIDER as SandboxType;
 
 interface SandboxSelectorCompactProps {
   value: SandboxType;

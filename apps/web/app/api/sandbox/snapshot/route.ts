@@ -1,4 +1,12 @@
-import { connectSandbox } from "@open-agents/sandbox";
+import {
+  connectSandbox,
+  requireSandboxProvider,
+  type SandboxState,
+} from "@open-agents/sandbox";
+import {
+  DEFAULT_SANDBOX_PROVIDER,
+  getSandboxCapabilities,
+} from "@open-agents/sandbox/registry.js";
 import {
   requireAuthenticatedUser,
   requireOwnedSession,
@@ -135,13 +143,15 @@ export async function PUT(req: Request) {
   }
 
   const { sessionRecord } = sessionContext;
-  const sandboxType = sessionRecord.sandboxState?.type ?? "vercel";
+  const sandboxType =
+    sessionRecord.sandboxState?.type ?? DEFAULT_SANDBOX_PROVIDER;
+  const sandboxProvider = requireSandboxProvider(String(sandboxType));
 
-  if (sandboxType !== "vercel") {
+  if (!getSandboxCapabilities(String(sandboxType)).snapshots) {
     return Response.json(
       {
         error:
-          "Snapshot restoration is only supported for the current cloud sandbox provider",
+          "Snapshot restoration is not supported by this sandbox provider",
       },
       { status: 400 },
     );
@@ -180,9 +190,14 @@ export async function PUT(req: Request) {
   const restoreLegacySnapshot = () =>
     connectSandbox(
       {
-        type: sandboxType,
-        sandboxName: getSessionSandboxName(sessionId),
-        snapshotId: legacySnapshotId ?? undefined,
+        state: sandboxProvider.buildProvisionState({
+          sessionId,
+          existing: {
+            type: sandboxProvider.id,
+            sandboxName: getSessionSandboxName(sessionId),
+            snapshotId: legacySnapshotId ?? undefined,
+          } as SandboxState,
+        }),
       },
       {
         timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
@@ -202,7 +217,15 @@ export async function PUT(req: Request) {
           try {
             restoredFrom = persistentSandboxName;
             return await connectSandbox(
-              { type: sandboxType, sandboxName: persistentSandboxName },
+              {
+                state: sandboxProvider.buildProvisionState({
+                  sessionId,
+                  existing: {
+                    type: sandboxProvider.id,
+                    sandboxName: persistentSandboxName,
+                  } as SandboxState,
+                }),
+              },
               {
                 timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
                 vcpus: DEFAULT_SANDBOX_VCPUS,
@@ -224,10 +247,15 @@ export async function PUT(req: Request) {
       : await restoreLegacySnapshot();
 
     const newState = sandbox.getState?.();
-    const restoredState = (newState ?? {
-      type: sandboxType,
-      sandboxName: persistentSandboxName ?? getSessionSandboxName(sessionId),
-    }) as Parameters<typeof updateSession>[1]["sandboxState"];
+    const restoredState = (newState ??
+      sandboxProvider.buildProvisionState({
+        sessionId,
+        existing: {
+          type: sandboxProvider.id,
+          sandboxName:
+            persistentSandboxName ?? getSessionSandboxName(sessionId),
+        } as SandboxState,
+      })) as Parameters<typeof updateSession>[1]["sandboxState"];
 
     await updateSession(sessionId, {
       sandboxState: restoredState,

@@ -8,6 +8,7 @@ import {
   updateSession,
 } from "@/lib/db/sessions";
 import { SANDBOX_LIFECYCLE_STALE_RUN_GRACE_MS } from "./config";
+import { isKnownSandboxType } from "@open-agents/sandbox/registry.js";
 import {
   evaluateSandboxLifecycle,
   getLifecycleDueAtMs,
@@ -70,7 +71,7 @@ function shouldStartLifecycle(
   if (!canOperateOnSandbox(session.sandboxState)) {
     return false;
   }
-  if (session.sandboxState.type !== "vercel") {
+  if (!isKnownSandboxType(session.sandboxState.type)) {
     return false;
   }
   if (session.lifecycleRunId) {

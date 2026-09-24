@@ -2,7 +2,10 @@ import "server-only";
 
 import {
   connectSandbox,
+  DEFAULT_SANDBOX_PROVIDER,
+  requireSandboxProvider,
   type Sandbox,
+  type SandboxProvider,
   type SandboxState,
   type Source,
 } from "@open-agents/sandbox";
@@ -36,11 +39,8 @@ import {
 } from "@/lib/sandbox/lifecycle";
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
 import {
-  getResumableSandboxName,
-  getSessionSandboxName,
   isSandboxActive,
   isSandboxState,
-  type VercelSandboxState,
 } from "@/lib/sandbox/utils";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
 import { eq } from "drizzle-orm";
@@ -99,19 +99,34 @@ function buildSandboxSource(session: SessionRecord): Source | undefined {
   };
 }
 
-function buildSandboxState(session: SessionRecord): VercelSandboxState {
+/**
+ * Resolve the provider that owns this session.
+ *
+ * The session's persisted `sandboxState.type` IS the user's choice (it is
+ * written at session-create from the registry-driven selector), so
+ * provisioning reads it here instead of asserting a vendor. A persisted
+ * type that is not registered throws rather than defaulting: silently
+ * provisioning Vercel for a session that asked for Boat would defeat the
+ * entire selector.
+ */
+function resolveSessionProvider(session: SessionRecord): SandboxProvider {
+  const rawType = session.sandboxState?.type;
+  if (rawType === undefined || rawType === null) {
+    return requireSandboxProvider(DEFAULT_SANDBOX_PROVIDER);
+  }
+  return requireSandboxProvider(String(rawType));
+}
+
+function buildSandboxState(session: SessionRecord): SandboxState {
+  const provider = resolveSessionProvider(session);
   const existingState = session.sandboxState;
-  const sandboxName =
-    getResumableSandboxName(existingState) ?? getSessionSandboxName(session.id);
   const source = buildSandboxSource(session);
 
-  return {
-    type: "vercel",
-    ...(isSandboxState(existingState) ? existingState : {}),
-    sandboxName,
-    persistent: false,
-    ...(source ? { source } : {}),
-  };
+  return provider.buildProvisionState({
+    existing: isSandboxState(existingState) ? existingState : undefined,
+    sessionId: session.id,
+    source,
+  });
 }
 
 async function getGitUser(user: UserRecord) {

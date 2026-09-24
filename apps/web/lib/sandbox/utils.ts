@@ -1,4 +1,5 @@
 import type { SandboxState, VercelState } from "@open-agents/sandbox";
+import { isKnownSandboxType } from "@open-agents/sandbox/registry.js";
 import { SANDBOX_EXPIRES_BUFFER_MS } from "./config";
 
 export type VercelSandboxState = { type: "vercel" } & VercelState;
@@ -10,13 +11,18 @@ export type VercelSandboxState = { type: "vercel" } & VercelState;
  * sandbox-lifecycle.ts -> migration.ts already forms a cycle back to
  * provisioning.ts, so migration.ts can never import from provisioning.ts.
  * This module has no upward dependencies, so it's a safe shared home.
+ *
+ * Provider-neutral: any state whose `type` is registered in the sandbox
+ * registry is a valid sandbox state. Unknown types are NOT -- that is what
+ * makes a malformed/unsupported provider fail loudly instead of being
+ * treated as a usable state and silently routed to the default provider.
  */
-export function isSandboxState(value: unknown): value is VercelSandboxState {
+export function isSandboxState(value: unknown): value is SandboxState {
   return (
     typeof value === "object" &&
     value !== null &&
     "type" in value &&
-    value.type === "vercel"
+    isKnownSandboxType(value.type)
   );
 }
 
@@ -115,12 +121,20 @@ export function isSandboxNotFoundError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("status code 404") ||
-    normalized.includes("sandbox not found")
+    normalized.includes("sandbox not found") ||
+    // Boat's structured error envelope (BoatApiError) reports `404` +
+    // `not_found` in the message; the `status code 404` clause above
+    // already covers it, this is the explicit spelling.
+    normalized.includes("status code 404: not_found")
   );
 }
 
 /**
  * Check if an error message indicates the sandbox VM is permanently unavailable.
+ *
+ * Deliberately not vendor-branded: Boat (docs.boat.dev) failures are
+ * matched by their documented error codes, so both providers flow through
+ * the same clear-state-and-reprovision path with no `type === "..."` branch.
  */
 export function isSandboxUnavailableError(message: string): boolean {
   const normalized = message.toLowerCase();
@@ -137,7 +151,11 @@ export function isSandboxUnavailableError(message: string): boolean {
     // clear the poisoned state instead of retrying it forever.
     (normalized.includes("status code 400") &&
       normalized.includes("resume") &&
-      normalized.includes("snapshot"))
+      normalized.includes("snapshot")) ||
+    // Boat codes for a machine that cannot come back: the VM is gone or
+    // its snapshot could not be restored.
+    normalized.includes("machine_not_running") ||
+    normalized.includes("resume_failed")
   );
 }
 

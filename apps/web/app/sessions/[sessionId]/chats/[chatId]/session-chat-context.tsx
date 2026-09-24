@@ -3,6 +3,11 @@
 import type { UseChatHelpers } from "@ai-sdk/react";
 import type { SandboxState } from "@open-agents/sandbox";
 import {
+  DEFAULT_SANDBOX_PROVIDER,
+  isKnownSandboxType,
+  USER_SELECTABLE_SANDBOX_TYPES,
+} from "@open-agents/sandbox/registry.js";
+import {
   createContext,
   type ReactNode,
   useCallback,
@@ -50,7 +55,10 @@ import {
   useSessionChatRuntime,
 } from "./hooks/use-session-chat-runtime";
 
-const KNOWN_SANDBOX_TYPES = ["vercel"] as const;
+// Registry-derived: every user-selectable provider is known here without
+// this file growing a vendor list. `local` is deliberately excluded -- it
+// is a dev/test provider and never a real session.
+const KNOWN_SANDBOX_TYPES = USER_SELECTABLE_SANDBOX_TYPES;
 type KnownSandboxType = (typeof KNOWN_SANDBOX_TYPES)[number];
 
 function asKnownSandboxType(value: unknown): KnownSandboxType | null {
@@ -809,13 +817,16 @@ export function SessionChatProvider({
   }, []);
 
   const preferredSandboxType =
-    asKnownSandboxType(sessionRecord.sandboxState?.type) ?? "vercel";
+    asKnownSandboxType(sessionRecord.sandboxState?.type) ??
+    DEFAULT_SANDBOX_PROVIDER;
+  // Git-backed UI features (diff view, repo creation) are a property of
+  // "a registered provider runs this session", not of a specific vendor.
   const supportsDiff =
     sessionRecord.sandboxState?.type === undefined ||
-    sessionRecord.sandboxState.type === "vercel";
+    isKnownSandboxType(sessionRecord.sandboxState.type);
   const supportsRepoCreation =
     sessionRecord.sandboxState?.type === undefined ||
-    sessionRecord.sandboxState.type === "vercel";
+    isKnownSandboxType(sessionRecord.sandboxState.type);
   const hasRuntimeSandboxState = hasRuntimeSandboxStateValue(
     sessionRecord.sandboxState,
   );

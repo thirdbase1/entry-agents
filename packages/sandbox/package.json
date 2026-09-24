@@ -8,6 +8,8 @@
     ".": "./index.ts",
     "./interface.js": "./interface.ts",
     "./types.js": "./types.ts",
+    "./registry": "./registry-types.ts",
+    "./registry.js": "./registry-types.ts",
     "./vercel": "./vercel/index.ts",
     "./vercel/index.js": "./vercel/index.ts",
     "./vercel/snapshot-refresh.js": "./vercel/snapshot-refresh.ts",

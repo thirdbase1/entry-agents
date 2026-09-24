@@ -1,6 +1,6 @@
 import "server-only";
 
-import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
+import { connectSandbox, getSandboxProvider, isKnownSandboxType, type SandboxState } from "@open-agents/sandbox";
 import {
   getChatsBySessionId,
   getSessionById,
@@ -77,6 +77,19 @@ export function getSandboxExpiresAtMs(
 export function isSandboxMigrationDue(
   sandboxState: SandboxState | null | undefined,
 ): boolean {
+  if (!sandboxState) {
+    return false;
+  }
+
+  // Capability-gated, not vendor-gated: only providers whose filesystem is
+  // destroyed by a stop need the pack/restore migration dance. Boat
+  // snapshots on stop and resumes with the workspace intact, so migration
+  // would be pure churn there (and would needlessly drop running work).
+  const provider = getSandboxProvider(String(sandboxState.type));
+  if (!provider || !provider.capabilities.workspaceMigration) {
+    return false;
+  }
+
   const expiresAtMs = getSandboxExpiresAtMs(sandboxState);
   if (expiresAtMs === undefined) {
     return false;
@@ -226,7 +239,7 @@ export async function evaluateSandboxLifecycle(
   if (!canOperateOnSandbox(sandboxState)) {
     return { action: "skipped", reason: "sandbox-not-operable" };
   }
-  if (sandboxState.type !== "vercel") {
+  if (!isKnownSandboxType(sandboxState.type)) {
     return { action: "skipped", reason: "unsupported-sandbox-type" };
   }
 

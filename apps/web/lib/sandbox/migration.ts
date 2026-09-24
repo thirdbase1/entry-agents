@@ -2,10 +2,11 @@ import "server-only";
 
 import {
   connectSandbox,
+  isKnownSandboxType,
   packWorkspacePayload,
+  requireSandboxProvider,
   restoreWorkspacePayload,
   type Sandbox,
-  type SandboxState,
 } from "@open-agents/sandbox";
 import {
   claimSessionSandboxMigration,
@@ -85,7 +86,7 @@ export async function performSandboxMigration(
   }
 
   const sandboxState = session.sandboxState;
-  if (!canOperateOnSandbox(sandboxState) || sandboxState.type !== "vercel") {
+  if (!canOperateOnSandbox(sandboxState) || !isKnownSandboxType(sandboxState.type)) {
     return { action: "skipped", reason: "sandbox-not-operable" };
   }
 
@@ -138,16 +139,26 @@ export async function performSandboxMigration(
       );
     });
 
-    // Deliberately no sandboxName / source here: this must create a
+    // `fresh: true` drops the persisted identity, so this must create a
     // genuinely new sandbox rather than resume/reconnect to the one
     // that's about to expire, and we're restoring the workspace from
     // the tarball rather than a fresh git clone, so the bootstrap clone
     // step is skipped too.
     //
+    // The provider comes from the session's own state (never hardcoded):
+    // only providers whose capabilities report `workspaceMigration` can
+    // reach this point -- isSandboxMigrationDue() gates on that above.
+    //
     // Deliberately AFTER oldSandbox.stop() above: the drive mount is
     // what makes this ordering load-bearing, not the sandbox creation.
+    const freshProvider = requireSandboxProvider(String(sandboxState.type));
+    const freshState = freshProvider.buildProvisionState({
+      sessionId,
+      fresh: true,
+    });
+
     const freshSandbox = await connectSandbox(
-      { type: "vercel" } as SandboxState,
+      { state: freshState },
       {
         timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
         vcpus: DEFAULT_SANDBOX_VCPUS,
@@ -158,7 +169,7 @@ export async function performSandboxMigration(
         skipGitWorkspaceBootstrap: true,
         // Mount the same per-session drive the old sandbox used, so the
         // restore below writes into durable storage. Undefined when
-        // drives are disabled.
+        // drives are disabled; providers without drive support ignore it.
         ...(getSandboxDriveConfig(sessionId) && {
           drives: getSandboxDriveConfig(sessionId),
         }),

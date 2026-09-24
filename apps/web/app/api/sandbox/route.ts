@@ -1,4 +1,13 @@
-import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
+import {
+  connectSandbox,
+  requireSandboxProvider,
+  type SandboxState,
+} from "@open-agents/sandbox";
+import {
+  DEFAULT_SANDBOX_PROVIDER,
+  isUserSelectableSandboxType,
+  type SandboxProviderId,
+} from "@open-agents/sandbox/registry.js";
 import {
   requireAuthenticatedUser,
   requireOwnedSession,
@@ -45,7 +54,7 @@ interface CreateSandboxRequest {
   branch?: string;
   isNewBranch?: boolean;
   sessionId?: string;
-  sandboxType?: "vercel";
+  sandboxType?: SandboxProviderId;
 }
 
 // async function syncVercelProjectEnvVarsToSandbox(params: {
@@ -101,7 +110,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (body.sandboxType && body.sandboxType !== "vercel") {
+  if (body.sandboxType !== undefined && !isUserSelectableSandboxType(body.sandboxType)) {
     return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
   }
 
@@ -207,12 +216,18 @@ export async function POST(req: Request) {
         `${session.user.username}@users.noreply.github.com`,
     };
 
+    // Provider comes from the session's persisted choice (falling back to
+    // the request's validated value, then the registry default) -- never
+    // hardcoded, so an on-demand create runs on the sandbox the user
+    // actually selected.
+    const provider = requireSandboxProvider(
+      sessionRecord?.sandboxState?.type ??
+        body.sandboxType ??
+        DEFAULT_SANDBOX_PROVIDER,
+    );
+
     sandbox = await connectSandbox({
-      state: {
-        type: "vercel",
-        ...(sandboxName ? { sandboxName } : {}),
-        source,
-      },
+      state: provider.buildProvisionState({ sessionId, source }),
       options: {
         githubToken: setupToken?.token,
         gitUser,

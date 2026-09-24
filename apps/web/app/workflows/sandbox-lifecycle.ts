@@ -10,6 +10,9 @@ import type {
 } from "@/lib/sandbox/lifecycle";
 import type { SandboxMigrationResult } from "@/lib/sandbox/migration";
 import { canOperateOnSandbox } from "@/lib/sandbox/utils";
+// Dependency-free (registry-types.ts has no imports), so it is safe to
+// import statically here just like canOperateOnSandbox -- see the note below.
+import { isKnownSandboxType } from "@open-agents/sandbox/registry.js";
 
 // NOTE ON IMPORTS IN THIS FILE (fixed 2026-08-29): everything below
 // that touches the database (getSessionById/updateSession,
@@ -77,7 +80,7 @@ async function computeLifecycleWakeDecision(
   }
 
   const state = session.sandboxState;
-  if (!canOperateOnSandbox(state) || state.type !== "vercel") {
+  if (!canOperateOnSandbox(state) || !isKnownSandboxType(state.type)) {
     return { shouldContinue: false, reason: "sandbox-not-operable" };
   }
   if (!(await claimLifecycleLease(sessionId, runId))) {

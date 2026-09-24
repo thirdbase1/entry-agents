@@ -34,7 +34,7 @@ interface CreateSessionInput {
   branch?: string;
   cloneUrl?: string;
   isNewBranch: boolean;
-  sandboxType: "vercel";
+  sandboxType: "vercel" | "boat";
   autoCommitPush: boolean;
   autoCreatePr: boolean;
   vercelProject?: VercelProjectSelection | null;

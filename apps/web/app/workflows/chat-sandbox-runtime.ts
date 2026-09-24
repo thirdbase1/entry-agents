@@ -11,6 +11,7 @@ import {
   IMAGE_UPLOADS_DIR,
 } from "@/lib/sandbox/uploads-gitignore";
 import { kickSandboxProvisioningWorkflow } from "@/lib/sandbox/provisioning-kick";
+import { withoutUndefined } from "@/app/workflows/serialization";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
@@ -162,13 +163,13 @@ export async function resolveChatSandboxRuntime(params: {
     // No VM yet: hand back session context plus whatever skills were
     // already discovered on a previous turn. Omitting workingDirectory is
     // what tells the caller to run this turn without a workspace attached.
-    return {
+    return withoutUndefined({
       ...sessionContext,
       skills: await cachedSessionSkills({
         sessionId: params.sessionId,
         sandboxState,
       }),
-    };
+    });
   }
 
   const sandbox = await connectSandbox(sandboxState);
@@ -179,7 +180,7 @@ export async function resolveChatSandboxRuntime(params: {
     sandbox,
   });
 
-  return {
+  return withoutUndefined({
     ...sessionContext,
     workingDirectory: sandbox.workingDirectory,
     ...(sandbox.currentBranch !== undefined
@@ -189,7 +190,7 @@ export async function resolveChatSandboxRuntime(params: {
       ? { environmentDetails: sandbox.environmentDetails }
       : {}),
     skills,
-  };
+  });
 }
 
 // ── Image attachment offload ────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import type { SandboxState } from "@open-agents/sandbox";
+import { withoutUndefined } from "@/app/workflows/serialization";
 import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
@@ -293,10 +294,12 @@ const convertMessages = async (
     },
   );
 
-  return pruneMessages({
-    messages: modelMessages,
-    emptyMessages: "remove",
-  });
+  return withoutUndefined(
+    pruneMessages({
+      messages: modelMessages,
+      emptyMessages: "remove",
+    }),
+  );
 };
 
 /**
@@ -653,7 +656,10 @@ async function resolveChatModelRuntime(params: {
     preferences?.defaultPermissionMode ??
     "ask";
 
-  return {
+  // `customInstructions`, `startingBalanceCents` and `windowBudgetCents` are
+  // all optional and genuinely can be undefined here -- strip them so this
+  // step's return value stays serializable.
+  return withoutUndefined({
     selectedModelId: selectedModelId ?? mainModelSelection.id,
     modelId: mainModelSelection.id,
     agentOptions: {
@@ -671,7 +677,7 @@ async function resolveChatModelRuntime(params: {
     enforceCreditBlock: !isAdminUser,
     guidedFrontendWorkflowEnabled:
       preferences?.guidedFrontendWorkflowEnabled ?? false,
-  };
+  });
 }
 
 async function persistInputMessages(
@@ -1265,7 +1271,7 @@ async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
   "use step";
 
   const { fetchModelCostCatalog } = await import("@/lib/models-with-context");
-  return fetchModelCostCatalog();
+  return withoutUndefined(await fetchModelCostCatalog());
 }
 
 /**
@@ -2323,10 +2329,14 @@ export async function runAgentWorkflow(options: Options) {
             userId: options.userId,
             sessionId: options.sessionId,
           });
-      const stepAgentOptions: WorkflowAgentOptions = {
+      // Step ARGUMENTS cross a serialization boundary too: any `undefined`
+      // nested in here (skills' frontmatter options, optional model fields,
+      // optional sandbox/github context) fails the run just as hard as an
+      // undefined return value would.
+      const stepAgentOptions: WorkflowAgentOptions = withoutUndefined({
         ...agentOptions,
         permissionMode: livePermissionMode,
-      };
+      });
 
       try {
         // COMPACT TELEMETRY SCOPE (2026-09-17): the sink wraps the model
@@ -3546,7 +3556,11 @@ const runAgentStep = async (
 
     const stepFinishedAt = new Date();
 
-    return {
+    // Every field below is optional in the shared result type, so an
+    // unset one arrives as an explicit `undefined` -- which the Workflow
+    // SDK refuses to serialize into the event log (it fails the run with a
+    // non-retryable SerializationError). Strip them before returning.
+    return withoutUndefined({
       responseMessage,
       responseMessages: response.messages,
       finishReason,
@@ -3566,13 +3580,16 @@ const runAgentStep = async (
         finishReason,
         rawFinishReason,
       ),
-    };
+    });
   } catch (error) {
     const stepFinishedAt = new Date();
 
     if (isAbortError(error)) {
       const abortedFinishReason: FinishReason = "stop";
-      return {
+      // Deliberately `withoutUndefined`: this branch sets four fields to
+      // `undefined` explicitly, and an `undefined` step return value cannot
+      // be persisted by the Workflow SDK.
+      return withoutUndefined({
         responseMessage: undefined,
         responseMessages: [],
         finishReason: abortedFinishReason,
@@ -3591,7 +3608,7 @@ const runAgentStep = async (
           stepFinishedAt,
           abortedFinishReason,
         ),
-      };
+      });
     }
 
     const errorWithStepTiming =

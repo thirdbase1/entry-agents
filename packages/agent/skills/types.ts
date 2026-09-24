@@ -76,14 +76,31 @@ export interface SkillMetadata {
 export function frontmatterToOptions(
   frontmatter: SkillFrontmatter,
 ): SkillOptions {
-  return {
-    disableModelInvocation: frontmatter["disable-model-invocation"],
-    userInvocable: frontmatter["user-invocable"],
-    allowedTools: frontmatter["allowed-tools"]
-      ?.split(",")
-      .map((t) => t.trim())
-      .filter(Boolean),
-    context: frontmatter.context,
-    agent: frontmatter.agent,
-  };
+  // Only set the keys the frontmatter actually declares. Assigning an
+  // absent optional key produces an explicit `undefined`, and a skill's
+  // options ride across Workflow SDK step boundaries (returned from
+  // resolveChatSandboxRuntime, passed into runAgentStep) where `undefined`
+  // is not serializable and fails the whole run.
+  const options: SkillOptions = {};
+
+  if (frontmatter["disable-model-invocation"] !== undefined) {
+    options.disableModelInvocation = frontmatter["disable-model-invocation"];
+  }
+  if (frontmatter["user-invocable"] !== undefined) {
+    options.userInvocable = frontmatter["user-invocable"];
+  }
+  if (frontmatter["allowed-tools"] !== undefined) {
+    options.allowedTools = frontmatter["allowed-tools"]
+      .split(",")
+      .map((tool) => tool.trim())
+      .filter(Boolean);
+  }
+  if (frontmatter.context !== undefined) {
+    options.context = frontmatter.context;
+  }
+  if (frontmatter.agent !== undefined) {
+    options.agent = frontmatter.agent;
+  }
+
+  return options;
 }

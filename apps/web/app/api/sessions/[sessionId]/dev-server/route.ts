@@ -994,7 +994,6 @@ async function launchDevServerAtTarget(
   if (!sandbox.execDetached) {
     throw new Error("Sandbox does not support background commands");
   }
-  const execDetached = sandbox.execDetached;
 
   const { candidate, packageDirAbs, port } = target;
 
@@ -1020,7 +1019,7 @@ async function launchDevServerAtTarget(
   });
 
   try {
-    await execDetached(launchCommand, packageDirAbs);
+    await sandbox.execDetached(launchCommand, packageDirAbs);
   } catch (error) {
     await clearDevServerPidFile(sandbox, packageDirAbs, port).catch(
       () => undefined,

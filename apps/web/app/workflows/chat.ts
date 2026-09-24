@@ -1584,7 +1584,11 @@ async function performAgentGithubApiRequest(params: {
       `${params.method} ${fullPath}`,
       params.params ?? {},
     );
-    return { success: true, status: response.status, data: response.data };
+    return {
+      success: true,
+      status: response.status,
+      ...(response.data !== undefined ? { data: response.data } : {}),
+    };
   } catch (error) {
     const status =
       typeof error === "object" && error !== null && "status" in error
@@ -1592,7 +1596,11 @@ async function performAgentGithubApiRequest(params: {
         : undefined;
     return {
       success: false,
-      status,
+      // Omit (never assign) an undefined status: the Workflow SDK cannot
+      // serialise `undefined`, so an explicit `status: undefined` is a
+      // non-retryable USER_ERROR that kills the whole run -- the
+      // "context step value / problematicValue undefined" failure.
+      ...(status !== undefined ? { status } : {}),
       error:
         error instanceof Error ? error.message : "GitHub API request failed",
     };
@@ -1953,11 +1961,14 @@ async function performAgentVercelApiRequest(params: {
     });
 
     const text = await response.text();
-    let data: unknown = text;
-    try {
-      data = text ? JSON.parse(text) : undefined;
-    } catch {
-      // Non-JSON response -- keep the raw text.
+    let data: unknown = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Non-JSON response -- keep the raw text.
+        data = text;
+      }
     }
 
     return { success: response.ok, status: response.status, data };

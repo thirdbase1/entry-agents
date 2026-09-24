@@ -1,3 +1,5 @@
+import { describe, expect, test } from "bun:test";
+
 import {
   READ_BYTE_CEILING,
   READ_MAX_LINE_CHARS,

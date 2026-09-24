@@ -50,7 +50,11 @@ describe("step argument serialization", () => {
   test("an omitted tool params must not reach a step as undefined", () => {
     // The exact shape the agent's `vercel.request` tool produces when it
     // calls an endpoint that needs no params.
-    const toolInput: { params?: Record<string, unknown> } = {
+    const toolInput: {
+      method: string;
+      path: string;
+      params?: Record<string, unknown>;
+    } = {
       method: "GET",
       path: "v13/deployments",
     };
@@ -69,7 +73,11 @@ describe("step argument serialization", () => {
   test("the pre-fix shape (raw passthrough) is exactly what failed", () => {
     // Documents why the guard exists: without `?? {}` the argument object
     // is unserializable, which is the reported production failure.
-    const toolInput: { params?: Record<string, unknown> } = {
+    const toolInput: {
+      method: string;
+      path: string;
+      params?: Record<string, unknown>;
+    } = {
       method: "GET",
       path: "v13/deployments",
     };
@@ -89,7 +97,7 @@ describe("step argument serialization", () => {
       userId: "user-1",
       method: "POST",
       path: "v9/projects/x/env",
-      params: { key: "DATABASE_URL", value: "postgres://..." } ?? {},
+      params: { key: "DATABASE_URL", value: "postgres://..." },
     };
 
     expect(isSerializableStepArgument(stepArguments)).toBe(true);

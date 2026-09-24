@@ -210,12 +210,12 @@ describe("restoreWorkspacePayload", () => {
     const original = sandbox.exec.bind(sandbox);
     (sandbox as unknown as { exec: unknown }).exec = async (
       command: string,
-      ...rest: unknown[]
+      ...rest: [string, number, { signal?: AbortSignal }?]
     ) => {
       if (command === "git init") {
         return { success: false, stdout: "", stderr: "permission denied", exitCode: 1 };
       }
-      return original(command, ...(rest as []));
+      return original(command, ...rest);
     };
 
     await expect(

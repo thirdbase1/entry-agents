@@ -35,9 +35,10 @@ function createSandbox() {
   return {
     workingDirectory,
     stat: (p: string) => stat(p),
-    readFile: (p: string, encoding: string) => readFile(p, { encoding }),
+    readFile: (p: string, encoding: string) =>
+      readFile(p, { encoding: encoding as BufferEncoding }),
     writeFile: (p: string, content: string, encoding: string) =>
-      writeFile(p, content, { encoding }),
+      writeFile(p, content, { encoding: encoding as BufferEncoding }),
     mkdir: (dirPath: string, options: { recursive: boolean }) =>
       mkdir(dirPath, options),
   };
@@ -107,7 +108,9 @@ describe("read-before-edit gate", () => {
       success: false,
       gate: "unread",
     });
-    expect(result.error).toContain("File has not been read yet");
+    expect(
+      (result as unknown as { error?: string } | undefined)?.error,
+    ).toContain("File has not been read yet");
   });
 
   test("read then edit succeeds", async () => {
@@ -144,7 +147,9 @@ describe("read-before-edit gate", () => {
       success: false,
       gate: "stale",
     });
-    expect(result.error).toContain("changed since it was last read");
+    expect(
+      (result as unknown as { error?: string } | undefined)?.error,
+    ).toContain("changed since it was last read");
   });
 
   test("consecutive edits without a re-read are allowed (edit updates its own state)", async () => {

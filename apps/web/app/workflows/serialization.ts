@@ -59,3 +59,58 @@ export function withoutUndefined<T>(value: T): T {
 
   return value;
 }
+
+/**
+ * Walk `value` and log the exact path of every `undefined` found.
+ *
+ * The Workflow SDK only reports `problematicValue undefined` -- never which
+ * property or which step -- so when a run still fails after sanitising the
+ * obvious boundaries, this is what turns "somewhere there is an undefined"
+ * into an actionable `path[0].foo.bar`. Call it BEFORE `withoutUndefined`
+ * on any boundary you want to observe.
+ *
+ * Class instances are walked via own enumerable properties only (their
+ * prototype is left alone), so instrumenting a live model or SDK object
+ * does not mutate it.
+ */
+export function findUndefinedPaths(
+  value: unknown,
+  path = "$",
+  seen = new WeakSet<object>(),
+): string[] {
+  if (value === undefined) return [path];
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return [];
+    seen.add(value);
+    const found: string[] = [];
+    value.forEach((item, index) => {
+      found.push(...findUndefinedPaths(item, `${path}[${index}]`, seen));
+    });
+    return found;
+  }
+
+  if (typeof value === "object" && value !== null) {
+    if (seen.has(value)) return [];
+    seen.add(value);
+    const found: string[] = [];
+    for (const [key, item] of Object.entries(value)) {
+      found.push(...findUndefinedPaths(item, `${path}.${key}`, seen));
+    }
+    return found;
+  }
+
+  return [];
+}
+
+/** Log `undefined` paths for a boundary. Never throws, never alters data. */
+export function reportUndefined(label: string, value: unknown): void {
+  const paths = findUndefinedPaths(value);
+  if (paths.length > 0) {
+    console.error(
+      `[serialization] ${label} contains undefined at ${paths.length} path(s): ${paths
+        .slice(0, 25)
+        .join(", ")}${paths.length > 25 ? ", ..." : ""}`,
+    );
+  }
+}

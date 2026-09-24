@@ -10,7 +10,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import type { SandboxState } from "@open-agents/sandbox";
-import { withoutUndefined } from "@/app/workflows/serialization";
+import { reportUndefined, withoutUndefined } from "@/app/workflows/serialization";
 import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
@@ -1131,13 +1131,13 @@ function buildPrData(
     };
   }
 
-  return {
+  return withoutUndefined({
     status: "success",
     created: result.created,
     syncedExisting: result.syncedExisting,
     prNumber: result.prNumber,
     url: result.prUrl,
-  };
+  });
 }
 
 function upsertAssistantDataPart(
@@ -1219,13 +1219,13 @@ async function performAgentCommitAndPush(params: {
     repoName: params.repoName,
     ...(params.commitMessage ? { commitMessage: params.commitMessage } : {}),
   });
-  return {
+  return withoutUndefined({
     committed: result.committed,
     pushed: result.pushed,
     commitSha: result.commitSha,
     commitUrl: result.commitUrl,
     error: result.error,
-  };
+  });
 }
 
 /**
@@ -1382,7 +1382,7 @@ async function reconnectSandboxStep(
   const { provisionSessionSandbox } =
     await import("@/lib/sandbox/provisioning");
   const result = await provisionSessionSandbox({ sessionId });
-  return { ...result, reconnected: true };
+  return withoutUndefined({ ...result, reconnected: true });
 }
 
 async function snapshotSandboxStep(
@@ -1447,7 +1447,7 @@ async function migrateSandboxStep(
     sessionId,
     session.lifecycleRunId ?? `agent-migrate-${sessionId}`,
   );
-  return { ...result };
+  return withoutUndefined({ ...result });
 }
 
 async function extendSandboxStep(
@@ -2340,10 +2340,32 @@ export async function runAgentWorkflow(options: Options) {
 
       try {
         // COMPACT TELEMETRY SCOPE (2026-09-17): the sink wraps the model
-        // stream INSIDE runAgentStep ("use step"), not here in the
-        // workflow function -- see runAgentStep for why (the Workflow
-        // SDK's restricted bundle rejects the module graphs the sink's
-        // static imports would pull in from workflow scope).
+        // stream INSIDE runAgentStep ("use step"), not here in the workflow
+        // function -- see runAgentStep for why (the Workflow SDK's
+        // restricted bundle rejects the module graphs the sink's static
+        // imports would pull in from workflow scope).
+        //
+        // Diagnostic: the SDK reports only `problematicValue undefined`, so
+        // log the exact paths on the argument side before it can fail. A
+        // hit here identifies the offending property by name.
+        reportUndefined("chat.runAgentStep args", [
+          modelMessages,
+          originalMessagesForStep,
+          assistantId,
+          workflowRunId,
+          options.chatId,
+          options.sessionId,
+          options.userId,
+          runtime?.sessionTitle ?? "",
+          selectedModelId,
+          modelId,
+          stepAgentOptions,
+          step + 1,
+          modelCostCatalog,
+          remainingBalanceCents,
+          modelRuntime.enforceCreditBlock,
+          remainingWindowBudgetCents,
+        ]);
         result = await runAgentStep(
           modelMessages,
           originalMessagesForStep,

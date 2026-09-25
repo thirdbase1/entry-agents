@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<script>document.documentElement.classList.add("js");</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Entry — cloud coding agent runtime</title>
+<meta name="description" content="Entry runs coding agents in cloud sandboxes as durable workflows. Every run checkpoints, so a restart resumes at the same step instead of starting over." />
+<style>
+  /* ─────────────────────────────────────────────────────────────
+     TOKENS
+     Deliberately re-adopted from the existing brand: warm paper,
+     warm ink, and #ff8a3d as the single accent. The accent is held
+     under 10% of the surface (event markers, live state, focus) and
+     never used for body text — at 2.3:1 on paper it is not legible
+     as small type, so --accent-ink carries any orange text.
+     ───────────────────────────────────────────────────────────── */
+  :root {
+    --paper:      #faf9f7;
+    --paper-2:    #f2f0ec;
+    --paper-3:    #e9e6e1;
+    --ink:        #121110;
+    --ink-2:      #45423e;
+    --ink-3:      #75706a;
+    --rule:       #dedad3;
+    --rule-2:     #eae7e1;
+    --accent:     #ff8a3d;
+    --accent-ink: #9a420f;
+    --accent-wash:#ffe9db;
+    --ok:         #1f7a4d;
+    --ok-wash:    #e3f3ea;
+
+    --r: 3px;
+    --rail: 116px;
+    --max: 1240px;
+
+    --shadow-1: 0 1px 2px rgb(18 17 16 / .05);
+    --shadow-2: 0 1px 2px rgb(18 17 16 / .05), 0 18px 40px -22px rgb(18 17 16 / .28);
+
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    --t-fast: 140ms;
+    --ease: cubic-bezier(.16, 1, .3, 1);
+  }
+  [data-theme="dark"] {
+    --paper:      #0b0b0c;
+    --paper-2:    #131315;
+    --paper-3:    #1b1b1e;
+    --ink:        #f4f3f1;
+    --ink-2:      #b3b0ab;
+    --ink-3:      #85817b;
+    --rule:       #2a2a2d;
+    --rule-2:     #202023;
+    --accent:     #ff8a3d;
+    --accent-ink: #ff9d5c;
+    --accent-wash:#2b1a10;
+    --ok:         #57c98b;
+    --ok-wash:    #10241a;
+    --shadow-2: 0 1px 2px rgb(0 0 0 / .5), 0 18px 40px -22px rgb(0 0 0 / .8);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { background: color-mix(in oklab, var(--accent) 45%, transparent); }
+
+  a { color: inherit; }
+
+  /* Focus is architecture: ink ring for contrast against any surface,
+     accent on top so it is unmistakably the brand's focus state. */
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px var(--ink);
+    border-radius: var(--r);
+  }
+
+  .skip {
+    position: absolute; left: 12px; top: -60px; z-index: 99;
+    background: var(--ink); color: var(--paper);
+    padding: 10px 16px; border-radius: var(--r);
+    font: 600 14px/1 var(--sans); text-decoration: none;
+    transition: top var(--t-fast) var(--ease);
+  }
+  .skip:focus { top: 12px; }
+
+  .wrap { max-width: var(--max); margin-inline: auto; padding-inline: 24px; }
+
+  .mono {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header.bar {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in oklab, var(--paper) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--rule);
+  }
+  .bar-in {
+    max-width: var(--max); margin-inline: auto; padding-inline: 24px;
+    height: 64px; display: flex; align-items: center; gap: 24px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 680; letter-spacing: -.02em; font-size: 17px;
+    text-decoration: none;
+  }
+  .brand-mark {
+    width: 22px; height: 22px; border-radius: 2px;
+    background: var(--ink); color: var(--paper);
+    display: grid; place-items: center;
+    font: 700 12px/1 var(--mono);
+  }
+  .bar nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .bar nav a, .theme-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: 0 12px;
+    font-size: 14px; font-weight: 520; text-decoration: none;
+    color: var(--ink-2); border-radius: var(--r);
+    background: none; border: 0; cursor: pointer; font-family: inherit;
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .bar nav a:hover, .theme-btn:hover { color: var(--ink); background: var(--paper-2); }
+
+  /* ── Buttons: one dominant verb, rectangular, no pills ──── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 46px; padding: 0 20px;
+    border-radius: var(--r); border: 1px solid transparent;
+    font: 600 15px/1 var(--sans); letter-spacing: -.01em;
+    text-decoration: none; cursor: pointer;
+    transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+                color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--ink); color: var(--paper); }
+  .btn-primary:hover { background: color-mix(in oklab, var(--ink) 86%, var(--accent)); }
+  .btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+  .btn-ghost:hover { border-color: var(--ink); background: var(--paper-2); }
+  .btn[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+
+  /* ── Hero / run head ────────────────────────────────────── */
+  .head { padding: 72px 0 40px; border-bottom: 1px solid var(--rule); }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--accent-ink); margin: 0 0 20px;
+  }
+  .kicker::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash);
+    animation: pulse 2.4s var(--ease) infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+  h1 {
+    margin: 0; max-width: 17ch;
+    font-size: clamp(40px, 7.4vw, 82px);
+    line-height: .98; letter-spacing: -.038em; font-weight: 680;
+    text-wrap: balance;
+  }
+  .lede {
+    margin: 24px 0 0; max-width: 62ch;
+    font-size: clamp(17px, 1.5vw, 20px); line-height: 1.55;
+    color: var(--ink-2); text-wrap: pretty;
+  }
+  .actions { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 10px; }
+
+  /* Run head: the artifact, stated as facts */
+  .runhead {
+    margin: 40px 0 0; padding: 0;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: 1px solid var(--rule); border-radius: var(--r);
+    background: var(--paper-2);
+    overflow: hidden;
+  }
+  .runhead > div { padding: 14px 16px; border-left: 1px solid var(--rule); }
+  .runhead > div:first-child { border-left: 0; }
+  .runhead dt { color: var(--ink-3); margin-bottom: 6px; }
+  .runhead dd {
+    margin: 0; font-family: var(--mono); font-size: 13px;
+    letter-spacing: -.01em; color: var(--ink); word-break: break-all;
+  }
+  .status-live { color: var(--ok); display: inline-flex; align-items: center; gap: 6px; }
+  .status-live::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+    animation: pulse 2.4s var(--ease) infinite;
+  }
+
+  /* ── Ledger: the composition reset ──────────────────────── */
+  .ledger { padding: 8px 0 0; }
+  .ledger > ol { list-style: none; margin: 0; padding: 0; }
+
+  .event {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    gap: 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 36px 0;
+  }
+  .gutter {
+    position: relative;
+    padding-right: 24px;
+    color: var(--ink-3);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .gutter .idx { display: block; color: var(--ink); font-weight: 600; font-size: 12px; }
+  .gutter .t { display: block; margin-top: 6px; }
+  .gutter::before {
+    content: ""; position: absolute; left: 0; top: 6px;
+    width: 7px; height: 7px; background: var(--rule);
+  }
+  .event.is-live .gutter::before { background: var(--accent); }
+  .event.is-live .gutter .idx { color: var(--accent-ink); }
+
+  .body-col { min-width: 0; }
+  .ev-label { color: var(--ink-3); margin: 0 0 8px; }
+  .ev-title {
+    margin: 0; font-size: clamp(20px, 2.2vw, 27px);
+    letter-spacing: -.024em; line-height: 1.18; font-weight: 640;
+    text-wrap: balance;
+  }
+  .ev-copy { margin: 10px 0 0; max-width: 66ch; color: var(--ink-2); font-size: 16px; }
+
+  /* Artifact panel: the evidence object */
+  .artifact {
+    margin-top: 18px; border: 1px solid var(--rule);
+    border-radius: var(--r); background: var(--paper-2);
+    box-shadow: var(--shadow-1); overflow: hidden;
+  }
+  .artifact-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-bottom: 1px solid var(--rule);
+    background: var(--paper-3); color: var(--ink-3);
+  }
+  .artifact-bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); }
+  .artifact-bar .path { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0; text-transform: none; color: var(--ink-2); }
+  .artifact pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    color: var(--ink-2); tab-size: 2;
+  }
+  .artifact pre .c { color: var(--ink-3); }
+  .artifact pre .ok { color: var(--ok); }
+  .artifact pre .hi { color: var(--accent-ink); font-weight: 600; }
+
+  .diff del { display: block; background: color-mix(in oklab, #c0392b 12%, transparent); color: var(--ink-2); text-decoration: line-through; }
+  .diff ins { display: block; background: var(--ok-wash); color: var(--ink); text-decoration: none; }
+  .diff .gut { display: inline-block; width: 2ch; color: var(--ink-3); user-select: none; }
+
+  /* The durability moment */
+  .event.is-live { background: linear-gradient(90deg, var(--accent-wash), transparent 62%); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 4px 9px; border-radius: 2px;
+    background: var(--accent); color: #1a0d05;
+    font: 650 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  }
+
+  /* ── Spec rows (replaces the alternating spotlights) ────── */
+  .spec { border-bottom: 1px solid var(--rule); }
+  .spec-head { padding: 56px 0 24px; }
+  .spec-head h2 {
+    margin: 0; font-size: clamp(30px, 4.2vw, 50px);
+    letter-spacing: -.03em; line-height: 1.02; font-weight: 660; max-width: 16ch;
+    text-wrap: balance;
+  }
+  .spec-head p { margin: 16px 0 0; max-width: 64ch; color: var(--ink-2); font-size: 17px; }
+
+  .row {
+    display: grid; grid-template-columns: var(--rail) minmax(0,1fr);
+    border-top: 1px solid var(--rule);
+    padding: 30px 0;
+  }
+  .row .gutter .idx { color: var(--ink); }
+  .row h3 {
+    margin: 0; font-size: clamp(21px, 2.3vw, 28px);
+    letter-spacing: -.025em; font-weight: 640; text-wrap: balance;
+  }
+  .row p { margin: 10px 0 0; max-width: 66ch; color: var(--ink-2); }
+  .row ul { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+  .row li {
+    position: relative; padding-left: 20px;
+    color: var(--ink-2); font-size: 15.5px;
+  }
+  .row li::before {
+    content: ""; position: absolute; left: 0; top: .62em;
+    width: 8px; height: 1.5px; background: var(--accent);
+  }
+
+  /* ── Provenance strip ───────────────────────────────────── */
+  .stack { padding: 44px 0; border-bottom: 1px solid var(--rule); }
+  .stack-in { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: baseline; }
+  .stack p { margin: 0; color: var(--ink-2); max-width: 58ch; font-size: 15.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .chip {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em;
+    padding: 6px 10px; border: 1px solid var(--rule); border-radius: 2px;
+    color: var(--ink-2); background: var(--paper-2); white-space: nowrap;
+  }
+
+  /* ── Close ──────────────────────────────────────────────── */
+  .close { padding: 76px 0 84px; }
+  .close h2 {
+    margin: 0; max-width: 18ch;
+    font-size: clamp(32px, 5vw, 60px); letter-spacing: -.032em;
+    line-height: 1.02; font-weight: 670; text-wrap: balance;
+  }
+  .close p { margin: 18px 0 0; max-width: 58ch; color: var(--ink-2); font-size: 17px; }
+
+  footer { border-top: 1px solid var(--rule); background: var(--paper-2); }
+  .foot {
+    display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between;
+    align-items: center; padding: 26px 0; color: var(--ink-3); font-size: 13.5px;
+  }
+  .foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+  .foot a { text-decoration: none; color: var(--ink-2); }
+  .foot a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ── Entrance: 3-beat, transform/opacity only ───────────── */
+  /* Entrance is progressive enhancement: the hidden state applies ONLY
+     when the document has JS. Without the .js class (script blocked, slow,
+     or a headless capture before observers fire) every section renders
+     visible. Never make content visibility depend on script execution. */
+  .js .reveal { opacity: 0; transform: translateY(10px); }
+  .js .reveal.in {
+    opacity: 1; transform: none;
+    transition: opacity 420ms var(--ease), transform 460ms var(--ease);
+    transition-delay: var(--d, 0ms);
+  }
+
+  @media (max-width: 860px) {
+    :root { --rail: 0px; }
+    .event, .row { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .gutter { padding-right: 0; display: flex; gap: 14px; align-items: baseline; }
+    .gutter .t { margin-top: 0; }
+    .gutter::before { display: none; }
+    .runhead { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .runhead > div:nth-child(3) { border-left: 0; }
+    .runhead > div:nth-child(n+3) { border-top: 1px solid var(--rule); }
+    .bar nav a.hide-sm { display: none; }
+    .chips { margin-left: 0; }
+  }
+  @media (max-width: 420px) {
+    .runhead { grid-template-columns: minmax(0, 1fr); }
+    .runhead > div { border-left: 0; }
+    .runhead > div + div { border-top: 1px solid var(--rule); }
+    .actions .btn { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="bar-in">
+    <a class="brand" href="#" aria-label="Entry home">
+      <span class="brand-mark" aria-hidden="true">E</span>
+      Entry
+    </a>
+    <nav aria-label="Primary navigation">
+      <a class="hide-sm" href="#run">The run</a>
+      <a class="hide-sm" href="#spec">Platform</a>
+      <a href="#">Docs</a>
+      <button class="theme-btn" type="button" id="theme" aria-pressed="false">Dark</button>
+      <a class="btn btn-primary" href="#" style="min-height:40px;padding:0 15px;font-size:14px;">Start a run</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ── Hero: category, claim, one dominant action ──────── -->
+  <section class="head">
+    <div class="wrap">
+      <p class="kicker mono">Cloud coding agent runtime</p>
+      <h1>An agent run that survives a restart.</h1>
+      <p class="lede">
+        Entry runs coding agents inside cloud sandboxes as durable workflows.
+        Every run checkpoints as it works, so a deploy, a crash, or a closed
+        laptop resumes at the same step instead of starting the job over.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" href="#">Start a run</a>
+        <a class="btn btn-ghost" href="#">Read the docs</a>
+      </div>
+
+      <dl class="runhead reveal">
+        <div>
+          <dt class="mono">Run</dt>
+          <dd>run_8f2e41c7</dd>
+        </div>
+        <div>
+          <dt class="mono">Status</dt>
+          <dd><span class="status-live">live · step 7</span></dd>
+        </div>
+        <div>
+          <dt class="mono">Sandbox</dt>
+          <dd>bx_kd71q0mf · 4 vCPU / 8 GB</dd>
+        </div>
+        <div>
+          <dt class="mono">Branch</dt>
+          <dd>feat/checkout-tax</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ── The run: proof trail instead of feature spotlights ─ -->
+  <section class="ledger" id="run" aria-label="A complete agent run">
+    <div class="wrap">
+      <ol>
+
+        <li class="event reveal">
+          <div class="gutter"><span class="idx">001</span><span class="t">00:00.4</span></div>
+          <div class="body-col">
+            <p class="ev-label mono">Sandbox provisioned</p>
+            <h2 class="ev-title">A real machine, not a local folder.</h2>
+            <p class="ev-copy">
+              Each session gets an isolated cloud sandbox with its own filesystem,
+              network, and runtime. You pick the provider; Entry creates it, waits
+              for it, and hands the agent a working directory.
+            </p>
+            <div class="artifact">
+              <div class="artifact-bar mono"><span class="dot"></span><span class="path">provision · boat/default</span></div>
+              <pre><span class="c"># provider boat · type default · 4 vCPU / 8 GB / 50 GB</span>
+<span class="ok">ready</span>   workspace   /home/user/workspace
+<span class="ok">ready</span>   git         feat/checkout-tax @ a3f9c21
+<span class="c">cost     $0.036/hr, billed per second</span></pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="event reveal">
+          <div class="gutter"><span class="idx">002</span><span class="t">00:04.1</span></div>
+          <div class="body-col">
+            <p class="ev-label mono">Tool · bash</p>
+            <h2 class="ev-title">The agent runs the same commands you do.</h2>
+            <p class="ev-copy">
+              File ops, search, shell, and task delegation are built in. It starts
+              from evidence, not from a guess.
+            </p>
+            <div class="artifact">
+              <div class="artifact-bar mono"><span class="dot"></span><span class="path">$ pnpm test --filter checkout</span></div>
+              <pre>Ran 41 tests across 6 files
+
+<span class="hi">FAIL</span>  src/checkout/tax.test.ts
+  ✗ rounds split tenders to the nearest cent  (expected 10.01, got 10.02)
+
+<span class="c">Tests  1 failed | 40 passed</span></pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="event reveal">
+          <div class="gutter"><span class="idx">003</span><span class="t">00:11.7</span></div>
+          <div class="body-col">
+            <p class="ev-label mono">Tool · write</p>
+            <h2 class="ev-title">It changes the file, and shows you the diff.</h2>
+            <div class="artifact diff">
+              <div class="artifact-bar mono"><span class="dot"></span><span class="path">src/checkout/tax.ts</span></div>
+              <pre><span class="gut"> </span>export function splitTax(total: number, parts: number) {
+<span class="gut">-</span><del>  return Math.round((total / parts) * 100) / 100;</del>
+<span class="gut">+</span><ins>  const cents = Math.round(total * 100);</ins>
+<span class="gut">+</span><ins>  const base = Math.floor(cents / parts);</ins>
+<span class="gut">+</span><ins>  return (base + (cents % parts)) / 100;</ins>
+<span class="gut"> </span>}</pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="event is-live reveal">
+          <div class="gutter"><span class="idx">004</span><span class="t">00:14:32</span></div>
+          <div class="body-col">
+            <p class="ev-label mono"><span class="badge">Process restarted</span></p>
+            <h2 class="ev-title">The runtime died. The run did not.</h2>
+            <p class="ev-copy">
+              Agent loops run as durable workflows with checkpointing. When the
+              process came back it continued from step 7 with its context intact:
+              no replayed tool calls, no re-billed model turn, no work lost.
+            </p>
+            <div class="artifact">
+              <div class="artifact-bar mono"><span class="dot"></span><span class="path">workflow · resume</span></div>
+              <pre><span class="c">00:14:29</span> run_8f2e41c7  process exit (deploy)
+<span class="c">00:14:31</span> <span class="hi">checkpoint</span>    step 6 committed to event log
+<span class="ok">00:14:32</span> <span class="ok">resumed</span>      continuing at step 7 · 0 tokens replayed</pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="event reveal">
+          <div class="gutter"><span class="idx">005</span><span class="t">00:15:09</span></div>
+          <div class="body-col">
+            <p class="ev-label mono">Commit pushed</p>
+            <h2 class="ev-title">Work lands on a branch, not in a chat window.</h2>
+            <div class="artifact">
+              <div class="artifact-bar mono"><span class="dot"></span><span class="path">git · origin/feat/checkout-tax</span></div>
+              <pre><span class="ok">a3f9c21</span> fix(checkout): split tax without losing cents
+<span class="c">2 files changed, 14 insertions(+), 3 deletions(-)</span></pre>
+            </div>
+          </div>
+        </li>
+
+        <li class="event reveal">
+          <div class="gutter"><span class="idx">006</span><span class="t">00:15:40</span></div>
+          <div class="body-col">
+            <p class="ev-label mono">Pull request opened</p>
+            <h2 class="ev-title">The artifact of the run is a reviewable change.</h2>
+            <p class="ev-copy">
+              Auto-commit, diff caching, and usage tracking run after the turn
+              finishes, from the same workflow that did the work.
+            </p>
+            <div class="artifact">
+              <div class="artifact-bar mono"><span class="dot"></span><span class="path">pull request</span></div>
+              <pre><span class="hi">#482</span>  Fix tax rounding on split tenders
+<span class="c">feat/checkout-tax → main · checks passing · ready for review</span></pre>
+            </div>
+          </div>
+        </li>
+
+      </ol>
+    </div>
+  </section>
+
+  <!-- ── Spec rows: same claims as the old spotlights ────── -->
+  <section class="spec" id="spec">
+    <div class="wrap">
+      <div class="spec-head reveal">
+        <h2>Infrastructure that ships.</h2>
+        <p>
+          Built on production-grade primitives from the Vercel ecosystem. No
+          synthetic demos, real infrastructure for real agents.
+        </p>
+      </div>
+
+      <article class="row reveal">
+        <div class="gutter"><span class="idx">01</span></div>
+        <div>
+          <h3>Agents that ship real code.</h3>
+          <p>
+            Each agent gets a full sandbox environment with filesystem, network,
+            and runtime access. Describe what to build and let the agent work
+            autonomously until it is done.
+          </p>
+          <ul>
+            <li>File ops, search, shell, and task delegation built in</li>
+            <li>Explorer and executor subagents for parallel work</li>
+            <li>Multi-model support with AI Gateway</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="row reveal">
+        <div class="gutter"><span class="idx">02</span></div>
+        <div>
+          <h3>Cloud sandboxes, not local machines.</h3>
+          <p>
+            Every session runs in an isolated cloud sandbox with its own branch.
+            Work is committed and pushed automatically, so nothing is lost when
+            the sandbox expires.
+          </p>
+          <ul>
+            <li>Ephemeral environments with full git integration</li>
+            <li>Auto-hibernate on inactivity, instant restore</li>
+            <li>Snapshot and restore filesystem state</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="row reveal">
+        <div class="gutter"><span class="idx">03</span></div>
+        <div>
+          <h3>Durable workflows that survive anything.</h3>
+          <p>
+            Agent loops run as durable workflows that survive restarts, retry on
+            failure, and coordinate multi-step operations over time. No work is
+            ever lost mid-run.
+          </p>
+          <ul>
+            <li>Resumable agent loops with automatic checkpointing</li>
+            <li>Post-finish: usage tracking, diff caching, auto-commit</li>
+            <li>Reconnect to running workflows from any client</li>
+          </ul>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── Provenance, stated as provenance not as the pitch ─ -->
+  <section class="stack">
+    <div class="wrap stack-in">
+      <p>
+        Built on AI SDK, AI Gateway, Vercel Sandbox, and Workflow SDK.
+        <strong style="color:var(--ink);font-weight:620;">Same stack, one runtime.</strong>
+      </p>
+      <div class="chips" aria-label="Underlying platform">
+        <span class="chip">AI SDK</span>
+        <span class="chip">AI Gateway</span>
+        <span class="chip">Vercel Sandbox</span>
+        <span class="chip">Workflow SDK</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Close ────────────────────────────────────────────── -->
+  <section class="close">
+    <div class="wrap">
+      <h2 class="reveal">Give it a task that takes longer than a deploy.</h2>
+      <p class="reveal">Spin up a sandbox, hand it a repo, and watch the run hold together when things break.</p>
+      <div class="actions reveal">
+        <a class="btn btn-primary" href="#">Start a run</a>
+        <a class="btn btn-ghost" href="#">See pricing</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>Entry — cloud coding agent runtime</span>
+    <nav aria-label="Footer">
+      <a href="#">Docs</a>
+      <a href="#">Pricing</a>
+      <a href="#">Models</a>
+      <a href="#">GitHub</a>
+      <a href="#">Status</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  // Theme: matches the app's light/dark pair, persisted.
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('theme');
+    var saved = null;
+    try { saved = localStorage.getItem('proto-theme'); } catch (e) {}
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // Review affordance: force a theme with #dark / #light so both modes can
+    // be inspected side by side without depending on the OS setting.
+    if (location.hash === '#dark' || location.hash === '#light') {
+      saved = location.hash.slice(1);
+    }
+    var theme = saved || (prefersDark ? 'dark' : 'light');
+    apply(theme);
+    btn.addEventListener('click', function () {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      apply(theme);
+      try { localStorage.setItem('proto-theme', theme); } catch (e) {}
+    });
+    function apply(t) {
+      root.setAttribute('data-theme', t);
+      btn.textContent = t === 'dark' ? 'Light' : 'Dark';
+      btn.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');
+    }
+  })();
+
+  // Staggered entrance — transform/opacity only, disabled by reduced-motion CSS.
+  (function () {
+    var nodes = Array.prototype.slice.call(document.querySelectorAll('.reveal'));
+    if (!('IntersectionObserver' in window)) {
+      nodes.forEach(function (n) { n.classList.add('in'); });
+      return;
+    }
+    var seen = 0;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.style.setProperty('--d', (seen++ % 5) * 45 + 'ms');
+        entry.target.classList.add('in');
+        io.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    nodes.forEach(function (n) { io.observe(n); });
+  })();
+</script>
+</body>
+</html>

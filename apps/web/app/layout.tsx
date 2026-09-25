@@ -68,32 +68,32 @@ export const metadata: Metadata = {
   metadataBase,
   title: {
     // The exact-match phrase first: "entry agent" / "entry agents" is the
-    // query this domain is meant to own, and a bare "Entry Agent" gave
+    // query this domain is meant to own, and a bare product name gave
     // crawlers nothing about what the product is.
-    default: "Entry Agent — AI coding agents that ship real code",
-    template: "%s | Entry Agent",
+    default: "Entry Agents — AI coding agents that ship real code",
+    template: "%s | Entry Agents",
   },
   description:
-    "Entry Agent is a cloud platform for AI coding agents. Each Entry Agent gets an isolated sandbox with filesystem, network and runtime access, and works autonomously until the job is done — no local setup.",
-  applicationName: "Entry Agent",
+    "Entry Agents is a cloud platform for AI coding agents. Each agent gets an isolated sandbox with filesystem, network and runtime access, and works autonomously until the job is done — no local setup.",
+  applicationName: "Entry Agents",
   icons: {
     icon: faviconPath,
     shortcut: faviconPath,
   },
   openGraph: {
     type: "website",
-    siteName: "Entry Agent",
+    siteName: "Entry Agents",
     url: SITE_URL,
-    title: "Entry Agent — AI coding agents that ship real code",
+    title: "Entry Agents — AI coding agents that ship real code",
     description:
-      "Entry Agent is a cloud platform for AI coding agents. Each one gets an isolated sandbox and ships real code autonomously.",
+      "Entry Agents is a cloud platform for AI coding agents. Each one gets an isolated sandbox and ships real code autonomously.",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Entry Agent — AI coding agents that ship real code",
+    title: "Entry Agents — AI coding agents that ship real code",
     description:
-      "Entry Agent is a cloud platform for AI coding agents. Each one gets an isolated sandbox and ships real code autonomously.",
+      "Entry Agents is a cloud platform for AI coding agents. Each one gets an isolated sandbox and ships real code autonomously.",
   },
 };
 
@@ -111,18 +111,18 @@ const structuredData = {
   "@graph": [
     {
       "@type": "Organization",
-      name: "Entry Agent",
+      name: "Entry Agents",
       url: SITE_URL,
       logo: `${SITE_URL}/entry-logo.svg`,
     },
     {
       "@type": "WebSite",
-      name: "Entry Agent",
+      name: "Entry Agents",
       url: SITE_URL,
     },
     {
       "@type": "SoftwareApplication",
-      name: "Entry Agent",
+      name: "Entry Agents",
       applicationCategory: "DeveloperApplication",
       applicationSubCategory: "AI coding agent platform",
       operatingSystem: "Web",

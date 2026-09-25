@@ -7,16 +7,16 @@ import { BenchmarkLive, type BenchmarkLiveSummary } from "./benchmark-live";
 export const metadata: Metadata = {
   title: "Benchmarks",
   description:
-    "Real HumanEval results from Entry Agent's own harness -- the same system prompt, tools, and gateway-routed models real chats use.",
+    "Real HumanEval results from Entry Agents' own harness -- the same system prompt, tools, and gateway-routed models real chats use.",
   alternates: {
     canonical: "/benchmarks",
   },
   openGraph: {
     url: "/benchmarks",
-    title: "Entry Agent AI coding agent benchmarks",
+    title: "Entry Agents AI coding agent benchmarks",
   },
   twitter: {
-    title: "Entry Agent AI coding agent benchmarks",
+    title: "Entry Agents AI coding agent benchmarks",
   },
 };
 

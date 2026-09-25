@@ -19,7 +19,7 @@ function EntryAgentLogo({ className }: { className?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       className={className}
-      aria-label="Entry Agent"
+      aria-label="Entry Agents"
     >
       <path
         d="M4 17L10 11L4 5"
@@ -93,7 +93,7 @@ export function GetStartedFlow() {
         <div className="flex items-center gap-3">
           <EntryAgentLogo className="size-7 text-white/50" />
           <span className="text-lg font-semibold tracking-tight text-white/50">
-            Entry Agent
+            Entry Agents
           </span>
         </div>
         <p className="hidden max-w-sm text-sm leading-relaxed text-zinc-600 md:block">

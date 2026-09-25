@@ -10,10 +10,10 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: "/pricing",
-    title: "Entry Agent pricing — credit-based AI coding agent plans",
+    title: "Entry Agents pricing — credit-based AI coding agent plans",
   },
   twitter: {
-    title: "Entry Agent pricing — credit-based AI coding agent plans",
+    title: "Entry Agents pricing — credit-based AI coding agent plans",
   },
 };
 

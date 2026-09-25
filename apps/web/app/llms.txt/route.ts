@@ -1,17 +1,17 @@
 import { SITE_URL } from "@/lib/site";
 
-const content = `# Entry Agent
+const content = `# Entry Agents
 
-> Entry Agent is a cloud platform for AI coding agents that work on repository tasks in isolated sandboxes and ship code through Git.
+> Entry Agents is a cloud platform for AI coding agents that work on repository tasks in isolated sandboxes and ship code through Git.
 
 ## Public pages
 
-- [Entry Agent](${SITE_URL}/): Product overview and sign-in.
-- [AI coding agent](${SITE_URL}/ai-coding-agent): How Entry Agent works on repository tasks.
-- [Pricing](${SITE_URL}/pricing): Credit-based plans for Entry Agent.
+- [Entry Agents](${SITE_URL}/): Product overview and sign-in.
+- [AI coding agent](${SITE_URL}/ai-coding-agent): How the Entry Agents platform works on repository tasks.
+- [Pricing](${SITE_URL}/pricing): Credit-based plans for Entry Agents.
 - [Models](${SITE_URL}/model): Supported model prices and context windows.
-- [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from Entry Agent's own harness.
-- [Deploy your own](${SITE_URL}/deploy-your-own): Deploy a copy of Entry Agent to Vercel.
+- [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from Entry Agents' own harness.
+- [Deploy your own](${SITE_URL}/deploy-your-own): Deploy a copy of the Entry Agents platform to Vercel.
 
 ## Product capabilities
 

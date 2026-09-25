@@ -6,7 +6,7 @@ import { SITE_URL } from "@/lib/site";
 
 const title = "AI coding agent for repository tasks";
 const description =
-  "Entry Agent is an AI coding agent that works on repository tasks in isolated cloud sandboxes, then commits and pushes the result through Git.";
+  "Entry Agents is an AI coding agent that works on repository tasks in isolated cloud sandboxes, then commits and pushes the result through Git.";
 
 export const metadata: Metadata = {
   title,
@@ -16,11 +16,11 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: "/ai-coding-agent",
-    title: "Entry Agent — AI coding agent for repository tasks",
+    title: "Entry Agents — AI coding agent for repository tasks",
     description,
   },
   twitter: {
-    title: "Entry Agent — AI coding agent for repository tasks",
+    title: "Entry Agents — AI coding agent for repository tasks",
     description,
   },
 };
@@ -28,12 +28,12 @@ export const metadata: Metadata = {
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  name: "Entry Agent — AI coding agent for repository tasks",
+  name: "Entry Agents — AI coding agent for repository tasks",
   description,
   url: `${SITE_URL}/ai-coding-agent`,
   about: {
     "@type": "SoftwareApplication",
-    name: "Entry Agent",
+    name: "Entry Agents",
     applicationCategory: "DeveloperApplication",
   },
 };
@@ -50,13 +50,13 @@ export default function AiCodingAgentPage() {
           }}
         />
         <p className="font-mono text-xs uppercase tracking-widest text-(--l-fg-3)">
-          Entry Agent
+          Entry Agents
         </p>
         <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tighter sm:text-5xl md:text-6xl">
           An AI coding agent for repository tasks.
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-(--l-fg-2)">
-          Entry Agent works on software tasks inside an isolated cloud sandbox.
+          Entry Agents works on software tasks inside an isolated cloud sandbox.
           Give it a repository and an objective; it can inspect code, use the
           shell, make changes, and commit work through Git without requiring a
           local development environment.
@@ -88,7 +88,7 @@ export default function AiCodingAgentPage() {
               Run durable workflows
             </h2>
             <p className="mt-3 leading-relaxed text-(--l-fg-2)">
-              Entry Agent coordinates multi-step work as durable workflows,
+              Entry Agents coordinates multi-step work as durable workflows,
               allowing agent runs to recover from transient failures and resume
               their progress.
             </p>
@@ -97,7 +97,7 @@ export default function AiCodingAgentPage() {
 
         <section className="mt-20 border-t border-(--l-border) pt-12">
           <h2 className="text-2xl font-semibold tracking-tight">
-            What can an Entry Agent help with?
+            What can your agents help with?
           </h2>
           <ul className="mt-6 grid gap-3 text-(--l-fg-2) sm:grid-cols-2">
             <li>Understand an unfamiliar repository and its architecture.</li>
@@ -112,7 +112,7 @@ export default function AiCodingAgentPage() {
             className="rounded-md bg-(--l-fg) px-4 py-2 text-sm font-medium text-(--l-bg)"
             href="/"
           >
-            Start with Entry Agent
+            Start with Entry Agents
           </Link>
           <Link
             className="rounded-md border border-(--l-border) px-4 py-2 text-sm font-medium"

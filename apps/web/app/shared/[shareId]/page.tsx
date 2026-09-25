@@ -27,7 +27,7 @@ export async function generateMetadata({
 
   return {
     title: sharedChat?.title ?? "Shared Chat",
-    description: "A shared Entry Agent chat.",
+    description: "A shared chat from Entry Agents.",
     robots: {
       index: false,
       follow: false,

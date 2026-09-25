@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { EntryMark } from "@/components/entry-mark";
 
-export const alt = "Entry Agent — AI coding agents that ship real code";
+export const alt = "Entry Agents — AI coding agents that ship real code";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 // Node runtime rather than the deprecated Edge runtime. This image uses
@@ -100,7 +100,7 @@ export default function OgImage() {
                 color: "rgba(255, 255, 255, 0.5)",
               }}
             >
-              Entry Agent
+              Entry Agents
             </span>
           </div>
 
@@ -114,7 +114,7 @@ export default function OgImage() {
               color: "#ffffff",
             }}
           >
-            Entry Agent.
+            Entry Agents.
           </div>
 
           {/* Subtitle */}

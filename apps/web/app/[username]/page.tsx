@@ -37,7 +37,7 @@ export async function generateMetadata({
   if (!profile) {
     return {
       title: "Public profile",
-      description: "Public Entry Agent usage profile.",
+      description: "Public usage profile on Entry Agents.",
     };
   }
 
@@ -49,7 +49,7 @@ export async function generateMetadata({
 
   return {
     title: displayName,
-    description: `${displayName}'s public Entry Agent usage profile.`,
+    description: `${displayName}'s public usage profile on Entry Agents.`,
     alternates: {
       canonical: publicProfilePath,
     },
@@ -320,7 +320,7 @@ export default async function PublicUsagePage({
             href={SITE_ORIGIN}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Entry Agent ↗
+            Entry Agents ↗
           </a>
         </div>
       </div>

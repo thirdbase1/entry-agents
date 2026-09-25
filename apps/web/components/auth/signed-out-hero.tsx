@@ -37,7 +37,7 @@ export function SignedOutHero() {
           <div className="mx-auto max-w-[1320px] px-6">
             <div className="max-w-[740px]">
               <h1 className="text-4xl font-semibold leading-[1.03] tracking-tighter sm:text-5xl md:text-7xl">
-                Entry Agent: AI coding agents that ship real code.
+                Entry Agents: AI coding agents that ship real code.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
                 Give an AI coding agent a task and a repository. It works

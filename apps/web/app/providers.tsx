@@ -16,8 +16,11 @@ import { SWRConfig } from "swr";
 import { GitHubReconnectGate } from "@/components/github-reconnect-gate";
 import { authClient } from "@/lib/auth/client";
 import { FetchError } from "@/lib/swr";
+import {
+  readStoredTheme,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme-storage";
 
-const THEME_STORAGE_KEY = "open-agents-theme";
 const DARK_MODE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 
 export type ThemePreference = "light" | "dark" | "system";
@@ -65,7 +68,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const storedTheme = readStoredTheme();
     const initialTheme = isThemePreference(storedTheme)
       ? storedTheme
       : "system";

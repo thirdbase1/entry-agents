@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { formatTokens } from "@open-agents/shared/lib/tool-state";
 import { ContributionChart } from "@/components/contribution-chart";
 import { getPublicUsageProfile } from "@/lib/db/public-usage-profile";
+import { SITE_DOMAIN, SITE_ORIGIN } from "@/lib/site";
 import { UsageInsightsSection } from "../settings/usage/usage-insights-section";
 
 interface PublicUsagePageProps {
@@ -306,13 +307,13 @@ export default async function PublicUsagePage({
         {/* Footer */}
         <div className="mt-16 flex items-center justify-between gap-4 border-t border-border/50 pt-6">
           <span className="font-mono text-xs text-muted-foreground">
-            entry-agents.vercel.app{publicProfilePath}
+            {SITE_DOMAIN}{publicProfilePath}
             {profile.dateSelection.value
               ? `?date=${profile.dateSelection.value}`
               : ""}
           </span>
           <a
-            href="https://entry-agents.vercel.app"
+            href={SITE_ORIGIN}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             Entry Agent ↗

@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { SITE_DOMAIN } from "@/lib/site";
 import {
   getPublicUsageProfile,
   displayModelId,
@@ -347,7 +348,7 @@ export async function GET(request: Request, context: OgRouteContext) {
               letterSpacing: "0.01em",
             }}
           >
-            entry-agents.vercel.app
+            {SITE_DOMAIN}
           </span>
         </div>
       </div>

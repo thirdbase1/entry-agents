@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  readStoredTheme,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme-storage";
 
 type Theme = "system" | "light" | "dark";
-
-const STORAGE_KEY = "open-agents-theme";
 
 function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme !== "system") return theme;
@@ -17,14 +19,14 @@ function resolveTheme(theme: Theme): "light" | "dark" {
 function applyTheme(theme: Theme) {
   const resolved = resolveTheme(theme);
   document.documentElement.classList.toggle("dark", resolved === "dark");
-  localStorage.setItem(STORAGE_KEY, theme);
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
 }
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("system");
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = readStoredTheme();
     if (stored === "light" || stored === "dark" || stored === "system") {
       setTheme(stored);
     }

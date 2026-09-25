@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { nanoid } from "nanoid";
 import { headers as nextHeaders } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -22,6 +23,15 @@ import { getServerSession } from "@/lib/session/get-server-session";
 interface RepoPageProps {
   params: Promise<{ username: string; repo: string }>;
 }
+
+// This route creates an authenticated workspace then redirects; it is not a
+// public repository page and should never occupy a search result.
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 interface GitHubRepoInfo {
   default_branch: string;

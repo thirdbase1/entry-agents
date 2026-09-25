@@ -124,8 +124,15 @@ const structuredData = {
       "@type": "SoftwareApplication",
       name: "Entry Agent",
       applicationCategory: "DeveloperApplication",
+      applicationSubCategory: "AI coding agent platform",
       operatingSystem: "Web",
       url: SITE_URL,
+      featureList: [
+        "AI coding agents for repository tasks",
+        "Isolated cloud sandboxes",
+        "Git branches, commits, and pull requests",
+        "Durable multi-step agent workflows",
+      ],
       description:
         "Cloud platform for AI coding agents: each agent runs in an isolated sandbox with filesystem, network and runtime access and ships code autonomously.",
     },

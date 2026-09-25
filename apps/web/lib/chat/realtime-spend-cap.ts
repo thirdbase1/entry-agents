@@ -344,6 +344,20 @@ export function buildSubagentBudgetGuard(
       if (!binding) {
         return { stop: false };
       }
+      // FAIL CLOSED on unpriced models. computeAffordableOutputTokens
+      // returns { stop: false } when it has no price, which used to mean a
+      // subagent running on a model the gateway no longer catalogues got
+      // NO output cap -- and noteSubagentStepUsage below also skipped the
+      // spend, while chat-post-finish skips an undefined cost too. All
+      // three together meant an unpriced model could spend against a
+      // rolling window without ever decrementing it. No price means the
+      // budget cannot be honoured, so the subagent does not start.
+      if (callbacks.getCost(modelId) === undefined) {
+        return {
+          stop: true,
+          reason: binding.reason,
+        };
+      }
       const affordable = computeAffordableOutputTokens(
         binding.cents,
         callbacks.getCost(modelId),
@@ -360,7 +374,8 @@ export function buildSubagentBudgetGuard(
     },
 
     noteSubagentStepUsage(modelId: string, usage: LanguageModelUsage) {
-      if (!bindingBudget()) {
+      const binding = bindingBudget();
+      if (!binding) {
         return { stop: false };
       }
       const costUsd = estimateModelUsageCost(
@@ -375,9 +390,11 @@ export function buildSubagentBudgetGuard(
         callbacks.getCost(modelId),
       );
       if (costUsd === undefined) {
-        // Unknown pricing: can't enforce in real time; the post-finish
-        // debit still lands durably.
-        return { stop: false };
+        // FAIL CLOSED. The old comment here claimed "the post-finish debit
+        // still lands durably", but chat-post-finish.ts skips an undefined
+        // cost as well -- so unmetered spend was neither capped in real
+        // time nor recorded afterwards. We cannot price it, so we stop.
+        return { stop: true, reason: binding.reason };
       }
       const costCents = Math.max(0, Math.round(costUsd * 100));
       const state = callbacks.spendCents(costCents);

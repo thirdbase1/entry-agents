@@ -302,7 +302,12 @@ export function toFriendlyChatErrorText(
   const category = classifyChatError(error);
   const base = CATEGORY_MESSAGES[category];
 
-  if (isRepeatFailure && category !== "aborted") {
+  // Never append the repeat-failure nudge to an exhausted usage window.
+  // "This looks like a repeating issue... retrying probably won't help"
+  // reads as blame for something the user did not choose, and the window
+  // refills on its own -- the right next step is to wait or raise the
+  // plan, which the message already says.
+  if (isRepeatFailure && category !== "aborted" && category !== "usage_window") {
     return `${base}${REPEAT_FAILURE_SUFFIX}`;
   }
 

@@ -322,3 +322,72 @@ describe("buildSubagentBudgetGuard", () => {
     });
   });
 });
+
+describe("subagent budget guard fails closed on unpriced models", () => {
+  // A model can disappear from the gateway catalogue while a user still
+  // selects it. Previously `getCost() === undefined` produced NO output
+  // cap and no spend accounting, and chat-post-finish skips an undefined
+  // cost too -- so that model spent against the rolling window without
+  // ever decrementing it. No price means the budget cannot be honoured.
+  function unpricedGuard(
+    windowBudget: number | null,
+    enforceCreditBlock = false,
+  ) {
+    // Self-contained rather than reusing the helper above: that one lives
+    // inside the previous describe's scope, and its getCost is always
+    // priced -- which is the opposite of what is under test here.
+    let windowRemaining = windowBudget;
+    let balance = 100_000;
+    const callbacks = {
+      getWindowRemainingCents: () => windowRemaining,
+      getBalanceRemainingCents: () => balance,
+      getEnforceCreditBlock: () => enforceCreditBlock,
+      spendCents: (costCents: number) => {
+        const state = applySpendToBudgets({
+          remainingWindowBudgetCents: windowRemaining,
+          remainingBalanceCents: balance,
+          enforceCreditBlock,
+          costCents,
+        });
+        windowRemaining = state.remainingWindowBudgetCents;
+        balance = state.remainingBalanceCents;
+        return state;
+      },
+      getCost: () => undefined,
+    };
+    return buildSubagentBudgetGuard(callbacks);
+  }
+
+  test("planSubagent refuses to start a subagent on an unpriced model", () => {
+    const guard = unpricedGuard(1_000);
+    expect(guard.planSubagent("model-removed-from-gateway")).toEqual({
+      stop: true,
+      reason: "window",
+    });
+  });
+
+  test("noteSubagentStepUsage stops rather than skipping the spend", () => {
+    const guard = unpricedGuard(1_000);
+    expect(
+      guard.noteSubagentStepUsage("model-removed-from-gateway", usage(10_000)),
+    ).toEqual({ stop: true, reason: "window" });
+  });
+
+  test("a bound credit budget is protected the same way", () => {
+    const guard = unpricedGuard(null, true);
+    expect(guard.planSubagent("model-removed-from-gateway")).toEqual({
+      stop: true,
+      reason: "credit",
+    });
+  });
+
+  test("with no budget there is nothing to protect, so it stays a no-op", () => {
+    const guard = unpricedGuard(null, false);
+    expect(guard.planSubagent("model-removed-from-gateway")).toEqual({
+      stop: false,
+    });
+    expect(
+      guard.noteSubagentStepUsage("model-removed-from-gateway", usage(10_000)),
+    ).toEqual({ stop: false });
+  });
+});

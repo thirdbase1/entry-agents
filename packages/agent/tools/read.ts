@@ -41,6 +41,26 @@ const readInputSchema = z.object({
     .describe("Maximum number of lines to read. Default: 2000"),
 });
 
+/** IANA media type for extensions we hand to the model as pixels. */
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  avif: "image/avif",
+};
+
+/** Extension lookup only — the file's magic bytes decide binary-vs-text. */
+function imageMediaTypeForPath(path: string): string | undefined {
+  const match = /\.([a-z0-9]+)$/i.exec(path);
+  return match ? IMAGE_MEDIA_TYPES[match[1].toLowerCase()] : undefined;
+}
+
+/** 4 MB of raw bytes ~= 5.3 MB once base64-encoded into the tool result. */
+const MAX_IMAGE_RESULT_BYTES = 4 * 1024 * 1024;
+
 export const readFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
@@ -148,6 +168,34 @@ EXAMPLES:
           return {
             success: false,
             error: "Cannot read a directory. Use glob or ls command instead.",
+          };
+        }
+
+        // Images are never decoded as text: the magic-byte sniff below
+        // would call them binary and hand the agent a dead-end note, which
+        // is why screenshots from `agent-browser` and chat attachments
+        // were invisible to the model. Return the pixels instead, and let
+        // toModelOutput attach them to the prompt as a file part.
+        const imageMediaType = imageMediaTypeForPath(absolutePath);
+        if (imageMediaType) {
+          const buffer = await sandbox.readFileBuffer(absolutePath);
+          // A 4 MB ceiling keeps base64 (~1.33x) inside what a single tool
+          // result can reasonably carry; larger files fall through to the
+          // text path rather than risking an oversized payload.
+          if (buffer.byteLength <= MAX_IMAGE_RESULT_BYTES) {
+            return {
+              success: true,
+              path: toDisplayPath(absolutePath, workingDirectory),
+              image: {
+                mediaType: imageMediaType,
+                data: buffer.toString("base64"),
+                sizeBytes: buffer.byteLength,
+              },
+            };
+          }
+          return {
+            success: false,
+            error: `This image is ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB, larger than the ${(MAX_IMAGE_RESULT_BYTES / 1024 / 1024).toFixed(0)} MB that can be attached to a tool result. Downscale it (e.g. \`convert in.png -resize 1600x1600 out.png\`) and read the smaller file.`,
           };
         }
 
@@ -289,5 +337,31 @@ EXAMPLES:
           error: `Failed to read file: ${message}`,
         };
       }
+    },
+    // Without this the SDK sends the tool result as plain JSON, which
+    // would base64-dump the pixels into the prompt as a string the model
+    // cannot decode. Returning `content` makes the SDK emit a real file
+    // part instead, so a vision-capable model actually sees the image.
+    // Every other read keeps the JSON shape it has today.
+    toModelOutput: ({ output }) => {
+      const image = (
+        output as {
+          image?: { mediaType: string; data: string; sizeBytes: number };
+          path?: string;
+        }
+      ).image;
+      if (!image) {
+        return { type: "json", value: output as never };
+      }
+      return {
+        type: "content",
+        value: [
+          {
+            type: "text",
+            text: `Read image ${(output as { path?: string }).path ?? ""} (${image.mediaType}, ${Math.round(image.sizeBytes / 1024)} KB). The pixels are attached below — look at them directly; do not try to decode the file with bash or strings.`,
+          },
+          { type: "file-data", data: image.data, mediaType: image.mediaType },
+        ],
+      };
     },
   });

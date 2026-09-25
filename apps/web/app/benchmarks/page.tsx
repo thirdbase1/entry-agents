@@ -8,6 +8,16 @@ export const metadata: Metadata = {
   title: "Benchmarks",
   description:
     "Real HumanEval results from Entry Agent's own harness -- the same system prompt, tools, and gateway-routed models real chats use.",
+  alternates: {
+    canonical: "/benchmarks",
+  },
+  openGraph: {
+    url: "/benchmarks",
+    title: "Entry Agent AI coding agent benchmarks",
+  },
+  twitter: {
+    title: "Entry Agent AI coding agent benchmarks",
+  },
 };
 
 export const dynamic = "force-dynamic";

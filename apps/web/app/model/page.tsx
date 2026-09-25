@@ -8,6 +8,16 @@ export const metadata: Metadata = {
   title: "Model",
   description:
     "Price and context window for every model available in Entry -- pay-as-you-go, per token, no markup.",
+  alternates: {
+    canonical: "/model",
+  },
+  openGraph: {
+    url: "/model",
+    title: "AI coding agent model pricing and context windows",
+  },
+  twitter: {
+    title: "AI coding agent model pricing and context windows",
+  },
 };
 
 export const dynamic = "force-dynamic";

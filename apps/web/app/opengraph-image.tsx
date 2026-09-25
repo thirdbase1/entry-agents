@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
+import { EntryMark } from "@/components/entry-mark";
 
-export const alt = "Entry Agent — Spawn coding agents that run in the cloud";
+export const alt = "Entry Agent — AI coding agents that ship real code";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 // Node runtime rather than the deprecated Edge runtime. This image uses
@@ -90,21 +91,7 @@ export default function OgImage() {
               marginBottom: 40,
             }}
           >
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
-              <path
-                d="M4 17L10 11L4 5"
-                stroke="rgba(255,255,255,0.5)"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M12 19H20"
-                stroke="rgba(255,255,255,0.5)"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-            </svg>
+            <EntryMark style={{ width: 28, height: 28 }} />
             <span
               style={{
                 fontSize: 20,
@@ -140,7 +127,7 @@ export default function OgImage() {
               maxWidth: 720,
             }}
           >
-            Spawn coding agents that run infinitely in the cloud.
+            AI coding agents in isolated cloud sandboxes that work autonomously until the job is done.
           </div>
         </div>
 
@@ -172,7 +159,7 @@ export default function OgImage() {
                 letterSpacing: "0.01em",
               }}
             >
-              open-agents.dev
+              entry-agents.dev
             </span>
           </div>
         </div>

@@ -7,7 +7,7 @@ export function EntryMark({ className, ...props }: SVGProps<SVGSVGElement>) {
       aria-hidden="true"
       className={className}
       fill="none"
-      viewBox="0 0 108 96"
+      viewBox="-6 0 112 104"
       xmlns="http://www.w3.org/2000/svg"
       {...props}
     >

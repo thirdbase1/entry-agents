@@ -291,7 +291,7 @@ export const chats = pgTable(
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    modelId: text("model_id").default("gpt-5.6-sol"),
+    modelId: text("model_id").default("step-5-preview"),
     // Per-chat reasoning-effort preference (e.g. "low"/"medium"/"high"/
     // "xhigh", or a boolean-style "on"/"off" for models that only support
     // toggling thinking rather than graduated effort). Null means "use the
@@ -440,7 +440,7 @@ export const userPreferences = pgTable("user_preferences", {
     .notNull()
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
-  defaultModelId: text("default_model_id").default("gpt-5.6-sol"),
+  defaultModelId: text("default_model_id").default("step-5-preview"),
   defaultSubagentModelId: text("default_subagent_model_id"),
   defaultSandboxType: text("default_sandbox_type", {
     enum: ["vercel", "boat"],

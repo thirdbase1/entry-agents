@@ -54,6 +54,7 @@ export function toSafeChatError(message: string): Error {
 export type ChatErrorCategory =
   | "aborted"
   | "rate_limit"
+  | "usage_window"
   | "quota"
   | "auth"
   | "timeout"
@@ -75,6 +76,8 @@ const CATEGORY_MESSAGES: Record<ChatErrorCategory, string> = {
   aborted: "The request was stopped.",
   rate_limit:
     "The AI provider is receiving too many requests right now. Please wait a moment and try again.",
+  usage_window:
+    "This plan's usage window is full. Entry limits spend over rolling 7-day, 5-hour, and 30-day windows; each refills automatically as older usage ages out. Open Settings > Usage to see exactly when yours resets, or upgrade the plan to raise the ceiling.",
   quota:
     "This model has hit its usage limit and can't respond right now. Try switching to a different model.",
   auth: "There's a temporary problem connecting to the AI provider. Please try again shortly.",
@@ -192,6 +195,28 @@ export function classifyChatError(error: unknown): ChatErrorCategory {
     return "rate_limit";
   }
 
+  // Rolling usage windows (weekly / 5-hour / 30-day). Classified before
+  // `quota` because those messages say "usage" too but the recovery is
+  // different: wait for the window to age out or raise the plan, not
+  // "switch models". Seen in production when the wrapper defeated the
+  // SAFE_CHAT_ERROR path.
+  if (
+    matchesAny(signal, [
+      "usage window",
+      "window is full",
+      "rolling 7 days",
+      "rolling 7-day",
+      "per rolling",
+      "weekly usage",
+      "30-day window",
+      "30 days",
+      "5-hour",
+      "5 hour window",
+    ])
+  ) {
+    return "usage_window";
+  }
+
   if (
     matchesAny(signal, [
       "usage limit",
@@ -269,11 +294,9 @@ export function toFriendlyChatErrorText(
   error: unknown,
   isRepeatFailure = false,
 ): string {
-  if (
-    error instanceof Error &&
-    error.message.startsWith(SAFE_CHAT_ERROR_PREFIX)
-  ) {
-    return error.message.slice(SAFE_CHAT_ERROR_PREFIX.length);
+  const safeMessage = extractSafeChatError(error);
+  if (safeMessage !== null) {
+    return safeMessage;
   }
 
   const category = classifyChatError(error);
@@ -284,6 +307,61 @@ export function toFriendlyChatErrorText(
   }
 
   return base;
+}
+
+/**
+ * Find an intentionally-safe message (see SAFE_CHAT_ERROR_PREFIX) anywhere
+ * in an error, not only at position 0.
+ *
+ * The Workflow SDK wraps step failures before they reach the caller, so the
+ * real message arrives as
+ *
+ *   FatalError: Step ".../resolveChatModelRuntime" failed after 3 retries:
+ *   __SAFE_CHAT_ERROR__:Your Entry plan's weekly usage window is full ...
+ *
+ * The old `message.startsWith(marker)` check therefore never matched a
+ * wrapped error, the text fell through to the `unknown` bucket, and the user
+ * was shown "Something went wrong while generating a response" while the
+ * precise, actionable reason (a specific exhausted usage window) sat right
+ * there in the message. Observed in production 2026-09-25.
+ *
+ * Walks the `cause` chain as well, because the SDK also re-throws the
+ * original as `error.cause`.
+ */
+function extractSafeChatError(error: unknown): string | null {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  for (let depth = 0; current != null && depth < 6; depth++) {
+    if (typeof current === "object") {
+      if (seen.has(current)) return null;
+      seen.add(current);
+    }
+
+    const text =
+      typeof current === "string"
+        ? current
+        : current instanceof Error
+          ? current.message
+          : null;
+
+    if (text) {
+      const index = text.indexOf(SAFE_CHAT_ERROR_PREFIX);
+      if (index !== -1) {
+        const payload = text.slice(index + SAFE_CHAT_ERROR_PREFIX.length).trim();
+        if (payload.length > 0) {
+          return payload;
+        }
+      }
+    }
+
+    if (typeof current !== "object" || current === null) {
+      return null;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+
+  return null;
 }
 
 /** Reduces any thrown value to a lowercased classification signal. Never

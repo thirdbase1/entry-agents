@@ -29,8 +29,26 @@
 // If Luna is down, Free-tier users are still affected by design -- only
 // paid/admin users (whose new chats no longer default to Luna) are fixed
 // by this change.
-export const DEFAULT_MODEL_ID = "gpt-5.6-sol";
-export const APP_DEFAULT_MODEL_ID = "gpt-5.6-sol";
+// Changed AGAIN 2026-09-25: gpt-5.6-sol was removed from the gateway
+// entirely more than a month before this date. GET /api/models now returns
+// exactly three ids -- step-5-preview, qwen3.8-flash:free and
+// mimo-v2.6-flash:free -- so every path that fell through to this default
+// (new chats, checks/fix, commit messages, auto-commit, PR bodies, git
+// helpers) was guaranteed to 404 with "No openai-chat route is configured
+// for gpt-5.6-sol", and the assistant message badge kept rendering
+// `gpt-5.6-sol` for turns that never used it. Switched to step-5-preview,
+// which is live on the gateway and is the model the account actually
+// selects. This is STILL only the INITIAL selection when no model has been
+// chosen yet -- if a model a user actually picked turns out to be disabled,
+// resolveChatModelSelection throws a clear error instead of silently
+// substituting this (or any other) default.
+//
+// NOTE: this does NOT change the Free plan's own model restriction --
+// FREE_PLAN_MODEL_ID in lib/billing/plans.ts is qwen3.8-flash:free by
+// deliberate business design (it's Entry's only $0-cost model) and matches
+// the gateway's own freePlanModelId.
+export const DEFAULT_MODEL_ID = "step-5-preview";
+export const APP_DEFAULT_MODEL_ID = "step-5-preview";
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 const TOKENS_PER_MILLION = 1_000_000;
 

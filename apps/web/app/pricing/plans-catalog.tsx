@@ -65,40 +65,95 @@ function EntryWindowsCard({
     { key: "30 days", ...windows.monthly },
   ] as const;
 
+  // Guard every arithmetic path: a missing or non-numeric field used to
+  // produce `NaN`, and `style={{ width: "NaN%" }}` silently renders an
+  // invisible bar -- which is exactly how an exhausted window looked like
+  // "nothing here". An unknown limit is treated as unknown, never as full.
+  const normalize = (value: number) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0
+      ? value
+      : null;
+
+  const fullCount = rows.filter((row) => {
+    const used = normalize(row.usedCents);
+    const limit = normalize(row.limitCents);
+    return used !== null && limit !== null && used >= limit;
+  }).length;
+
   return (
     <div className="mt-3 rounded-2xl border border-(--l-border) bg-(--l-fg)/[0.04] px-5 py-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-(--l-fg)">
-          Entry Windows
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-sm font-semibold text-(--l-fg)">Entry windows</p>
         <p className="text-xs text-(--l-fg-3)">
-          Rolling limits -- no fixed reset time
+          {fullCount > 0
+            ? `${fullCount} of ${rows.length} full`
+            : "Rolling limits, no fixed reset time"}
         </p>
       </div>
-      <div className="mt-3 flex flex-col gap-3">
+
+      {fullCount > 0 ? (
+        <p className="mt-2 rounded-lg bg-(--l-accent) px-3 py-2 text-xs font-medium text-[#1a0d05]">
+          {fullCount === 1
+            ? "One window is full, so requests are being rejected right now. It refills continuously as your oldest usage slides out of it."
+            : `${fullCount} windows are full, so requests are being rejected right now. Each refills continuously as its oldest usage slides out.`}
+        </p>
+      ) : null}
+
+      <div className="mt-3 flex flex-col gap-3.5">
         {rows.map((row) => {
-          const pct = Math.min(
-            100,
-            Math.round((row.usedCents / Math.max(1, row.limitCents)) * 100),
-          );
-          const full = row.usedCents >= row.limitCents;
+          const used = normalize(row.usedCents);
+          const limit = normalize(row.limitCents);
+          const known = used !== null && limit !== null;
+          const full = known && (used as number) >= (limit as number);
+          const pct = known
+            ? Math.min(100, Math.round(((used as number) / (limit as number)) * 100))
+            : 0;
+
           return (
             <div key={row.key}>
-              <div className="flex items-center justify-between text-xs text-(--l-fg-2)">
-                <span>Rolling {row.key}</span>
-                <span className={full ? "font-semibold text-red-500" : ""}>
-                  {formatUsdCents(row.usedCents)} of {formatUsdCents(row.limitCents)}
-                  {full ? " -- full, refills as usage slides out" : ""}
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                <span className="text-(--l-fg-2)">Rolling {row.key}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium tabular-nums text-(--l-fg)">
+                    {known
+                      ? `${formatUsdCents(used as number)} of ${formatUsdCents(limit as number)}`
+                      : "Unavailable"}
+                  </span>
+                  {full ? (
+                    <span className="rounded-sm bg-(--l-accent) px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#1a0d05]">
+                      Full
+                    </span>
+                  ) : null}
                 </span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-(--l-border)">
+
+              <div
+                className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-(--l-border)"
+                role="progressbar"
+                aria-label={`Rolling ${row.key} usage`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+                aria-valuetext={
+                  known
+                    ? `${pct}% of the rolling ${row.key} limit used`
+                    : "Usage unavailable"
+                }
+              >
                 <div
-                  className={`h-full rounded-full ${
-                    full ? "bg-red-500" : "bg-emerald-500"
+                  className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+                    full ? "bg-(--l-accent)" : "bg-(--l-fg-3)"
                   }`}
                   style={{ width: `${pct}%` }}
                 />
               </div>
+
+              {full ? (
+                <p className="mt-1 text-[11px] leading-snug text-(--l-fg-2)">
+                  Refills continuously as your oldest usage slides out of this
+                  window. No fixed reset time.
+                </p>
+              ) : null}
             </div>
           );
         })}

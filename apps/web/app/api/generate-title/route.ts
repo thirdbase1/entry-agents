@@ -15,7 +15,13 @@ import { getServerSession } from "@/lib/session/get-server-session";
  * deepseek-v4-flash, gpt-5.6-luna, gpt-5.6-sol), and every time it did,
  * every new chat's title generation silently died with it.
  */
-const TITLE_MODEL_ID = "qwen3.8-flash";
+// Corrected 2026-09-25: the gateway serves `qwen3.8-flash:free`, not
+// `qwen3.8-flash`. The bare id 404'd with "No openai-chat route is
+// configured for qwen3.8-flash" (twice in production logs) while the
+// catch below swallowed it, so titles silently never generated. Verified
+// against GET /api/models, which returns exactly three ids:
+// step-5-preview, qwen3.8-flash:free, mimo-v2.6-flash:free.
+const TITLE_MODEL_ID = "qwen3.8-flash:free";
 
 /**
  * Hard cap on the title-generation call. generateText has no timeout of

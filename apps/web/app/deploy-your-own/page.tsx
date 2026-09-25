@@ -58,7 +58,17 @@ const DEPLOY_TEMPLATE_URL = (() => {
 export const metadata: Metadata = {
   title: "Deploy your own",
   description:
-    "Deploy your own copy of Entry Agent to unlock the full template.",
+    "Deploy your own copy of Entry Agent to run AI coding agents in your own Vercel project.",
+  alternates: {
+    canonical: "/deploy-your-own",
+  },
+  openGraph: {
+    url: "/deploy-your-own",
+    title: "Deploy your own Entry Agent",
+  },
+  twitter: {
+    title: "Deploy your own Entry Agent",
+  },
 };
 
 export default function DeployYourOwnPage() {

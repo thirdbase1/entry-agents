@@ -49,6 +49,10 @@ export async function generateMetadata({
 
   return {
     title: displayName,
+    description: `${displayName}'s public Entry Agent usage profile.`,
+    alternates: {
+      canonical: publicProfilePath,
+    },
     openGraph: {
       title: displayName,
       images: [`${publicProfilePath}/og${dateQuery}`],

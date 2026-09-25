@@ -45,6 +45,19 @@ const nextConfig: NextConfig = {
   // hypothetical future XSS that hasn't been found.
   async headers() {
     return [
+      // `entry-agents.dev` is canonical. Vercel already noindexes previews,
+      // but the stable production `.vercel.app` alias needs the same signal
+      // to avoid competing with the custom domain in search results.
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "entry-agents-second-chance-v2\\.vercel\\.app",
+          },
+        ],
+        headers: [{ key: "X-Robots-Tag", value: "noindex" }],
+      },
       {
         source: "/:path*",
         headers: [

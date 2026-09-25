@@ -18,6 +18,7 @@ const INDEXABLE_PATHS = [
   "/pricing",
   "/model",
   "/benchmarks",
+  "/deploy-your-own",
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

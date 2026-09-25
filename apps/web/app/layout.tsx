@@ -113,7 +113,7 @@ const structuredData = {
       "@type": "Organization",
       name: "Entry Agent",
       url: SITE_URL,
-      logo: `${SITE_URL}/favicon.ico`,
+      logo: `${SITE_URL}/entry-logo.svg`,
     },
     {
       "@type": "WebSite",

@@ -5,6 +5,16 @@ export const metadata: Metadata = {
   title: "Pricing",
   description:
     "Entry plans -- credit-based pricing, $1 in credit is $1 of usage. Checkout in Naira via Paystack.",
+  alternates: {
+    canonical: "/pricing",
+  },
+  openGraph: {
+    url: "/pricing",
+    title: "Entry Agent pricing — credit-based AI coding agent plans",
+  },
+  twitter: {
+    title: "Entry Agent pricing — credit-based AI coding agent plans",
+  },
 };
 
 export const dynamic = "force-dynamic";

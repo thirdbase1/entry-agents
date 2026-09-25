@@ -31,6 +31,18 @@ interface DailyUsageRow {
   outputTokens: number;
   messageCount: number;
   toolCallCount: number;
+  /**
+   * Billed cost in USD, summed from usage_events.cost_usd by
+   * getUsageHistory(). Null only for rows written before that column
+   * existed or where the price was unknown at the time.
+   *
+   * This is the authoritative number and is preferred over re-pricing
+   * tokens against the LIVE gateway catalogue: a model the gateway has
+   * since removed drops out of that catalogue, which is what made
+   * already-recorded usage render as "unpriced" and its dollars vanish
+   * from the running total.
+   */
+  costUsd?: number | null;
 }
 
 interface ModelUsage {
@@ -41,6 +53,8 @@ interface ModelUsage {
   outputTokens: number;
   messageCount: number;
   toolCallCount: number;
+  /** Sum of the recorded costUsd for this model over the selected rows. */
+  recordedCostUsd: number;
 }
 
 interface MergedDay {
@@ -73,6 +87,8 @@ interface CostEstimateSummary {
   amount: number;
   pricedTokens: number;
   totalTokens: number;
+  /** Tokens priced from a recorded cost rather than re-estimated. */
+  recordedTokens: number;
 }
 
 function formatDateRangeLabel(range: DateRange | undefined) {
@@ -169,6 +185,7 @@ function aggregateByModel(rows: DailyUsageRow[]): ModelUsage[] {
       existing.outputTokens += r.outputTokens;
       existing.messageCount += r.messageCount;
       existing.toolCallCount += r.toolCallCount;
+      existing.recordedCostUsd += typeof r.costUsd === "number" ? r.costUsd : 0;
     } else {
       map.set(r.modelId, {
         modelId: r.modelId,
@@ -178,6 +195,7 @@ function aggregateByModel(rows: DailyUsageRow[]): ModelUsage[] {
         outputTokens: r.outputTokens,
         messageCount: r.messageCount,
         toolCallCount: r.toolCallCount,
+        recordedCostUsd: typeof r.costUsd === "number" ? r.costUsd : 0,
       });
     }
   }
@@ -225,15 +243,27 @@ function formatUsd(amount: number): string {
 function estimateUsageCost(
   modelUsage: ModelUsage[],
   models: AvailableModel[],
-): CostEstimateSummary | undefined {
+): CostEstimateSummary {
   let amount = 0;
   let pricedTokens = 0;
+  let recordedTokens = 0;
   let totalTokens = 0;
   const modelsById = new Map(models.map((model) => [model.id, model]));
 
   for (const usage of modelUsage) {
     const modelTotalTokens = usage.inputTokens + usage.outputTokens;
     totalTokens += modelTotalTokens;
+
+    // Recorded cost wins outright. It was priced against the catalogue in
+    // force when the usage happened, so it stays correct for a model the
+    // gateway has since removed (that removal is exactly what made these
+    // rows render as "unpriced" before).
+    if (usage.recordedCostUsd > 0) {
+      amount += usage.recordedCostUsd;
+      pricedTokens += modelTotalTokens;
+      recordedTokens += modelTotalTokens;
+      continue;
+    }
 
     const cost = estimateModelUsageCost(
       usage,
@@ -248,13 +278,14 @@ function estimateUsageCost(
   }
 
   if (totalTokens <= 0) {
-    return undefined;
+    return { amount: 0, pricedTokens: 0, totalTokens: 0, recordedTokens: 0 };
   }
 
   return {
     amount,
     pricedTokens,
     totalTokens,
+    recordedTokens,
   };
 }
 
@@ -268,6 +299,19 @@ function getCostEstimateDetail(
 
   if (!costEstimate) {
     return "No model usage";
+  }
+
+  if (costEstimate.totalTokens > 0 && costEstimate.pricedTokens === 0) {
+    return "Cost not recorded for these rows";
+  }
+
+  // Every token carries a recorded charge: no live catalogue lookup was
+  // needed, so the number is billed cost rather than an estimate.
+  if (
+    costEstimate.totalTokens > 0 &&
+    costEstimate.recordedTokens === costEstimate.totalTokens
+  ) {
+    return "Billed cost, recorded when the usage happened";
   }
 
   if (costEstimate.pricedTokens <= 0) {

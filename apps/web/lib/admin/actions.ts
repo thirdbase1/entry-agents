@@ -67,6 +67,7 @@ import { getPlanDefinition, isPlanId, type PlanId } from "@/lib/billing/plans";
 import {
   getPlatformSettingsRow,
   setFreeTierGateStatus,
+  setTitleModelId,
   type PlatformSettingsRow,
 } from "@/lib/db/platform-settings";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -461,6 +462,18 @@ export async function setAdminFreeTierGateStatus(
   const adminUserId = await requireAdmin();
   const trimmedReason = reason?.trim() || null;
   await setFreeTierGateStatus(enabled, trimmedReason, adminUserId);
+}
+
+/**
+ * Overrides the model used to generate chat titles. Pass null to return to
+ * the code fallback. Unlike the old hardcoded constant, this takes effect
+ * on the next chat without a deploy -- which matters because every
+ * previous hardcoded title model was killed by its gateway route
+ * disappearing. Admin-only.
+ */
+export async function setAdminTitleModel(modelId: string | null): Promise<void> {
+  const adminUserId = await requireAdmin();
+  await setTitleModelId(modelId, adminUserId);
 }
 
 /**

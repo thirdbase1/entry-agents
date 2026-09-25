@@ -588,6 +588,15 @@ export const platformSettings = pgTable("platform_settings", {
   id: text("id").primaryKey(),
   freeTierEnabled: boolean("free_tier_enabled").notNull().default(true),
   disabledReason: text("disabled_reason"),
+  /**
+   * Model used to generate chat titles, null = code fallback
+   * (FALLBACK_TITLE_MODEL_ID in app/api/generate-title/route.ts).
+   * Admin-editable from Settings > Admin > Models so a title model can be
+   * swapped without a deploy -- the previous hardcoded ids (deepseek-v4,
+   * qwen3.8-flash, ...) each died when their gateway route disappeared
+   * and title generation silently stopped with them.
+   */
+  titleModelId: text("title_model_id"),
   updatedBy: text("updated_by").references(() => users.id, {
     onDelete: "set null",
   }),

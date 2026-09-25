@@ -428,6 +428,13 @@
       "when": 1790299000000,
       "tag": "0059_replace_removed_default_models",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790301000000,
+      "tag": "0060_add_title_model_setting",
+      "breakpoints": true
     }
   ]
 }

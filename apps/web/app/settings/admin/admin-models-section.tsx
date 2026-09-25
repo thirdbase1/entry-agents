@@ -9,6 +9,13 @@ import {
 } from "@/components/provider-icons";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -22,8 +29,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  getAdminFreeTierGateStatus,
   getAdminModelCatalog,
   setAdminModelDisabled,
+  setAdminTitleModel,
   type AdminModelCatalogRow,
 } from "@/lib/admin/actions";
 import { cn } from "@/lib/utils";
@@ -141,6 +150,8 @@ export function AdminModelsSection() {
   const [data, setData] = useState<AdminModelCatalogRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [titleModelId, setTitleModelState] = useState<string | null>(null);
+  const [titlePending, setTitlePending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +162,14 @@ export function AdminModelsSection() {
       })
       .catch(() => {
         if (!cancelled) setError("Failed to load model catalog.");
+      });
+
+    getAdminFreeTierGateStatus()
+      .then((settings) => {
+        if (!cancelled) setTitleModelState(settings.titleModelId);
+      })
+      .catch(() => {
+        // Non-fatal: the selector simply shows the default until loaded.
       });
 
     return () => {
@@ -205,6 +224,26 @@ export function AdminModelsSection() {
     }
   }
 
+  async function handleTitleModelChange(next: string) {
+    const value = next === "__default__" ? null : next;
+    const previous = titleModelId;
+    setTitleModelState(value);
+    setTitlePending(true);
+    try {
+      await setAdminTitleModel(value);
+      toast.success(
+        value ? `Chat titles will use ${value}` : "Chat titles back on the default model",
+      );
+    } catch (err) {
+      setTitleModelState(previous);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update the title model.",
+      );
+    } finally {
+      setTitlePending(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -215,6 +254,35 @@ export function AdminModelsSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
+          <div className="min-w-0 max-w-xl">
+            <p className="text-sm font-semibold">Chat title model</p>
+            <p className="text-xs text-muted-foreground">
+              Names new chats only. Defaults to step-5-preview when unset.
+              Applies to the next chat with no deploy, so a title model whose
+              gateway route disappears can be swapped immediately instead of
+              silently breaking title generation.
+            </p>
+          </div>
+          <Select
+            value={titleModelId ?? "__default__"}
+            onValueChange={handleTitleModelChange}
+            disabled={titlePending || !data}
+          >
+            <SelectTrigger className="w-60" aria-label="Chat title model">
+              <SelectValue placeholder="Select a model" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">Default (step-5-preview)</SelectItem>
+              {(data ?? []).map((row) => (
+                <SelectItem key={row.id} value={row.id}>
+                  {row.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {error ? (
           <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
             <AlertTriangle className="h-4 w-4" />

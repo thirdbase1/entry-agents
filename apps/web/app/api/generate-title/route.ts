@@ -4,6 +4,7 @@ import { gateway } from "@open-agents/agent";
 import { z } from "zod";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getTitleModelId } from "@/lib/db/platform-settings";
 
 /**
  * Model used for title generation. Owner request (2026-09-13): use
@@ -15,13 +16,14 @@ import { getServerSession } from "@/lib/session/get-server-session";
  * deepseek-v4-flash, gpt-5.6-luna, gpt-5.6-sol), and every time it did,
  * every new chat's title generation silently died with it.
  */
-// Corrected 2026-09-25: the gateway serves `qwen3.8-flash:free`, not
-// `qwen3.8-flash`. The bare id 404'd with "No openai-chat route is
-// configured for qwen3.8-flash" (twice in production logs) while the
-// catch below swallowed it, so titles silently never generated. Verified
-// against GET /api/models, which returns exactly three ids:
-// step-5-preview, qwen3.8-flash:free, mimo-v2.6-flash:free.
-const TITLE_MODEL_ID = "qwen3.8-flash:free";
+// Corrected 2026-09-25 per owner decision: use step-5-preview, a model
+// the gateway actually routes (GET /api/models returns exactly three ids:
+// step-5-preview, qwen3.8-flash:free, mimo-v2.6-flash:free). The previous
+// bare `qwen3.8-flash` 404'd with "No openai-chat route is configured for
+// qwen3.8-flash" while the catch below swallowed it, so titles silently
+// never generated. This id is now overridable from Settings > Admin >
+// Models (titleModelId) instead of being permanently hardcoded here.
+const FALLBACK_TITLE_MODEL_ID = "step-5-preview";
 
 /**
  * Hard cap on the title-generation call. generateText has no timeout of
@@ -47,8 +49,14 @@ export async function generateSessionTitle(
   if (trimmed.length === 0) return null;
 
   try {
+    // Admin-configurable (Settings > Admin > Models). Null falls back to
+    // FALLBACK_TITLE_MODEL_ID so the old "hardcoded and dead" failure mode
+    // can't come back without an explicit override.
+    const configuredTitleModel = await getTitleModelId();
+    const titleModelId = configuredTitleModel ?? FALLBACK_TITLE_MODEL_ID;
+
     const result = await generateText({
-      model: gateway(TITLE_MODEL_ID),
+      model: gateway(titleModelId),
       abortSignal: AbortSignal.timeout(TITLE_GENERATION_TIMEOUT_MS),
       prompt: `You are a developer tool that names coding sessions. Generate a concise title (max 5 words) for a coding session based on the user's first message below. The title should help the user quickly identify what this session is about at a glance. Do NOT use quotes or punctuation around the title. Respond with ONLY the title, nothing else.
 

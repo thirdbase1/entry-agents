@@ -19,6 +19,21 @@ export const DEFAULT_BOAT_BASE_PATH = "https://boat.dev/api/v1";
 /** Boat's documented `ttlSeconds` ceiling. */
 export const BOAT_MAX_TTL_SECONDS = 2_592_000;
 
+/**
+ * The ceiling we actually request, and the default when no timeout is given.
+ *
+ * Free-trial Boat accounts reject any sandbox that has auto-stop disabled:
+ * a create/resume/PATCH without a TTL comes back as
+ *   400 trial_auto_stop_required - Free-trial Sandboxes cannot run without
+ *   auto-stop. Set a TTL of 2 hours or less...
+ * and that single constraint was failing provisioning, sandbox-state
+ * persistence, auto-commit and the diff-cache refresh in production.
+ * We therefore never send `null` (unlimited) and never ask for more than
+ * 2h. Raise this only after the account is paid -- a longer TTL on a trial
+ * account reproduces the same 400.
+ */
+export const BOAT_TTL_CEILING_SECONDS = 7_200;
+
 /** Synchronous command timeout bounds (docs: 1-600s, else 400 invalid_timeout). */
 export const BOAT_MIN_COMMAND_TIMEOUT_SECONDS = 1;
 export const BOAT_MAX_COMMAND_TIMEOUT_SECONDS = 600;

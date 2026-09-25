@@ -11,7 +11,7 @@ import { packWorkspacePayload, restoreWorkspacePayload } from "../migrate.ts";
 import type { Source } from "../types.ts";
 import {
   BOAT_MAX_COMMAND_TIMEOUT_SECONDS,
-  BOAT_MAX_TTL_SECONDS,
+  BOAT_TTL_CEILING_SECONDS,
   BOAT_MIN_COMMAND_TIMEOUT_SECONDS,
   boatRequest,
   type BoatCommandResult,
@@ -541,7 +541,7 @@ export class BoatSandbox implements Sandbox {
     const base = Math.max(Date.now(), this.expiresAt ?? Date.now());
     const target = base + Math.max(0, additionalMs);
     const ttlSeconds = Math.min(
-      BOAT_MAX_TTL_SECONDS,
+      BOAT_TTL_CEILING_SECONDS,
       Math.max(1, Math.ceil((target - Date.now()) / 1000)),
     );
 

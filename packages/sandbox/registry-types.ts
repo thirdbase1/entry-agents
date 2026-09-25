@@ -100,8 +100,12 @@ export const BOAT_CAPABILITIES: SandboxCapabilities = {
   credentialBrokering: true,
   timeoutExtension: true,
   workspaceMigration: false,
-  // `ttlSeconds` caps at 2592000 (30 days); null disables auto-stop entirely.
-  maxTimeoutMs: 30 * 24 * 60 * 60 * 1000,
+  // Requested TTL is capped at 7200s (2h): trial accounts reject any
+  // sandbox without auto-stop, and reject TTLs above 2h. See
+  // BOAT_TTL_CEILING_SECONDS. This used to claim 30 days -- the API
+  // ceiling -- while we were also sending `null` (no auto-stop), which is
+  // exactly what production was failing on.
+  maxTimeoutMs: 7_200 * 1000,
 };
 
 /** Local directory + child_process. Dev/test only -- never a real session. */

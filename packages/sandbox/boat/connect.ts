@@ -2,6 +2,7 @@ import type { Sandbox } from "../interface.ts";
 import type { Source } from "../types.ts";
 import type { BoatState } from "./state.ts";
 import {
+  BOAT_TTL_CEILING_SECONDS,
   boatRequest,
   getBoatConfig,
   isBoatNotFoundError,
@@ -21,7 +22,6 @@ import {
 /** How long to poll `GET /sandboxes/{id}` before giving up. */
 const READY_TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 1_000;
-const BOAT_MAX_TTL_SECONDS = 2_592_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,11 +39,16 @@ function sleep(ms: number): Promise<void> {
  */
 const BOAT_MACHINE_TYPE = "default";
 
-function ttlSecondsFromTimeout(timeoutMs?: number): number | null {
+function ttlSecondsFromTimeout(timeoutMs?: number): number {
   if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return null;
+    // Never null: `null` means "no auto-stop", which trial accounts reject
+    // outright with 400 trial_auto_stop_required. See BOAT_TTL_CEILING_SECONDS.
+    return BOAT_TTL_CEILING_SECONDS;
   }
-  return Math.min(BOAT_MAX_TTL_SECONDS, Math.max(1, Math.ceil(timeoutMs / 1000)));
+  return Math.min(
+    BOAT_TTL_CEILING_SECONDS,
+    Math.max(1, Math.ceil(timeoutMs / 1000)),
+  );
 }
 
 async function getRecord(sandboxId: string): Promise<BoatSandboxRecord> {

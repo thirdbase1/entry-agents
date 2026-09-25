@@ -28,6 +28,10 @@ export async function generateMetadata({
   return {
     title: sharedChat?.title ?? "Shared Chat",
     description: "A shared Entry Agent chat.",
+    robots: {
+      index: false,
+      follow: false,
+    },
   };
 }
 

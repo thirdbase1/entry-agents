@@ -19,6 +19,7 @@ const INDEXABLE_PATHS = [
   "/model",
   "/benchmarks",
   "/deploy-your-own",
+  "/ai-coding-agent",
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

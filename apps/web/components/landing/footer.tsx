@@ -23,6 +23,12 @@ export function LandingFooter() {
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <Link
+                href="/ai-coding-agent"
+                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
+              >
+                AI coding agent
+              </Link>
+              <Link
                 href="/pricing"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >

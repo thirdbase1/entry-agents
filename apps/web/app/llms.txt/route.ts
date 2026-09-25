@@ -7,6 +7,7 @@ const content = `# Entry Agent
 ## Public pages
 
 - [Entry Agent](${SITE_URL}/): Product overview and sign-in.
+- [AI coding agent](${SITE_URL}/ai-coding-agent): How Entry Agent works on repository tasks.
 - [Pricing](${SITE_URL}/pricing): Credit-based plans for Entry Agent.
 - [Models](${SITE_URL}/model): Supported model prices and context windows.
 - [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from Entry Agent's own harness.

@@ -108,6 +108,20 @@ type Options = {
   autoCreatePrEnabled?: boolean;
 };
 
+/**
+ * Returned (never thrown) when a rolling usage window or the credit
+ * balance is already exhausted.
+ *
+ * Throwing here made the Workflow SDK retry a deterministic gate three
+ * times, bubble a FatalError, and kill the process with an unhandled
+ * rejection (`Node.js process exited with exit status: 128`, seen in the
+ * production log) -- and the run was marked failed even though the user
+ * had already received an accurate reply. A full window is still full on
+ * every retry, so there is nothing to retry: deliver the notice as the
+ * assistant's reply and complete the run normally.
+ */
+type UsageBlocked = { blockedNotice: string };
+
 type ChatModelRuntime = {
   selectedModelId: string;
   modelId: string;
@@ -431,7 +445,7 @@ async function resolveChatModelRuntime(params: {
   requestUrl: string;
   authSession: AuthSessionContext;
   workflowRunId: string;
-}): Promise<ChatModelRuntime> {
+}): Promise<ChatModelRuntime | UsageBlocked> {
   "use step";
 
   // Dynamic import (not a static top-of-file import) is required here:
@@ -478,16 +492,17 @@ async function resolveChatModelRuntime(params: {
   if (!isAdminUser) {
     const gate = await getFreeTierGateStatus();
     if (!gate.enabled) {
-      // Use the safe-error marker so this intentional, already-friendly
-      // message reaches the user verbatim instead of being swallowed by
-      // toFriendlyChatErrorText's generic vendor-error catch-all (see
-      // that function's docstring -- this was previously showing as
-      // "Something went wrong while generating a response" for free-tier
-      // users, which is confusing and non-actionable).
-      throw toSafeChatError(
-        gate.reason ||
+      // Returned, not thrown, for the same reason as the usage-window gate
+      // below (see UsageBlocked): this message is already user-facing and
+      // the state is deterministic, so retrying it three times could only
+      // ever produce the same answer and then kill the process. The safe-
+      // error marker is no longer needed because the value never passes
+      // through toFriendlyChatErrorText.
+      return {
+        blockedNotice:
+          gate.reason ||
           "We're at capacity right now -- please check back in a little while.",
-      );
+      };
     }
   }
 
@@ -578,11 +593,15 @@ async function resolveChatModelRuntime(params: {
     }
 
     if (balanceCents <= 0) {
-      throw toSafeChatError(
-        plan.modelAccess === "luna-only"
-          ? "Free tier ended, upgrade your account to use Entry"
-          : "You're out of credit -- add more to keep chatting.",
-      );
+      // Returned, not thrown -- see UsageBlocked. Out-of-credit is the
+      // single most common reason a turn used to die as a failed,
+      // thrice-retried run instead of simply telling the user to top up.
+      return {
+        blockedNotice:
+          plan.modelAccess === "luna-only"
+            ? "Free tier ended, upgrade your account to use Entry"
+            : "You're out of credit -- add more to keep chatting.",
+      };
     }
   } else {
     // Admins are never blocked on BALANCE, but their usage is still
@@ -622,13 +641,15 @@ async function resolveChatModelRuntime(params: {
             ? planUsageWindows.weeklyLimitCents
             : planUsageWindows.monthlyLimitCents;
       const limitUsd = (limitCents / 100).toFixed(0);
-      throw toSafeChatError(
-        exceeded === "fiveHour"
-          ? `Your Entry plan's 5-hour usage window is full -- $${limitUsd} of usage per rolling 5 hours. It refills continuously as your oldest usage slides out; try again in a little while.`
-          : exceeded === "weekly"
-            ? `Your Entry plan's weekly usage window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
-            : `Your Entry plan's monthly usage window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
-      );
+      // Returned, not thrown -- see UsageBlocked above.
+      return {
+        blockedNotice:
+          exceeded === "fiveHour"
+            ? `Your Entry plan's 5-hour usage window is full -- $${limitUsd} of usage per rolling 5 hours. It refills continuously as your oldest usage slides out; try again in a little while.`
+            : exceeded === "weekly"
+              ? `Your Entry plan's weekly usage window is full -- $${limitUsd} of usage per rolling 7 days. It refills as your oldest usage slides out of the week; try again later.`
+              : `Your Entry plan's monthly usage window is full -- $${limitUsd} of usage per rolling 30 days. It refills as your oldest usage slides out of the month; try again later.`,
+      };
     }
 
     // Accuracy (2026-09-15): the turn's window budget is the tightest
@@ -2223,6 +2244,25 @@ export async function runAgentWorkflow(options: Options) {
       vercelConnectedPromise,
       githubConnectedPromise,
     ]);
+
+    // Out-of-usage / out-of-credit is a terminal, user-actionable state,
+    // not a failure. Send the notice as the assistant's reply and let the
+    // finally-block do its normal cleanup (clear active stream, release
+    // the billing turn, close the stream) so the run COMPLETES instead of
+    // being marked failed and retried. Verified against the catch/finally
+    // below: persisting through the same path keeps the reply on screen
+    // and leaves workflowStatus at "completed".
+    if ("blockedNotice" in modelRuntime) {
+      const notice = modelRuntime.blockedNotice;
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        parts: [{ type: "text", text: notice }],
+      };
+      await sendTextMessage(writable, "setup-error", notice);
+      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+      return;
+    }
+
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
     let remainingBalanceCents = modelRuntime.startingBalanceCents;

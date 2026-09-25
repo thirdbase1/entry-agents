@@ -1144,10 +1144,17 @@ export async function POST(_req: Request, context: RouteContext) {
     return Response.json(await launchDevServerAtTarget(sandbox, target));
   } catch (error) {
     console.error("Failed to launch dev server:", error);
-    return Response.json(
-      { error: "Failed to launch dev server" },
-      { status: 500 },
-    );
+    // Surface the real cause. This is the session owner's own sandbox and
+    // every message here comes from our own launch path (no manifest,
+    // dependency install failed, port already bound, workspace still
+    // starting, provider API error), so a fixed "Failed to launch dev
+    // server" made every distinct failure look identical in the UI. The
+    // raw error is still logged server-side above.
+    const message =
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message.trim()
+        : "Failed to launch dev server";
+    return Response.json({ error: message }, { status: 500 });
   }
 }
 
@@ -1211,9 +1218,10 @@ export async function DELETE(_req: Request, context: RouteContext) {
     } satisfies DevServerStopResponse);
   } catch (error) {
     console.error("Failed to stop dev server:", error);
-    return Response.json(
-      { error: "Failed to stop dev server" },
-      { status: 500 },
-    );
+    const message =
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message.trim()
+        : "Failed to stop dev server";
+    return Response.json({ error: message }, { status: 500 });
   }
 }

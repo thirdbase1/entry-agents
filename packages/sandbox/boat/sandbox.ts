@@ -104,8 +104,9 @@ function extractSubdomain(record: BoatSandboxRecord): string | undefined {
  * - there is no fs-metadata API, so stat/access/mkdir/readdir are emulated
  *   over the documented command endpoint;
  * - `ttlSeconds` replaces Vercel's hard 45-minute cap;
- * - credential brokering (`setGitHubAuthToken`/`setVercelAuthToken`) is not
- *   offered -- Boat injects credentials through environments.
+ * - credential brokering (`setGitHubAuthToken`/`setVercelAuthToken`) is
+ *   scoped per command in memory rather than injected at the network egress
+ *   layer, because Boat offers no equivalent mechanism (see pendingEnv).
  */
 export class BoatSandbox implements Sandbox {
   readonly type = "cloud" as const;
@@ -119,6 +120,27 @@ export class BoatSandbox implements Sandbox {
   private readonly source?: Source;
   private readonly snapshotId?: string;
   private readonly hostedPorts = new Map<number, string>();
+  /**
+   * Short-lived credentials scoped to a `set*AuthToken()` window.
+   *
+   * Boat has no network-egress brokering layer like Vercel's, and its
+   * `PATCH /sandboxes` accepts only name/ttlSeconds/subdomain -- there is
+   * no way to hot-set an environment variable on a running sandbox, and
+   * account-level `POST /secrets` would push the credential into EVERY
+   * sandbox on the account. So the token lives only in this instance's
+   * memory and is prefixed onto individual commands while the window is
+   * open, then dropped by the caller's `finally` (see
+   * withTemporaryGitHubAuth). It is never written to disk, so it can never
+   * reach a Boat snapshot -- snapshots capture /home/user, not /tmp, and
+   * this touches neither.
+   *
+   * TRADEOFF vs Vercel: the token is part of the command payload sent to
+   * Boat's API and is briefly visible to `ps` inside the sandbox while that
+   * one command runs. Vercel's egress injection avoids even that. On Boat
+   * there is no documented alternative, so the window is kept exactly as
+   * narrow as the interface already requires (set -> run -> clear).
+   */
+  private readonly pendingEnv = new Map<string, string>();
   private currentState: string;
   /**
    * Current git branch of the workspace.
@@ -169,6 +191,49 @@ export class BoatSandbox implements Sandbox {
 
   get id(): string {
     return this.sandboxId;
+  }
+
+  /**
+   * Broker a short-lived GitHub token for the calling window.
+   * `undefined` clears it (callers do this in `finally`).
+   */
+  async setGitHubAuthToken(token?: string): Promise<void> {
+    this.setPendingEnv("GH_TOKEN", token);
+    // gh/git honour either; setting both keeps the CLI and git itself
+    // working regardless of which one the caller's command reaches for.
+    this.setPendingEnv("GITHUB_TOKEN", token);
+  }
+
+  /**
+   * Broker a short-lived Vercel token for the calling window, for the
+   * `vercel` CLI. Same scope and same tradeoffs as setGitHubAuthToken.
+   */
+  async setVercelAuthToken(token?: string): Promise<void> {
+    this.setPendingEnv("VERCEL_TOKEN", token);
+  }
+
+  private setPendingEnv(key: string, value?: string): void {
+    if (value) {
+      this.pendingEnv.set(key, value);
+    } else {
+      this.pendingEnv.delete(key);
+    }
+  }
+
+  /**
+   * Prefix a command with any brokered credentials using POSIX `env`, so
+   * they apply to that command only and vanish when the window closes.
+   * Returns the command untouched when nothing is pending (the overwhelmingly
+   * common case), so ordinary execs pay nothing.
+   */
+  private withPendingEnv(command: string): string {
+    if (this.pendingEnv.size === 0) return command;
+
+    const assignments = [...this.pendingEnv]
+      .map(([key, value]) => `${shellQuote(key)}=${shellQuote(value)}`)
+      .join(" ");
+
+    return `env ${assignments} ${command}`;
   }
 
   /**
@@ -397,7 +462,7 @@ export class BoatSandbox implements Sandbox {
         {
           method: "POST",
           body: {
-            command,
+            command: this.withPendingEnv(command),
             cwd,
             timeoutSeconds: toBoatTimeoutSeconds(timeoutMs),
             detached: false,
@@ -427,7 +492,7 @@ export class BoatSandbox implements Sandbox {
   ): Promise<{ commandId: string }> {
     const response = await boatRequest<BoatCommandResult>(
       `/sandboxes/${this.sandboxId}/commands`,
-      { method: "POST", body: { command, cwd, detached: true } },
+      { method: "POST", body: { command: this.withPendingEnv(command), cwd, detached: true } },
     );
 
     const processId = response.processId ?? response.pid;
@@ -572,10 +637,9 @@ export class BoatSandbox implements Sandbox {
     };
   }
 
-  // Deliberately no setGitHubAuthToken / setVercelAuthToken / killCommand:
-  // optional on the interface and unsupported by this provider. Callers
-  // that need them check the provider's capabilities first, so the failure
-  // mode is "feature unavailable" -- never "silently ran somewhere else".
+  // No killCommand: Boat exposes no endpoint to terminate a command by id
+  // (see BOAT_CAPABILITIES in ../registry-types.ts), so migration -- the
+  // only consumer of killCommand -- is gated off for this provider.
 }
 
 function toExecResult(response: BoatCommandResult): ExecResult {

@@ -93,7 +93,11 @@ export const BOAT_CAPABILITIES: SandboxCapabilities = {
   // active command, so there is nothing for the caller to kill either.
   killCommand: false,
   publicPorts: true,
-  credentialBrokering: false,
+  // GitHub and Vercel tokens are brokered per command in memory
+  // (BoatSandbox.setGitHubAuthToken / setVercelAuthToken) rather than
+  // injected at the network egress layer, because Boat offers no equivalent
+  // mechanism and its PATCH endpoint cannot hot-set env on a live sandbox.
+  credentialBrokering: true,
   timeoutExtension: true,
   workspaceMigration: false,
   // `ttlSeconds` caps at 2592000 (30 days); null disables auto-stop entirely.

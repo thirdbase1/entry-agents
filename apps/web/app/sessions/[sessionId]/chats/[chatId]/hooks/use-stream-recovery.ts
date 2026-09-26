@@ -9,6 +9,14 @@ import {
   shouldScheduleStallRecovery,
 } from "../stream-recovery-policy";
 
+/**
+ * How often a viewer re-probes the run while it believes a turn is in
+ * flight. Long enough to be invisible against the API, short enough that
+ * a returned user sees their conversation catch up without touching
+ * anything. Only controls polling -- never whether we reconnect.
+ */
+const RECOVERY_POLL_INTERVAL_MS = 10_000;
+
 type RetryChatStream = (opts?: {
   auto?: boolean;
   strategy?: "hard" | "soft";
@@ -135,12 +143,32 @@ export function useStreamRecovery({
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", maybeRecoverStream);
+
+    // A viewer re-attaches on its own schedule, not only when the tab
+    // happens to fire an event.
+    //
+    // Phones often wake with the document already "visible", and a network
+    // that never dropped never fires "online" -- so both of the triggers
+    // above can stay silent for the entire time a returned user is staring
+    // at a turn that finished hours ago. The run owns execution; this poll
+    // only mirrors it. Probing once on mount covers the refresh case, and
+    // the interval covers the case where nothing else ever changes.
+    maybeRecoverStream();
+    const recoveryPoll = isChatInFlight
+      ? window.setInterval(() => {
+          maybeRecoverStream();
+        }, RECOVERY_POLL_INTERVAL_MS)
+      : null;
+
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", maybeRecoverStream);
+      if (recoveryPoll !== null) {
+        window.clearInterval(recoveryPoll);
+      }
     };
-  }, [maybeRecoverStream, maybeRecoverStreamOnVisibility]);
+  }, [maybeRecoverStream, maybeRecoverStreamOnVisibility, isChatInFlight]);
 
   useEffect(() => {
     const isDocumentVisible =

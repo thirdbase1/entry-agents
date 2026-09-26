@@ -33,6 +33,19 @@ export interface ChatRefreshResponse {
     reasoningEffort: string | null;
     activeStreamId: string | null;
   };
+  // Durable run lifecycle -- the source of truth for "what is this chat
+  // doing?" (see chats.status). A returning viewer reads this instead of
+  // inferring state from its own optimistic overlay, which is the whole
+  // point of the client being a viewer.
+  status:
+    | "idle"
+    | "queued"
+    | "running"
+    | "sleeping"
+    | "resuming"
+    | "completed"
+    | "failed"
+    | "cancelled";
   isStreaming: boolean;
   messages: WebAgentUIMessage[];
 }
@@ -74,6 +87,7 @@ export async function GET(req: Request, context: RouteContext) {
         : null,
       activeStreamId: chatContext.chat.activeStreamId,
     },
+    status: chatContext.chat.status,
     isStreaming: chatContext.chat.activeStreamId !== null,
     messages: messages.map((message) => message.parts as WebAgentUIMessage),
   } satisfies ChatRefreshResponse);

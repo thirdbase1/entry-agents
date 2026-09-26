@@ -1227,6 +1227,39 @@ async function sendDataPart(
 }
 
 /**
+ * Writes the user's own message into the run stream.
+ *
+ * Stream writes must happen in a step ("Streams Cannot Be Used Directly
+ * in Workflow Context"), which is why this is not inlined in
+ * runAgentWorkflow.
+ *
+ * The run stream carries assistant output only, so replaying it cannot
+ * reconstruct turn order on its own -- the SDK docs are explicit: "user
+ * messages are not persisted to the stream by default, and need to be
+ * explicitly persisted separately" (@workflow/ai docs/ai/chat-session-
+ * modeling.mdx:146). Emitting a marker in the workflow's first statements
+ * means a reconnecting viewer can rebuild the turn from the stream alone
+ * even when its SSR transcript is stale, instead of depending on a merge
+ * that only the client can perform.
+ */
+async function sendUserMessageMarker(
+  writable: Writable,
+  marker: { id: string; text: string },
+) {
+  "use step";
+  const writer = writable.getWriter();
+  try {
+    await writer.write({
+      type: "data-user-message",
+      data: marker,
+      id: marker.id,
+    } as UIMessageChunk);
+  } finally {
+    writer.releaseLock();
+  }
+}
+
+/**
  * Runs the actual GitHub commit/push work for the agent's
  * `github_commit_and_push` tool as a step, NOT inline in the workflow
  * function. `performAutoCommit` (and everything it touches -- the
@@ -2061,6 +2094,26 @@ export async function runAgentWorkflow(options: Options) {
     latestMessage.role === "assistant"
       ? latestMessage.id
       : (options.assistantId ?? generateIdAi());
+
+  // Phase 2b: put the user's message into the run stream before any step
+  // runs, so a viewer replaying the stream sees the turn's opening rather
+  // than an assistant response with no visible cause. see
+  // sendUserMessageMarker for why this cannot be implicit.
+  if (latestMessage.role === "user") {
+    const userText = (latestMessage.parts ?? [])
+      .map((part) =>
+        part.type === "text" && "text" in part ? String(part.text) : "",
+      )
+      .filter(Boolean)
+      .join("\n")
+      // Bound it: the marker exists to restore ordering, not to duplicate
+      // the whole prompt into a second place in the stream.
+      .slice(0, 4000);
+    await sendUserMessageMarker(writable, {
+      id: latestMessage.id,
+      text: userText,
+    });
+  }
 
   const inputMessagesPersistPromise = options.inputMessagesPersisted
     ? Promise.resolve()

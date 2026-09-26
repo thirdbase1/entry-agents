@@ -50,6 +50,12 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const run = getRun(chat.activeStreamId);
     await run.cancel();
+    // Persist the terminal state here rather than relying on the cancelled
+    // workflow to do it: a cancel takes effect at the next suspension point
+    // and its finally-block may never run, which would leave the chat
+    // reading "running" forever to every viewer.
+    const { setChatRunStatus } = await import("@/lib/db/sessions");
+    await setChatRunStatus(chatId, "cancelled").catch(() => {});
   } catch (error) {
     console.error(
       `[workflow] Failed to cancel workflow run for chat ${chatId}:`,

@@ -667,6 +667,27 @@ export async function setChatRunStatus(
 }
 
 /**
+ * Marks a chat `failed` ONLY if a run still owns it.
+ *
+ * Terminal states are written where they are known -- completed by
+ * persistFinalAssistantMessage, cancelled by the stop route -- so this is
+ * the fallback for a turn that ended abnormally. The status guard is the
+ * whole point: without it, the finally-block would stomp a successful
+ * or already-cancelled outcome.
+ */
+export async function failActiveChatRun(chatId: string): Promise<void> {
+  await db
+    .update(chats)
+    .set({ status: "failed", runStatusUpdatedAt: new Date() })
+    .where(
+      and(
+        eq(chats.id, chatId),
+        inArray(chats.status, ACTIVE_CHAT_RUN_STATUSES),
+      ),
+    );
+}
+
+/**
  * Idempotently claims the activeStreamId slot for the given workflow run.
  *
  * Returns true when the slot is now owned by `workflowRunId` — i.e. it was

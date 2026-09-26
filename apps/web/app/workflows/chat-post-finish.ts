@@ -240,6 +240,12 @@ export async function persistFinalAssistantMessage(
     } else if (result.status === "inserted") {
       await updateChatAssistantActivity(chatId, new Date());
     }
+
+    // Terminal transition, deliberately AFTER the transcript and stream
+    // pointer are durable: a viewer must never read "completed" while
+    // active_stream_id still points at a run it believes is live.
+    const { setChatRunStatus } = await import("@/lib/db/sessions");
+    await setChatRunStatus(chatId, "completed");
   } catch (error) {
     console.error("[workflow] Failed to persist final assistant message:", error);
   }
@@ -297,6 +303,14 @@ export async function clearActiveStream(
       // Only clear if this workflow's run ID is still the active one.
       // Prevents a late-finishing workflow from clearing a newer workflow's ID.
       await compareAndSetChatActiveStreamId(chatId, workflowRunId, null);
+
+      // Terminal fallback. "completed" is written by
+      // persistFinalAssistantMessage and "cancelled" by the stop route;
+      // anything still marked active here means the turn ended abnormally
+      // (crash, thrown step, exhausted retries). failActiveChatRun guards
+      // on status so it cannot stomp a success that already landed.
+      const { failActiveChatRun } = await import("@/lib/db/sessions");
+      await failActiveChatRun(chatId).catch(() => {});
       return;
     } catch (error) {
       if (attempt === ACTIVE_STREAM_CLEAR_MAX_ATTEMPTS) {
@@ -383,6 +397,13 @@ export async function claimActiveStream(
   ) {
     try {
       const ok = await claimChatActiveStreamId(chatId, workflowRunId);
+      if (ok) {
+        // The run owns this chat from here on. Committing "running"
+        // alongside activeStreamId means a viewer never sees a claimed
+        // stream with no lifecycle state.
+        const { setChatRunStatus } = await import("@/lib/db/sessions");
+        await setChatRunStatus(chatId, "running").catch(() => {});
+      }
       if (!ok) {
         console.warn(
           "[workflow] activeStreamId slot owned by a different run:",

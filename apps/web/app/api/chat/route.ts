@@ -157,6 +157,14 @@ export async function POST(req: Request) {
   // workflow already self-claimed it from inside its first step.
   const claimed = await claimChatActiveStreamId(chatId, run.runId);
 
+  if (claimed) {
+    // Lifecycle: the run exists but has not started its first step yet.
+    // claimActiveStream flips it to "running"; a viewer reading "queued"
+    // in that window shows an honest "starting" rather than nothing.
+    const { setChatRunStatus } = await import("@/lib/db/sessions");
+    await setChatRunStatus(chatId, "queued").catch(() => {});
+  }
+
   if (!claimed) {
     // Another request or workflow run owns the slot — cancel our duplicate.
     try {

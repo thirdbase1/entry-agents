@@ -229,7 +229,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     priceUsdCents: 500, // $5/mo
     creditGrantCents: 1000, // $10 credit (2x)
     modelAccess: "all",
-    bachsProductId: null,
+    bachsProductId: "prod_cf3431b0d90141368721",
   },
   goat: {
     id: "goat",
@@ -249,7 +249,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       weeklyLimitCents: 2500, // $25 per trailing 7 days
       monthlyLimitCents: 5000, // $50 per trailing 30 days
     },
-    bachsProductId: null,
+    bachsProductId: "prod_bf5c08cc52e447ecacdc",
   },
   pro: {
     id: "pro",
@@ -259,7 +259,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     // ladder stays ordered above GOAT ($13 buys $50); the old 2x $30 grant
     // was strictly dominated by GOAT at two-thirds of the price.
     modelAccess: "all",
-    bachsProductId: null,
+    bachsProductId: "prod_7db0c6044eb54e9497e3",
   },
   max: {
     id: "max",
@@ -268,7 +268,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     creditGrantCents: 18000, // $180 credit (4.5x) -- retuned 2026-09-15,
     // same reason as Pro: the old flat-2x grant at $35 was dominated by GOAT.
     modelAccess: "all",
-    bachsProductId: null,
+    bachsProductId: "prod_7436be95761d4ab5a071",
   },
 };
 

@@ -2474,6 +2474,28 @@ export async function runAgentWorkflow(options: Options) {
         shouldRefreshDiffCacheForParts(pendingAssistantResponse.parts);
       originalMessagesForStep = [pendingAssistantResponse];
       modelMessages.push(...result.responseMessages);
+
+      // Durable mid-turn checkpoint.
+      //
+      // Before this, a turn's assistant output existed only in the run
+      // stream until persistFinalAssistantMessage ran at the very end --
+      // so a viewer returning mid-turn could recover progress only by
+      // attaching a live stream, and a turn that died here left nothing
+      // in the transcript. Persisting after every step means the DB
+      // always holds the latest completed step's output.
+      //
+      // persistAssistantMessage is deliberately the right primitive: an
+      // idempotent scoped upsert (upsertChatMessageScoped) that does NOT
+      // clear activeStreamId and does NOT touch run status, so a
+      // checkpoint can never make a live turn look finished. It swallows
+      // its own errors too, so a transient DB blip costs one checkpoint,
+      // not the turn.
+      if (pendingAssistantResponse) {
+        await persistAssistantMessage(
+          options.chatId,
+          pendingAssistantResponse,
+        );
+      }
       // See stripDanglingToolCalls's own comment above -- guards against
       // AI_MissingToolResultsError poisoning every subsequent step of
       // this same turn.

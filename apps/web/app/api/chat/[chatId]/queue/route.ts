@@ -26,6 +26,13 @@ const MAX_TEXT_LENGTH = 8_000;
 type QueuedPrompt = {
   id: string;
   text: string;
+  /**
+   * The composer's full message payload, not just its text. The queue
+   * has to be re-sendable after a reload or on another device, and the
+   * composer payload (attachments, model choice, structured content) is
+   * what /api/chat actually accepts -- text alone cannot be replayed.
+   */
+  payload: unknown;
   modelId?: string | null;
   createdAt: string;
 };
@@ -39,7 +46,9 @@ function normalize(value: unknown): QueuedPrompt[] {
       !!item &&
       typeof item === "object" &&
       typeof (item as QueuedPrompt).id === "string" &&
-      typeof (item as QueuedPrompt).text === "string",
+      typeof (item as QueuedPrompt).text === "string" &&
+      !!(item as QueuedPrompt).payload &&
+      typeof (item as QueuedPrompt).payload === "object",
   );
 }
 
@@ -99,6 +108,7 @@ export async function POST(req: Request, context: RouteContext) {
 
   const body = (await req.json().catch(() => ({}))) as {
     text?: unknown;
+    payload?: unknown;
     modelId?: unknown;
     id?: unknown;
   };
@@ -106,6 +116,12 @@ export async function POST(req: Request, context: RouteContext) {
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) {
     return Response.json({ error: "text is required" }, { status: 400 });
+  }
+  if (!body.payload || typeof body.payload !== "object") {
+    return Response.json(
+      { error: "payload is required -- a queued message must be re-sendable" },
+      { status: 400 },
+    );
   }
   if (text.length > MAX_TEXT_LENGTH) {
     return Response.json(
@@ -125,6 +141,7 @@ export async function POST(req: Request, context: RouteContext) {
   const prompt: QueuedPrompt = {
     id: typeof body.id === "string" && body.id ? body.id : crypto.randomUUID(),
     text,
+    payload: body.payload,
     modelId: typeof body.modelId === "string" ? body.modelId : null,
     createdAt: new Date().toISOString(),
   };

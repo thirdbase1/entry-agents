@@ -2121,10 +2121,42 @@ export function SessionChatContent({
     [],
   );
 
-  // Queued prompts are scoped to this chat -- don't let them leak into a
-  // different chat if the user navigates away with prompts still queued.
+  // Server-backed queue: hydrate from the row instead of wiping.
+  //
+  // This effect used to call setQueuedMessages([]) on every chat change,
+  // so switching away, reloading, or opening another device discarded
+  // anything typed during a long turn. Local state is now only a render
+  // cache of GET /api/chat/:id/queue.
   useEffect(() => {
+    let cancelled = false;
     setQueuedMessages([]);
+    fetch(`/api/chat/${chatInfo.id}/queue`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (data: {
+          queued?: Array<{
+            id: string;
+            text: string;
+            payload: ComposerMessagePayload;
+          }>;
+        } | null) => {
+          if (cancelled || !data?.queued?.length) return;
+          setQueuedMessages(
+            data.queued.map((item) => ({
+              id: item.id,
+              displayText: item.text,
+              payload: item.payload,
+            })),
+          );
+        },
+      )
+      .catch(() => {
+        // A failed hydration must not break the composer -- the user just
+        // sees an empty queue, exactly as before this existed.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [chatInfo.id]);
 
   function buildComposerMessagePayload(): {
@@ -2242,14 +2274,31 @@ export function SessionChatContent({
     payload: ComposerMessagePayload;
     displayText: string;
   }) {
-    setQueuedMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), ...built },
-    ]);
+    const id = crypto.randomUUID();
+    setQueuedMessages((prev) => [...prev, { id, ...built }]);
+    // Mirror to the server so the prompt survives a reload, a chat switch,
+    // or a different device. Local state updates first so the queue panel
+    // never waits on the network; a failed POST leaves it local-only,
+    // which is the same behaviour this had before it was server-backed.
+    void fetch(`/api/chat/${chatInfo.id}/queue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id,
+        text: built.displayText,
+        payload: built.payload,
+      }),
+    }).catch(() => {});
   }
 
   function removeQueuedMessage(id: string) {
     setQueuedMessages((prev) => prev.filter((item) => item.id !== id));
+    // Removing locally alone would leave it on the row, so it would come
+    // back on the next hydration -- the user would see a prompt they
+    // already discarded.
+    void fetch(`/api/chat/${chatInfo.id}/queue?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => {});
   }
 
   // Edits are only ever applied to a message that hasn't been sent yet
@@ -2330,8 +2379,21 @@ export function SessionChatContent({
     }
 
     const [next, ...rest] = queuedMessages;
-    setQueuedMessages(rest);
-    void submitBuiltMessage(next);
+    // Delete from the server BEFORE sending, and only submit on success.
+    // Sending first would risk the classic double-send: the message goes
+    // out, the delete fails, and a later reload resurrects it from the row
+    // and sends it again. If the delete fails we leave it queued and the
+    // drain retries on the next state change or reload.
+    void fetch(
+      `/api/chat/${chatInfo.id}/queue?id=${encodeURIComponent(next.id)}`,
+      { method: "DELETE" },
+    )
+      .then((res) => {
+        if (!res.ok) return;
+        setQueuedMessages(rest);
+        void submitBuiltMessage(next);
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- submitBuiltMessage/buildComposerMessagePayload close over the latest render's state; only the gating signals and queue contents should retrigger this drain.
   }, [isChatInFlight, hasPendingResponse, queuedMessages]);
 

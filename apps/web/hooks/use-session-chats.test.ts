@@ -19,6 +19,8 @@ function createChat(
     modelId: "anthropic/claude-haiku-4.5",
     reasoningEffort: null,
     activeStreamId: null,
+    status: "idle",
+    runStatusUpdatedAt: null,
     lastAssistantMessageAt: null,
     createdAt: now,
     updatedAt: now,

@@ -301,6 +301,31 @@ export const chats = pgTable(
     // the per-model capability catalog and validation.
     reasoningEffort: text("reasoning_effort"),
     activeStreamId: text("active_stream_id"),
+    // Durable run lifecycle, written ONLY by the workflow (plus the API
+    // route that enqueues it) -- never by the client. This, not
+    // active_stream_id, is what a viewer trusts: the client is a viewer,
+    // the workflow owns execution. "idle" = no run; "queued" = enqueued
+    // but not yet started; "running"; "sleeping"/"resuming" = suspended
+    // on a wait (sleep/hook) -- declared now, wired when the first real
+    // wait lands; terminal = completed|failed|cancelled.
+    status: text("status", {
+      enum: [
+        "idle",
+        "queued",
+        "running",
+        "sleeping",
+        "resuming",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+    })
+      .notNull()
+      .default("idle"),
+    // When `status` last changed. Lets a viewer detect a wedged run
+    // (status=running but untouched for a long time) without asking the
+    // Workflow SDK for run state on every poll.
+    runStatusUpdatedAt: timestamp("run_status_updated_at"),
     lastAssistantMessageAt: timestamp("last_assistant_message_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

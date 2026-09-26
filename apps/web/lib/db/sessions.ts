@@ -14,6 +14,21 @@ import {
   shares,
 } from "./schema";
 
+/**
+ * True when a run owns this chat: either the stream pointer is set, or the
+ * lifecycle status says a run is live.
+ *
+ * `activeStreamId` stays in the disjunction purely as a rollout safety net.
+ * Migration 0062 backfills nothing, so every pre-existing row reads
+ * status='idle' -- without this, a turn already in flight when the deploy
+ * lands would flip to "not streaming" mid-response. Once every active row
+ * carries a real status the disjunct is redundant; it costs nothing.
+ */
+const activeStreamOrLiveStatusSql = sql<boolean>`(
+  ${chats.activeStreamId} IS NOT NULL
+  OR ${chats.status} IN ('queued', 'running', 'sleeping', 'resuming')
+)`;
+
 export function normalizeLegacySandboxState(
   sandboxState: unknown,
 ): SandboxState | null | undefined {
@@ -261,7 +276,7 @@ export async function getSessionsWithUnreadByUserId(
           ELSE false
         END
       ), false)`,
-      hasStreaming: sql<boolean>`COALESCE(BOOL_OR(${chats.activeStreamId} IS NOT NULL), false)`,
+      hasStreaming: sql<boolean>`COALESCE(BOOL_OR(${activeStreamOrLiveStatusSql}), false)`,
       latestChatId: sql<string | null>`(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)
@@ -520,6 +535,8 @@ export async function getChatSummariesBySessionId(
       modelId: chats.modelId,
       reasoningEffort: chats.reasoningEffort,
       activeStreamId: chats.activeStreamId,
+      status: chats.status,
+      runStatusUpdatedAt: chats.runStatusUpdatedAt,
       lastAssistantMessageAt: chats.lastAssistantMessageAt,
       createdAt: chats.createdAt,
       updatedAt: chats.updatedAt,
@@ -531,7 +548,7 @@ export async function getChatSummariesBySessionId(
           ELSE false
         END
       `,
-      isStreaming: sql<boolean>`${chats.activeStreamId} IS NOT NULL`,
+      isStreaming: sql<boolean>`${activeStreamOrLiveStatusSql}`,
     })
     .from(chats)
     .leftJoin(
@@ -611,6 +628,42 @@ export async function compareAndSetChatActiveStreamId(
     .returning({ id: chats.id });
 
   return Boolean(updated);
+}
+
+/**
+ * Durable chat lifecycle. See `chats.status` in schema.ts.
+ *
+ * ONLY the workflow (and the API route that enqueues it) call this -- the
+ * client never writes run state, it reads it. Terminal transitions belong
+ * in the same transaction as the final message persist + activeStreamId
+ * clear so status, transcript and stream pointer cannot disagree.
+ */
+export type ChatRunStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "sleeping"
+  | "resuming"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+/** Statuses that mean "a run owns this chat right now". */
+export const ACTIVE_CHAT_RUN_STATUSES: ChatRunStatus[] = [
+  "queued",
+  "running",
+  "sleeping",
+  "resuming",
+];
+
+export async function setChatRunStatus(
+  chatId: string,
+  status: ChatRunStatus,
+): Promise<void> {
+  await db
+    .update(chats)
+    .set({ status, runStatusUpdatedAt: new Date() })
+    .where(eq(chats.id, chatId));
 }
 
 /**

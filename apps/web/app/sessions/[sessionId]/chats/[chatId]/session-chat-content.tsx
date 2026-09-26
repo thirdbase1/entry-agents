@@ -1844,14 +1844,26 @@ export function SessionChatContent({
       return;
     }
 
+    // The server says no run owns this chat. If the local view still
+    // thinks a turn is in flight -- a stream that died without surfacing
+    // an error -- it would keep showing a spinner the run cannot satisfy.
+    // Status is the source of truth, so adopt it rather than waiting for
+    // an event that may never come.
+    setHasPendingResponse(false);
+
     clearError();
     setMessages(data.messages);
   }, [chatInfo.id, clearError, session.id, setMessages]);
 
   const refreshAfterTabResume = useCallback(async (): Promise<void> => {
+    // Visibility gates the RATE at which we refresh, never WHETHER we do.
+    // This previously also required document.hasFocus(), which meant an
+    // unfocused-but-visible tab (or a phone screen that woke without
+    // stealing focus) never reconciled -- the user came back to a stale
+    // transcript with no way to trigger one except clicking around.
     if (
       typeof document !== "undefined" &&
-      (document.visibilityState !== "visible" || !document.hasFocus())
+      document.visibilityState !== "visible"
     ) {
       return;
     }

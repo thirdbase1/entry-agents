@@ -1,6 +1,6 @@
 /**
- * The four subscription plans Entry offers, backed by Paystack for
- * checkout/renewal (see lib/billing/paystack.ts) and a per-user credit
+ * The four subscription plans Entry offers, backed by Bachs for
+ * checkout/renewal (see lib/billing/bachs.ts) and a per-user credit
  * ledger (see lib/billing/credit-ledger.ts) for enforcement.
  *
  * Design (owner-confirmed 2026-08-16):
@@ -205,11 +205,13 @@ export interface PlanDefinition {
    */
   usageWindows?: PlanUsageWindows;
   /**
-   * Paystack plan code, created once via lib/billing/paystack.ts's
-   * ensurePaystackPlans() and then pinned here. Null until that's run
-   * against a real Paystack account.
+   * Bachs product id (prod_...), created once from this catalog and then
+   * pinned here. A product needs a billing_cycle for its checkout to
+   * become a subscription checkout -- Bachs has no create-subscription
+   * endpoint. Null means "not configured yet": the checkout route refuses
+   * to sell the plan rather than charging a one-off that never renews.
    */
-  paystackPlanCode: string | null;
+  bachsProductId: string | null;
 }
 
 export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
@@ -219,7 +221,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     priceUsdCents: 0,
     creditGrantCents: 100, // $1 one-time trial
     modelAccess: "luna-only",
-    paystackPlanCode: null,
+    bachsProductId: null,
   },
   plus: {
     id: "plus",
@@ -227,7 +229,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     priceUsdCents: 500, // $5/mo
     creditGrantCents: 1000, // $10 credit (2x)
     modelAccess: "all",
-    paystackPlanCode: null,
+    bachsProductId: null,
   },
   goat: {
     id: "goat",
@@ -247,7 +249,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       weeklyLimitCents: 2500, // $25 per trailing 7 days
       monthlyLimitCents: 5000, // $50 per trailing 30 days
     },
-    paystackPlanCode: null,
+    bachsProductId: null,
   },
   pro: {
     id: "pro",
@@ -257,7 +259,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     // ladder stays ordered above GOAT ($13 buys $50); the old 2x $30 grant
     // was strictly dominated by GOAT at two-thirds of the price.
     modelAccess: "all",
-    paystackPlanCode: null,
+    bachsProductId: null,
   },
   max: {
     id: "max",
@@ -266,7 +268,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     creditGrantCents: 18000, // $180 credit (4.5x) -- retuned 2026-09-15,
     // same reason as Pro: the old flat-2x grant at $35 was dominated by GOAT.
     modelAccess: "all",
-    paystackPlanCode: null,
+    bachsProductId: null,
   },
 };
 

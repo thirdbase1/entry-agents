@@ -1,10 +1,15 @@
 import { PLAN_CATALOG, PLAN_IDS } from "@/lib/billing/plans";
-import { getUsdToNgnRate } from "@/lib/billing/fx";
 
-/** Public (no auth) -- just pricing info, used by the /billing/plans page to show live NGN prices before checkout. */
+/**
+ * Public (no auth) -- just pricing info for the /pricing page.
+ *
+ * USD only. The NGN/USD rate that used to be served here existed purely
+ * because the Paystack account could only charge in NGN; Bachs prices in
+ * USD and converts to the customer's local currency at checkout
+ * (adaptive_pricing is on for this account), so there is no rate for the
+ * client to display or for us to be wrong about.
+ */
 export async function GET() {
-  const rate = await getUsdToNgnRate();
-
   const plans = PLAN_IDS.map((id) => {
     const plan = PLAN_CATALOG[id];
     return {
@@ -13,9 +18,8 @@ export async function GET() {
       priceUsdCents: plan.priceUsdCents,
       creditGrantCents: plan.creditGrantCents,
       modelAccess: plan.modelAccess,
-      priceNgnKobo: Math.round(plan.priceUsdCents * rate),
     };
   });
 
-  return Response.json({ plans, usdToNgnRate: rate });
+  return Response.json({ plans });
 }

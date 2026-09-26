@@ -1,8 +1,7 @@
 import { nanoid } from "nanoid";
 import { getServerSession } from "@/lib/session/get-server-session";
-import { initializeTransaction } from "@/lib/billing/paystack";
+import { createCheckoutSession } from "@/lib/billing/bachs";
 import { PLAN_CATALOG, isPlanId } from "@/lib/billing/plans";
-import { usdCentsToNgnKobo } from "@/lib/billing/fx";
 
 interface CheckoutRequest {
   /** One of "plus" | "goat" | "pro" | "max" for a subscription checkout. */
@@ -11,6 +10,19 @@ interface CheckoutRequest {
   topupAmountCents?: number;
 }
 
+/**
+ * Starts a Bachs hosted checkout.
+ *
+ * The whole NGN/USD bridge that used to live here is gone: Bachs prices
+ * in USD and, with adaptive_pricing enabled on the account (confirmed via
+ * GET /v1/accounts/me), converts to whatever currency the customer pays
+ * in. So the amount we quote and the amount we credit are the same number
+ * -- there is no FX drift window to close with metadata any more, and
+ * usdAmountCents now exists only as a belt-and-braces copy of the amount.
+ *
+ * Fulfilment still comes from the webhook; the redirect only paints the
+ * result. See lib/billing/bachs.ts for the contract details.
+ */
 export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user?.id || !session.user.email) {
@@ -19,7 +31,8 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as CheckoutRequest;
   const origin = new URL(req.url).origin;
-  const callbackUrl = `${origin}/billing/callback`;
+  const successUrl = `${origin}/billing/callback`;
+  const cancelUrl = `${origin}/pricing`;
 
   try {
     if (body.topupAmountCents) {
@@ -34,33 +47,25 @@ export async function POST(req: Request) {
       }
 
       const reference = `topup_${session.user.id}_${nanoid()}`;
-      // This Paystack account only has NGN enabled (confirmed against
-      // the live API -- USD returns "unsupported_currency"), so every
-      // charge goes out in NGN at the live USD->NGN rate. The USD
-      // amount is stashed in metadata so the webhook credits the exact
-      // USD value the user saw at checkout, immune to any FX drift
-      // between initialize and the customer completing payment.
-      const { ngnKobo, rate } = await usdCentsToNgnKobo(body.topupAmountCents);
-      const result = await initializeTransaction({
-        email: session.user.email,
-        amountCents: ngnKobo,
-        currency: "NGN",
+      const result = await createCheckoutSession({
         reference,
-        callbackUrl,
+        email: session.user.email,
+        amountCents: body.topupAmountCents,
+        successUrl,
+        cancelUrl,
         metadata: {
           userId: session.user.id,
           kind: "topup",
-          usdAmountCents: body.topupAmountCents,
-          usdToNgnRateAtCheckout: rate,
+          usdAmountCents: String(body.topupAmountCents),
         },
       });
 
       return Response.json({
-        ...result,
+        checkoutId: result.checkoutId,
+        checkoutUrl: result.checkoutUrl,
+        reference,
         usdAmountCents: body.topupAmountCents,
-        ngnAmountKobo: ngnKobo,
-        usdToNgnRate: rate,
-        currency: "NGN",
+        currency: "USD",
       });
     }
 
@@ -72,40 +77,46 @@ export async function POST(req: Request) {
     }
 
     const plan = PLAN_CATALOG[body.planId];
+
+    // A subscription MUST ride a recurring product: Bachs has no
+    // create-subscription endpoint, and a cart containing a product with a
+    // billing_cycle is what turns the checkout into a subscription
+    // checkout. Without a product id we would silently charge a one-off
+    // amount and leave the user on Free -- so refuse loudly instead.
+    if (!plan.bachsProductId) {
+      return Response.json(
+        {
+          error: `Plan "${plan.id}" has no Bachs product configured. Create a recurring product for it in the Bachs dashboard and set bachsProductId in lib/billing/plans.ts.`,
+        },
+        { status: 500 },
+      );
+    }
+
     const reference = `sub_${plan.id}_${session.user.id}_${nanoid()}`;
-    const { ngnKobo, rate } = await usdCentsToNgnKobo(plan.priceUsdCents);
-    const result = await initializeTransaction({
-      email: session.user.email,
-      amountCents: ngnKobo,
-      currency: "NGN",
+    const result = await createCheckoutSession({
       reference,
-      callbackUrl,
+      email: session.user.email,
+      amountCents: plan.priceUsdCents,
+      productId: plan.bachsProductId,
+      successUrl,
+      cancelUrl,
       metadata: {
         userId: session.user.id,
         kind: "subscription",
         planId: plan.id,
-        usdAmountCents: plan.priceUsdCents,
-        usdToNgnRateAtCheckout: rate,
+        usdAmountCents: String(plan.priceUsdCents),
       },
-      // Paystack recurring Plans are themselves pinned to one currency
-      // (would need a separate NGN-denominated Plan per tier to use
-      // planCode here) -- until ensurePaystackPlans() is re-run for
-      // NGN, renewals are handled by re-charging the saved
-      // authorization from the webhook side rather than a native
-      // Paystack subscription. Omit planCode so this charges as a
-      // plain one-off transaction; grantSubscriptionRenewal() below
-      // still applies the plan + credit correctly off the webhook.
     });
 
     return Response.json({
-      ...result,
+      checkoutId: result.checkoutId,
+      checkoutUrl: result.checkoutUrl,
+      reference,
       usdAmountCents: plan.priceUsdCents,
-      ngnAmountKobo: ngnKobo,
-      usdToNgnRate: rate,
-      currency: "NGN",
+      currency: "USD",
     });
   } catch (error) {
-    console.error("[billing] checkout initialization failed:", error);
+    console.error("[billing] checkout creation failed:", error);
     return Response.json(
       {
         error: error instanceof Error ? error.message : "Checkout failed",

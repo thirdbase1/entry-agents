@@ -25,7 +25,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
-  // --- Billing (Paystack-backed credit plans) ---
+  // --- Billing (Bachs-backed credit plans) ---
   // "free" | "plus" | "goat" | "pro" | "max" -- see lib/billing/plans.ts for the
   // catalog (price, credit grant, model access) each id maps to.
   plan: text("plan", { enum: ["free", "plus", "goat", "pro", "max"] })
@@ -49,8 +49,10 @@ export const users = pgTable("users", {
   // When the current paid billing cycle renews/re-grants credit. Null for
   // free-plan users (no recurring cycle).
   billingCycleAnchor: timestamp("billing_cycle_anchor"),
-  paystackCustomerCode: text("paystack_customer_code"),
-  paystackSubscriptionCode: text("paystack_subscription_code"),
+  // Bachs customer record (cust_...). Renamed from paystack_customer_code
+  // when the provider was swapped; same meaning, provider-neutral name.
+  billingCustomerCode: text("billing_customer_code"),
+  billingSubscriptionCode: text("billing_subscription_code"),
   // Per-user turn lock (billing correctness): holds the workflowRunId of
   // whichever chat turn is currently allowed to spend this user's
   // balance. Prevents two concurrent turns (e.g. two open tabs/chats)
@@ -631,26 +633,29 @@ export const creditTransactions = pgTable(
     balanceAfterCents: integer("balance_after_cents").notNull(),
     description: text("description"),
     modelId: text("model_id"),
-    paystackReference: text("paystack_reference"),
+    billingReference: text("billing_reference"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("credit_transactions_user_id_idx").on(table.userId)],
 );
 
-// --- Billing: idempotency + audit log for inbound Paystack webhooks ---
-export const paystackWebhookEvents = pgTable(
-  "paystack_webhook_events",
+// --- Billing: idempotency + audit log for inbound provider webhooks ---
+// `eventKey` is the dedupe value: the Bachs `event.id` (evt_...) for
+// delivery dedupe, or a derived key like `collection.succeeded:{checkout}`
+// where we want to claim a business action rather than a delivery. The
+// unique index below IS the idempotency mechanism -- both the webhook and
+// the callback verify path race on it, first writer wins.
+export const billingWebhookEvents = pgTable(
+  "billing_webhook_events",
   {
     id: text("id").primaryKey(),
-    paystackEventId: text("paystack_event_id").notNull(),
+    eventKey: text("event_key").notNull(),
     eventType: text("event_type").notNull(),
     payload: jsonb("payload"),
     processedAt: timestamp("processed_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("paystack_webhook_events_event_id_idx").on(
-      table.paystackEventId,
-    ),
+    uniqueIndex("billing_webhook_events_event_key_idx").on(table.eventKey),
   ],
 );
 

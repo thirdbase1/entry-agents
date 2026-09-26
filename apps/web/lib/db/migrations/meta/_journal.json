@@ -435,6 +435,13 @@
       "when": 1790301000000,
       "tag": "0060_add_title_model_setting",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1790340000000,
+      "tag": "0061_billing_provider_rename",
+      "breakpoints": true
     }
   ]
 }

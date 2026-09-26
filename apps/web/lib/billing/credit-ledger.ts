@@ -15,8 +15,8 @@ export interface UserBillingState {
   creditBalanceCents: number;
   planGrantBalanceCents: number;
   billingCycleAnchor: Date | null;
-  paystackCustomerCode: string | null;
-  paystackSubscriptionCode: string | null;
+  billingCustomerCode: string | null;
+  billingSubscriptionCode: string | null;
 }
 
 export async function getUserBillingState(
@@ -28,8 +28,8 @@ export async function getUserBillingState(
       creditBalanceCents: users.creditBalanceCents,
       planGrantBalanceCents: users.planGrantBalanceCents,
       billingCycleAnchor: users.billingCycleAnchor,
-      paystackCustomerCode: users.paystackCustomerCode,
-      paystackSubscriptionCode: users.paystackSubscriptionCode,
+      billingCustomerCode: users.billingCustomerCode,
+      billingSubscriptionCode: users.billingSubscriptionCode,
     })
     .from(users)
     .where(eq(users.id, userId));
@@ -43,8 +43,8 @@ export async function getUserBillingState(
     creditBalanceCents: row.creditBalanceCents,
     planGrantBalanceCents: row.planGrantBalanceCents,
     billingCycleAnchor: row.billingCycleAnchor,
-    paystackCustomerCode: row.paystackCustomerCode,
-    paystackSubscriptionCode: row.paystackSubscriptionCode,
+    billingCustomerCode: row.billingCustomerCode,
+    billingSubscriptionCode: row.billingSubscriptionCode,
   };
 }
 
@@ -160,7 +160,7 @@ export type CreditTransactionType =
 interface LedgerEntryOptions {
   description?: string;
   modelId?: string;
-  paystackReference?: string;
+  billingReference?: string;
 }
 
 /**
@@ -207,7 +207,7 @@ async function applyLedgerEntry(
       balanceAfterCents: updated.creditBalanceCents,
       description: opts.description ?? null,
       modelId: opts.modelId ?? null,
-      paystackReference: opts.paystackReference ?? null,
+      billingReference: opts.billingReference ?? null,
     });
 
     return updated.creditBalanceCents;
@@ -394,7 +394,7 @@ export async function debitUsage(
 export async function grantSubscriptionRenewal(
   userId: string,
   planId: PlanId,
-  paystackReference?: string,
+  billingReference?: string,
 ): Promise<number> {
   const plan = getPlanDefinition(planId);
   const balance = await db.transaction(async (tx) => {
@@ -421,7 +421,7 @@ export async function grantSubscriptionRenewal(
       amountCents: plan.creditGrantCents,
       balanceAfterCents: updated.creditBalanceCents,
       description: `${plan.name} plan renewal`,
-      paystackReference: paystackReference ?? null,
+      billingReference: billingReference ?? null,
     });
 
     return updated.creditBalanceCents;
@@ -434,41 +434,41 @@ export async function grantSubscriptionRenewal(
 export async function applyTopup(
   userId: string,
   amountCents: number,
-  paystackReference: string,
+  billingReference: string,
 ): Promise<number> {
   return creditAccount(userId, amountCents, "topup", {
     description: "Wallet top-up",
-    paystackReference,
+    billingReference,
   });
 }
 
-export async function setPaystackCustomerCode(
+export async function setBillingCustomerCode(
   userId: string,
   customerCode: string,
 ): Promise<void> {
   await db
     .update(users)
-    .set({ paystackCustomerCode: customerCode })
+    .set({ billingCustomerCode: customerCode })
     .where(eq(users.id, userId));
 }
 
-export async function setPaystackSubscriptionCode(
+export async function setBillingSubscriptionCode(
   userId: string,
   subscriptionCode: string,
 ): Promise<void> {
   await db
     .update(users)
-    .set({ paystackSubscriptionCode: subscriptionCode })
+    .set({ billingSubscriptionCode: subscriptionCode })
     .where(eq(users.id, userId));
 }
 
-export async function findUserIdByPaystackCustomerCode(
+export async function findUserIdByBillingCustomerCode(
   customerCode: string,
 ): Promise<string | null> {
   const [row] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.paystackCustomerCode, customerCode));
+    .where(eq(users.billingCustomerCode, customerCode));
   return row?.id ?? null;
 }
 
@@ -501,10 +501,10 @@ export async function downgradeToFreeOnSubscriptionEnd(
     .select({
       id: users.id,
       plan: users.plan,
-      paystackSubscriptionCode: users.paystackSubscriptionCode,
+      billingSubscriptionCode: users.billingSubscriptionCode,
     })
     .from(users)
-    .where(eq(users.paystackCustomerCode, customerCode));
+    .where(eq(users.billingCustomerCode, customerCode));
 
   if (!row) {
     return { downgraded: false };
@@ -518,7 +518,7 @@ export async function downgradeToFreeOnSubscriptionEnd(
     await import("@/lib/billing/plans")
   ).shouldDowngradeOnSubscriptionDisable(
     row.plan,
-    row.paystackSubscriptionCode,
+    row.billingSubscriptionCode,
     subscriptionCode,
   );
   if (!shouldDowngrade) {
@@ -529,7 +529,7 @@ export async function downgradeToFreeOnSubscriptionEnd(
     .update(users)
     .set({
       plan: "free",
-      paystackSubscriptionCode: null,
+      billingSubscriptionCode: null,
     })
     .where(eq(users.id, row.id));
 

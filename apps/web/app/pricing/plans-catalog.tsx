@@ -11,7 +11,6 @@ interface PlanRow {
   priceUsdCents: number;
   creditGrantCents: number;
   modelAccess: "luna-only" | "all";
-  priceNgnKobo: number;
 }
 
 interface WindowUsage {
@@ -40,10 +39,6 @@ const PLAN_BLURB: Record<string, string> = {
   pro: "$100 of credit every month for heavy builders.",
   max: "$180 of credit. Our biggest monthly pool.",
 };
-
-function formatNgn(kobo: number) {
-  return `₦${Math.round(kobo / 100).toLocaleString("en-NG")}`;
-}
 
 /**
  * Live status card for the Entry plan's rolling usage windows, rendered
@@ -109,12 +104,11 @@ function EntryWindowsCard({
 
 /**
  * The public plan catalog (was /billing/plans, now mounted at /pricing
- * -- owner 2026-09-15). Fully public: viewing plans and live NGN rates
- * needs no login; only checkout (Paystack authorization) does.
+ * -- owner 2026-09-15). Fully public: viewing plans needs no login; only
+ * checkout (Bachs hosted checkout) does.
  */
 export function PlansCatalog() {
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
-  const [rate, setRate] = useState<number | null>(null);
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // Current subscription state, if the visitor is logged in and already
@@ -131,7 +125,6 @@ export function PlansCatalog() {
       .then((res) => res.json())
       .then((data) => {
         setPlans(data.plans);
-        setRate(data.usdToNgnRate);
       })
       .catch(() => setErrorMessage("Couldn't load plans, try refreshing."));
 
@@ -157,7 +150,7 @@ export function PlansCatalog() {
       if (!res.ok) {
         throw new Error(data.error ?? "Checkout failed");
       }
-      window.location.href = data.authorizationUrl;
+      window.location.href = data.checkoutUrl;
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Checkout failed");
       setPendingPlan(null);
@@ -180,8 +173,9 @@ export function PlansCatalog() {
                 Subscriptions include a bonus credit top-up every month.
               </p>
               <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-(--l-border) px-4 py-2 text-sm text-(--l-fg-2)">
-                🇳🇬 Nigerian debit &amp; credit cards accepted -- checkout is in
-                Naira via Paystack, converted at the live USD/NGN rate.
+                🇳🇬 Nigerian debit &amp; credit cards, bank transfer and mobile
+                money accepted -- you pay in your local currency, we price in
+                dollars.
               </div>
               <div className="mt-3 text-sm text-(--l-fg-2)">
                 <a
@@ -239,7 +233,8 @@ export function PlansCatalog() {
                       </div>
                       {plan.priceUsdCents > 0 && (
                         <div className="mt-1 text-sm text-(--l-fg-3)">
-                          ≈ {formatNgn(plan.priceNgnKobo)}/mo charged in Naira
+                          Billed in USD; charged in your local currency at
+                          checkout.
                         </div>
                       )}
                       <p className="mt-3 text-sm text-(--l-fg-2)">
@@ -289,13 +284,6 @@ export function PlansCatalog() {
                 );
               })}
             </div>
-
-            {rate && (
-              <p className="mt-8 text-sm text-(--l-fg-3)">
-                Live rate: $1 ≈ ₦{Math.round(rate).toLocaleString("en-NG")}.
-                Refreshed every few minutes, never hardcoded.
-              </p>
-            )}
           </div>
         </section>
       </div>

@@ -4,7 +4,7 @@ import { PlansCatalog } from "./plans-catalog";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Entry plans -- credit-based pricing, $1 in credit is $1 of usage. Checkout in Naira via Paystack.",
+    "Entry plans -- credit-based pricing, $1 in credit is $1 of usage. Checkout in your local currency via Bachs.",
   alternates: {
     canonical: "/pricing",
   },

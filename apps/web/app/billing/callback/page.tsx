@@ -19,17 +19,21 @@ function BillingCallbackInner() {
   const [result, setResult] = useState<VerifyResult>({ phase: "loading" });
 
   useEffect(() => {
-    // Paystack's Standard Checkout redirect includes both `reference`
-    // and `trxref` (same value) -- accept either.
-    const reference =
-      searchParams.get("reference") ?? searchParams.get("trxref");
+    // Bachs appends `checkout_id` to success_url when the customer pays,
+    // and sends them to cancel_url (without one) if they abandon. So the
+    // only id here is the checkout session's.
+    const checkoutId = searchParams.get("checkout_id");
 
-    if (!reference) {
-      setResult({ phase: "error", message: "No payment reference found." });
+    if (!checkoutId) {
+      setResult({
+        phase: "error",
+        message:
+          "No checkout id found -- if you cancelled the payment you can start again from Pricing.",
+      });
       return;
     }
 
-    fetch(`/api/billing/verify?reference=${encodeURIComponent(reference)}`)
+    fetch(`/api/billing/verify?checkout_id=${encodeURIComponent(checkoutId)}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -61,7 +65,7 @@ function BillingCallbackInner() {
               Confirming your payment...
             </h1>
             <p className="mt-3 text-(--l-fg-2)">
-              Give us a second, we&apos;re checking with Paystack.
+              Give us a second, we&apos;re checking with Bachs.
             </p>
           </>
         )}
@@ -100,7 +104,7 @@ function BillingCallbackInner() {
             <p className="mt-3 text-(--l-fg-2)">
               We couldn&apos;t confirm a successful charge yet. If you completed
               payment, this usually resolves within a minute -- refresh, or
-              check your email for a Paystack receipt.
+              check your email for a Bachs receipt.
             </p>
           </>
         )}

@@ -58,8 +58,8 @@ mock.module("@/lib/billing/credit-ledger", () => ({
       plan: "pro",
       creditBalanceCents: 100_000,
       billingCycleAnchor: null,
-      paystackCustomerCode: null,
-      paystackSubscriptionCode: null,
+      billingCustomerCode: null,
+      billingSubscriptionCode: null,
     }),
   ),
 }));

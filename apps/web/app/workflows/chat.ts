@@ -565,9 +565,17 @@ async function resolveChatModelRuntime(params: {
       params.workflowRunId,
     );
     if (!claimedTurn) {
-      throw toSafeChatError(
-        "You already have another chat generating a response -- wait for it to finish, then try again.",
-      );
+      // NOT retryable. The lock is held by another run, or by a dead one
+      // still inside BILLING_TURN_LOCK_STALE_MS (15 min). Throwing here
+      // made the workflow retry 4x, go FatalError, and kill the process
+      // with exit status 128 while the user got nothing (runtime logs
+      // 00:13-00:14, dpl_JAKQ3MomQZodMaRWkLzYrdv2Q2RT). Deterministic
+      // gates answer immediately instead -- same treatment as the balance
+      // and usage-window gates below.
+      return {
+        blockedNotice:
+          "You already have another chat generating a response -- wait for it to finish, then try again.",
+      };
     }
 
     // OWN expiry enforcement (owner 2026-09-15: don't rely on
@@ -3804,6 +3812,16 @@ function startStopMonitor(
 
       if (runStatus === "cancelled") {
         abortController.abort();
+        // The post-finish step that normally releases the billing-turn
+        // lock never runs for a cancelled run. Stopping a response
+        // therefore left the user gated by their OWN dead run for the
+        // full 15-minute staleness window -- reported as "you already
+        // have another chat generating" while nothing was running, which
+        // is exactly what the owner hit on 2026-09-26.
+        const { releaseUserBillingTurn } = await import(
+          "@/lib/billing/credit-ledger"
+        );
+        await releaseUserBillingTurn(userId, runId).catch(() => {});
         return;
       }
 

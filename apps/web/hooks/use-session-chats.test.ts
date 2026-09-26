@@ -21,6 +21,7 @@ function createChat(
     activeStreamId: null,
     status: "idle",
     runStatusUpdatedAt: null,
+    queuedPrompts: null,
     lastAssistantMessageAt: null,
     createdAt: now,
     updatedAt: now,

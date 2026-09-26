@@ -326,6 +326,13 @@ export const chats = pgTable(
     // (status=running but untouched for a long time) without asking the
     // Workflow SDK for run state on every poll.
     runStatusUpdatedAt: timestamp("run_status_updated_at"),
+    // Prompts the user wrote while a turn was running, kept on the server
+    // instead of in component state. The composer queue used to live in
+    // useState and was wiped on chat switch or reload, so a message typed
+    // during a long turn simply vanished -- and a second device could
+    // never see it. Shape: [{ id, text, modelId?, createdAt }] or null.
+    // Drained by the viewer when the chat is idle; see POST /api/chat/:id/queue.
+    queuedPrompts: jsonb("queued_prompts"),
     lastAssistantMessageAt: timestamp("last_assistant_message_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

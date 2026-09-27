@@ -2,13 +2,20 @@ import { nanoid } from "nanoid";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { createCheckoutSession, updateSubscription } from "@/lib/billing/bachs";
 import { getUserBillingState } from "@/lib/billing/credit-ledger";
-import { PLAN_CATALOG, isPlanId, resolveProductIdForPlan } from "@/lib/billing/plans";
+import { PLAN_CATALOG, isPlanId, resolveProductIdForPlan, localCurrencyOptionsFor } from "@/lib/billing/plans";
 
 interface CheckoutRequest {
   /** One of "plus" | "goat" | "pro" | "max" for a subscription checkout. */
   planId?: string;
   /** For a one-off wallet top-up instead of a subscription. $1 = $1, so this is the exact credit granted. */
   topupAmountCents?: number;
+  /**
+   * Top-ups only: pin the charge to a currency (NGN/GHS/KES). Plans
+   * cannot -- Bachs refuses a non-USD billing_currency on a recurring
+   * checkout, so a subscription always bills in USD regardless of where
+   * the customer is.
+   */
+  currency?: "NGN" | "GHS" | "KES";
 }
 
 /**
@@ -54,6 +61,13 @@ export async function POST(req: Request) {
         amountCents: body.topupAmountCents,
         successUrl,
         cancelUrl,
+        // Locked local prices instead of adaptive conversion, so a customer
+        // in one of these markets sees an amount that does not move between
+        // page load and payment. Same price list the catalog products use;
+        // see LOCAL_CURRENCY_RATES in lib/billing/plans.ts for the rate
+        // source and date. Everything else falls back to adaptive pricing.
+        currencyOptions: localCurrencyOptionsFor(body.topupAmountCents),
+        billingCurrency: body.currency,
         metadata: {
           userId: session.user.id,
           kind: "topup",

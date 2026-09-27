@@ -128,6 +128,16 @@ export interface CreateCheckoutSessionParams {
   /** Max 20 pairs / 10 KB. Echoed back on the webhook and copied onto subscriptions. */
   metadata?: Record<string, string>;
   /**
+   * Exact prices in other currencies, offered instead of adaptive
+   * conversion. ONE-TIME pricing only: Bachs rejects billing_currency on
+   * a recurring checkout with BILLING_CURRENCY_HAS_NO_PAYMENT_METHOD
+   * ("ask to be billed in one of: USD") because subscriptions are USD-card
+   * only. Verified against the sandbox, not assumed.
+   */
+  currencyOptions?: Record<string, string>;
+  /** Pin the session to a currency (e.g. "NGN"). Omit for adaptive pricing. */
+  billingCurrency?: string;
+  /**
    * For recurring purchases: the Bachs product id (prod_...) whose
    * billing_cycle makes this checkout create the subscription. When set,
    * `amountCents` is only used to assert we are charging the catalog price.
@@ -148,7 +158,12 @@ export async function createCheckoutSession(
   const pricing = {
     currency: "USD",
     amount: usdCentsToDecimalString(params.amountCents),
+    ...(params.currencyOptions ? { currency_options: params.currencyOptions } : {}),
   };
+
+  const currencyPin = params.billingCurrency
+    ? { billing_currency: params.billingCurrency }
+    : {};
 
   const body = params.productId
     ? {
@@ -161,6 +176,7 @@ export async function createCheckoutSession(
       }
     : {
         pricing,
+        ...currencyPin,
         reference: params.reference,
         customer: { email: params.email },
         success_url: params.successUrl,

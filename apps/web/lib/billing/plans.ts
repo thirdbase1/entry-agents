@@ -275,6 +275,42 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
 export const PLAN_IDS = Object.keys(PLAN_CATALOG) as PlanId[];
 
 /**
+ * Rates used to lock exact local-currency prices for ONE-TIME top-ups.
+ *
+ * Sourced from open.er-api.com "latest/USD", fetched 2026-09-27T00:02Z:
+ *   NGN 1328.77796, GHS 11.632012, KES 129.660848
+ *
+ * These are a price list, not a live feed -- deliberately. A top-up price
+ * that moved with the rate between page load and payment would make
+ * "$1 = $1" unverifiable, and Bachs' own currency_options exist to pin
+ * exactly this. Revisit when rates move materially; the values are
+ * echoed onto the checkout as decimal strings, so they never round below
+ * the currency's precision.
+ *
+ * Only used for one-time pricing: Bachs refuses a non-USD
+ * billing_currency on a recurring checkout (subscriptions are USD-card
+ * only), so plan checkouts never see these.
+ */
+export const LOCAL_CURRENCY_RATES: Record<string, number> = {
+  NGN: 1328.77796,
+  GHS: 11.632012,
+  KES: 129.660848,
+};
+
+/** Exact local prices for a USD amount, ready for a checkout's currency_options. */
+export function localCurrencyOptionsFor(
+  usdCents: number,
+): Record<string, string> {
+  const usd = usdCents / 100;
+  return Object.fromEntries(
+    Object.entries(LOCAL_CURRENCY_RATES).map(([currency, rate]) => [
+      currency,
+      (Math.round(usd * rate * 100) / 100).toFixed(2),
+    ]),
+  );
+}
+
+/**
  * Product ids are per-environment: Bachs sandbox and production are
  * completely isolated, so the four ids created in the sandbox are NOT the
  * ids of the same-named products in production.

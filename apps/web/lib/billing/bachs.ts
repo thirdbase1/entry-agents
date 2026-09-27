@@ -37,7 +37,20 @@ function getApiKey(): string {
   return key;
 }
 
-function baseUrlFor(apiKey: string): string {
+function resolveBaseUrl(apiKey: string): string {
+  // BACHS_BASE_URL wins when set. This matters during the Paystack ->
+  // Bachs cutover: production runs with a live domain but deliberately
+  // charges through the SANDBOX first, so the target must be an explicit
+  // operator choice rather than something inferred from the key prefix --
+  // a live key pointed at sandbox (or the reverse) has to be spelled out
+  // in env, not guessed.
+  const configured = process.env.BACHS_BASE_URL;
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  // Fall back to the prefix rule from the docs: sk_sandbox_ keys route to
+  // the sandbox deployment, sk_live_ keys to production.
   return apiKey.startsWith("sk_sandbox_")
     ? SANDBOX_BASE_URL
     : PRODUCTION_BASE_URL;
@@ -56,7 +69,7 @@ async function bachsRequest<T>(
 ): Promise<T> {
   const apiKey = init?.apiKey ?? getApiKey();
 
-  const res = await fetch(`${baseUrlFor(apiKey)}${path}`, {
+  const res = await fetch(`${resolveBaseUrl(apiKey)}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${apiKey}`,

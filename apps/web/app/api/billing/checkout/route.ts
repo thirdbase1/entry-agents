@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { getServerSession } from "@/lib/session/get-server-session";
-import { createCheckoutSession, updateSubscription } from "@/lib/billing/bachs";
+import { createCheckoutSession, updateSubscription, bachsErrorCode } from "@/lib/billing/bachs";
 import { getUserBillingState } from "@/lib/billing/credit-ledger";
 import { PLAN_CATALOG, isPlanId, resolveProductIdForPlan, localCurrencyOptionsFor } from "@/lib/billing/plans";
 
@@ -175,6 +175,29 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[billing] checkout creation failed:", error);
+
+    // Both codes mean the same thing and neither is our bug: Bachs does
+    // not offer Naira subscriptions yet. Verified against the sandbox
+    // twice -- once with an explicit payment_method_types list of NGN
+    // corridors, once with an NGN-priced recurring product (which
+    // returned NGN_SUBSCRIPTIONS_NOT_ENABLED outright). A generic 500
+    // here would send a Nigerian user hunting for a card problem that
+    // does not exist, so name the real cause and point at the path that
+    // does work: a one-time Naira top-up by bank transfer or NGN card.
+    const code = bachsErrorCode(error);
+    if (
+      code === "NGN_SUBSCRIPTIONS_NOT_ENABLED" ||
+      code === "BILLING_CURRENCY_HAS_NO_PAYMENT_METHOD"
+    ) {
+      return Response.json(
+        {
+          error:
+            "Subscriptions currently bill in USD only — Naira subscriptions aren't enabled on Bachs yet. You can still pay in Naira: use a one-time top-up (bank transfer or NGN card) and your credit applies immediately.",
+        },
+        { status: 502 },
+      );
+    }
+
     return Response.json(
       {
         error: error instanceof Error ? error.message : "Checkout failed",

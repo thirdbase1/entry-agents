@@ -82,7 +82,12 @@ async function bachsRequest<T>(
 
   if (!res.ok) {
     const message = extractErrorMessage(body) ?? `status ${res.status}`;
-    throw new Error(`Bachs error on ${init?.method ?? "GET"} ${path}: ${message}`);
+    const code = extractErrorCode(body);
+    throw new Error(
+      `Bachs error on ${init?.method ?? "GET"} ${path}: ${message}${
+        code ? ` [${code}]` : ""
+      }`,
+    );
   }
 
   return body as T;
@@ -103,6 +108,19 @@ function extractErrorMessage(body: unknown): string | null {
     }
   }
   return null;
+}
+
+/** The machine-readable Bachs error_code, if the body carried one. */
+function extractErrorCode(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const value = (body as Record<string, unknown>).error_code;
+  return typeof value === "string" && value ? value : null;
+}
+
+export function bachsErrorCode(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = /\[([A-Z0-9_]+)\]\s*$/.exec(message);
+  return match?.[1] ?? null;
 }
 
 /** Our ledger stores USD cents; Bachs wants "10.00". */

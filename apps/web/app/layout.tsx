@@ -55,7 +55,7 @@ const themeInitializationScript = `
 const isPreviewDeployment = process.env.VERCEL_ENV === "preview";
 const faviconPath = isPreviewDeployment
   ? "/favicon-preview.svg"
-  : "/favicon.svg";
+  : "/entry-logo.jpg";
 const metadataBase =
   process.env.VERCEL_ENV === "production" &&
   process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -113,7 +113,7 @@ const structuredData = {
       "@type": "Organization",
       name: "Entry Agents",
       url: SITE_URL,
-      logo: `${SITE_URL}/entry-logo.svg`,
+      logo: `${SITE_URL}/entry-logo.jpg`,
     },
     {
       "@type": "WebSite",

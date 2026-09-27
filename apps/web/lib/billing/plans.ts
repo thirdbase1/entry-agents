@@ -14,7 +14,7 @@
  *   same-day owner request -- the id stays "goat" forever): the Command
  *   Code GOAT-plan
  *   model integrated into Entry -- a $13/mo tier that grants $50 of
- *   credit per renewal (a 5x bonus, deliberately breaking the flat 2x
+ *   credit per renewal (a 3.8x bonus, deliberately breaking the flat 2x
  *   rule the other tiers use; it's the volume bait tier that gets users
  *   to upgrade from Plus). Still a single spendable balance: no
  *   Command-Code-style 5h/weekly sub-windows -- Entry's existing
@@ -239,7 +239,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     // checkout flow all key on the id, never the display name.
     name: "Entry",
     priceUsdCents: 1300, // $13/mo
-    creditGrantCents: 5000, // $50 credit (5x) -- Command Code GOAT-style
+    creditGrantCents: 5000, // $50 credit (3.8x -- 50/13, was mislabelled 5x) -- Command Code GOAT-style
     // tier; grant tuned from $70 (7x) to $50 on owner request 2026-09-15
     modelAccess: "all",
     // Entry Windows (2026-09-15, owner request): rolling usage pacing,

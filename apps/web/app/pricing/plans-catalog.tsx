@@ -35,7 +35,7 @@ interface BillingMeResponse {
 const PLAN_BLURB: Record<string, string> = {
   free: "Try Entry with GPT-5.6 Luna. $1 trial credit, no card required.",
   plus: "Full model access. $10 of credit every month.",
-  goat: "The flagship Entry plan. $13/mo grants $50 of usage credit (5x). Your $10 / 5-hour, $25 / 7-day, and $50 / 30-day limits are rolling windows -- usage does not reset all at once; older usage drops out continuously and capacity returns.",
+  goat: "The flagship Entry plan. $13/mo grants $50 of usage credit (3.8x). Your $10 / 5-hour, $25 / 7-day, and $50 / 30-day limits are rolling windows -- usage does not reset all at once; older usage drops out continuously and capacity returns.",
   pro: "$100 of credit every month for heavy builders.",
   max: "$180 of credit. Our biggest monthly pool.",
 };

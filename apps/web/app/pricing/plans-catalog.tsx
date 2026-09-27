@@ -150,6 +150,13 @@ export function PlansCatalog() {
       if (!res.ok) {
         throw new Error(data.error ?? "Checkout failed");
       }
+      // In-place plan change (already a subscriber): no hosted checkout
+      // to visit, the plan is already switched. Just reload so the page
+      // reflects the new plan and balance.
+      if (data.updated) {
+        window.location.reload();
+        return;
+      }
       window.location.href = data.checkoutUrl;
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Checkout failed");

@@ -3,8 +3,10 @@ import { db } from "@/lib/db/client";
 import { billingWebhookEvents } from "@/lib/db/schema";
 import { verifyBachsSignature } from "@/lib/billing/bachs";
 import { processChargeSuccess } from "@/lib/billing/process-charge";
+import { resolvePlanForProductId } from "@/lib/billing/plans";
 import {
   setBillingSubscriptionCode,
+  syncSubscriptionPlan,
   findUserIdByBillingCustomerCode,
   downgradeToFreeOnSubscriptionEnd,
 } from "@/lib/billing/credit-ledger";
@@ -177,6 +179,63 @@ export async function POST(req: Request) {
             );
           }
         }
+        break;
+      }
+
+      case "customer.subscription.updated": {
+        // The subscription moved to a different product (our in-place plan
+        // change) or changed status.
+        //
+        // product_id is the authority for WHICH plan a subscription is on.
+        // Its checkout metadata carries the plan from the day it was
+        // created and is never rewritten, so trusting metadata here would
+        // leave an upgraded user on the old plan forever -- and a later
+        // renewal would flip them back again via grantSubscriptionRenewal.
+        //
+        // No credit is granted here (see syncSubscriptionPlan): a
+        // downgrade produces no charge, and a real charge already grants
+        // through collection.succeeded.
+        const data = event.data as unknown as {
+          subscription_id?: string;
+          product_id?: string | null;
+          product?: { id?: string } | null;
+          customer?: { customer_id?: string | null } | null;
+          status?: string;
+        };
+
+        const subscriptionId = data.subscription_id;
+        if (!subscriptionId) break;
+
+        // Key on the delivery id, NOT the subscription id: `updated`
+        // recurs for the same subscription (every plan change, every status
+        // transition), so a per-subscription claim would swallow every
+        // update after the first and strand a user on the plan they
+        // upgraded away from.
+        const eventKey = event.id
+          ? `${type}:${event.id}`
+          : `${type}:${subscriptionId}:${data.status ?? "unknown"}`;
+        const isNew = await claimEventOnce(eventKey, type, event.data);
+        if (!isNew) break;
+
+        const planId = resolvePlanForProductId(
+          data.product_id ?? data.product?.id ?? null,
+        );
+        const customerId = data.customer?.customer_id;
+        if (!planId || !customerId) break;
+
+        const userId = await findUserIdByBillingCustomerCode(customerId);
+        if (!userId) break;
+
+        // A terminal subscription must not leave a paid plan behind: if
+        // Bachs reports it cancelled/paused here, fall back to the same
+        // downgrade path the deleted event uses rather than letting the
+        // user keep perks for a subscription that no longer bills.
+        if (data.status === "canceled" || data.status === "paused") {
+          await downgradeToFreeOnSubscriptionEnd(customerId, subscriptionId);
+          break;
+        }
+
+        await syncSubscriptionPlan(userId, planId, subscriptionId);
         break;
       }
 

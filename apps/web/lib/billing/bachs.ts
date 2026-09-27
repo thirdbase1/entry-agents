@@ -242,6 +242,66 @@ export async function getCheckoutSession(
   };
 }
 
+export interface UpdateSubscriptionResult {
+  id: string;
+  status: string;
+  productId: string | null;
+  amount: string | null;
+}
+
+/**
+ * Changes an existing subscription's plan IN PLACE.
+ *
+ * This is the correct way to move a subscriber between plans, and the
+ * reason it matters: buying plan B through a brand-new checkout creates a
+ * SECOND subscription while plan A is still live, and nothing cancels A.
+ * Both then renew independently -- each renewal re-grants its own plan's
+ * credit and flips users.plan back, so the plan ping-pongs and the user
+ * is billed twice. Bachs has no create-subscription endpoint, but it does
+ * have this: PATCH /v1/subscriptions/{id} with a target product_id.
+ *
+ * Proration (Bachs proration guide):
+ * - invoice_now  -- settle immediately: an upgrade is charged to the saved
+ *   card now, a downgrade becomes customer credit applied to future
+ *   invoices (never refunded to the card).
+ * - next_cycle   -- apply now, roll the difference into the next renewal.
+ * - none         -- change terms with no charge or credit.
+ * We pass invoice_now explicitly rather than relying on the documented
+ * default, so the outcome is pinned even if that default ever changes.
+ *
+ * Bachs requires the target product to bill at the same interval and
+ * currency -- every Entry plan is monthly USD, so any plan can move to
+ * any other.
+ */
+export async function updateSubscription(
+  subscriptionId: string,
+  params: {
+    productId: string;
+    prorationBehavior?: "invoice_now" | "next_cycle" | "none";
+  },
+): Promise<UpdateSubscriptionResult> {
+  const data = await bachsRequest<{
+    id: string;
+    status: string;
+    product_id?: string | null;
+    product?: { id?: string } | null;
+    amount?: string | null;
+  }>(`/v1/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      product_id: params.productId,
+      proration_behavior: params.prorationBehavior ?? "invoice_now",
+    }),
+  });
+
+  return {
+    id: data.id,
+    status: data.status,
+    productId: data.product_id ?? data.product?.id ?? null,
+    amount: data.amount ?? null,
+  };
+}
+
 export interface VerifyBachsSignatureParams {
   rawBody: string;
   /** X-Bachs-Timestamp: unix seconds. */

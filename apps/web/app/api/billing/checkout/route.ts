@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { getServerSession } from "@/lib/session/get-server-session";
-import { createCheckoutSession } from "@/lib/billing/bachs";
+import { createCheckoutSession, updateSubscription } from "@/lib/billing/bachs";
+import { getUserBillingState } from "@/lib/billing/credit-ledger";
 import { PLAN_CATALOG, isPlanId, resolveProductIdForPlan } from "@/lib/billing/plans";
 
 interface CheckoutRequest {
@@ -94,6 +95,48 @@ export async function POST(req: Request) {
     }
 
     const reference = `sub_${plan.id}_${session.user.id}_${nanoid()}`;
+
+    // Already paying for a different plan? Change it IN PLACE.
+    //
+    // Starting a second checkout while plan A is live would create a
+    // second subscription: nothing cancels A, so both renew, both re-grant
+    // their own credit, and users.plan ping-pongs between them on every
+    // renewal while the card is charged twice. PATCH /v1/subscriptions
+    // moves the existing subscription to the new product instead, with
+    // proration settling the difference immediately (an upgrade charges
+    // the saved card now; a downgrade becomes customer credit applied to
+    // future invoices).
+    const billingState = await getUserBillingState(session.user.id);
+    const existingSubscriptionId = billingState?.billingSubscriptionCode ?? null;
+
+    if (existingSubscriptionId && billingState?.plan !== plan.id) {
+      try {
+        const updated = await updateSubscription(existingSubscriptionId, {
+          productId,
+          prorationBehavior: "invoice_now",
+        });
+
+        return Response.json({
+          updated: true,
+          planId: plan.id,
+          subscriptionId: updated.id,
+          status: updated.status,
+          usdAmountCents: plan.priceUsdCents,
+          currency: "USD",
+        });
+      } catch (error) {
+        // The stored id can be stale (cancelled at Bachs out of band, or
+        // never written). Falling through to a fresh checkout still ends
+        // with exactly one live subscription, which is the invariant that
+        // matters -- stranding the user with no way to change plan would
+        // be worse than the retry.
+        console.warn(
+          "[billing] in-place plan change failed; falling back to a new checkout:",
+          error,
+        );
+      }
+    }
+
     const result = await createCheckoutSession({
       reference,
       email: session.user.email,

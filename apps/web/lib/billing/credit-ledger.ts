@@ -462,6 +462,31 @@ export async function setBillingSubscriptionCode(
     .where(eq(users.id, userId));
 }
 
+/**
+ * Syncs which plan a subscription is on after an in-place plan change
+ * (PATCH /v1/subscriptions, see bachs.ts updateSubscription).
+ *
+ * Deliberately does NOT grant credit and does NOT touch
+ * billingCycleAnchor:
+ * - credit comes from the charge itself (collection.succeeded), so a
+ *   renewal that really happened grants on its own;
+ * - a DOWNGRADE produces no charge at all, and inventing a grant here
+ *   would hand out a month of credit nobody paid for;
+ * - refreshing the anchor without money changing hands would also hold
+ *   expiry enforcement off for another 35 days on a plan the user may
+ *   have just left.
+ */
+export async function syncSubscriptionPlan(
+  userId: string,
+  planId: "free" | "plus" | "goat" | "pro" | "max",
+  subscriptionCode: string,
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ plan: planId, billingSubscriptionCode: subscriptionCode })
+    .where(eq(users.id, userId));
+}
+
 export async function findUserIdByBillingCustomerCode(
   customerCode: string,
 ): Promise<string | null> {

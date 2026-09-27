@@ -9,7 +9,11 @@ import {
   setBillingCustomerCode,
   findUserIdByBillingCustomerCode,
 } from "@/lib/billing/credit-ledger";
-import { isPlanId, PLAN_CATALOG } from "@/lib/billing/plans";
+import {
+  isPlanId,
+  PLAN_CATALOG,
+  resolvePlanForProductId,
+} from "@/lib/billing/plans";
 
 export interface ChargeOutcome {
   /** Our own reference (topup_ or sub_ prefixed), carried on the checkout session. */
@@ -99,9 +103,7 @@ export async function processChargeSuccess(
   const planId =
     outcome.metadataPlanId && isPlanId(outcome.metadataPlanId)
       ? outcome.metadataPlanId
-      : Object.values(PLAN_CATALOG).find(
-          (p) => p.bachsProductId === outcome.productId,
-        )?.id;
+      : resolvePlanForProductId(outcome.productId);
 
   if (!planId) {
     console.warn("[billing] collection.succeeded with unresolved planId", {

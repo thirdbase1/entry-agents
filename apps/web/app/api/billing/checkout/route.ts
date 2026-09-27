@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { createCheckoutSession } from "@/lib/billing/bachs";
-import { PLAN_CATALOG, isPlanId } from "@/lib/billing/plans";
+import { PLAN_CATALOG, isPlanId, resolveProductIdForPlan } from "@/lib/billing/plans";
 
 interface CheckoutRequest {
   /** One of "plus" | "goat" | "pro" | "max" for a subscription checkout. */
@@ -77,16 +77,17 @@ export async function POST(req: Request) {
     }
 
     const plan = PLAN_CATALOG[body.planId];
+    const productId = resolveProductIdForPlan(plan);
 
     // A subscription MUST ride a recurring product: Bachs has no
     // create-subscription endpoint, and a cart containing a product with a
     // billing_cycle is what turns the checkout into a subscription
     // checkout. Without a product id we would silently charge a one-off
     // amount and leave the user on Free -- so refuse loudly instead.
-    if (!plan.bachsProductId) {
+    if (!productId) {
       return Response.json(
         {
-          error: `Plan "${plan.id}" has no Bachs product configured. Create a recurring product for it in the Bachs dashboard and set bachsProductId in lib/billing/plans.ts.`,
+          error: `Plan "${plan.id}" has no Bachs product configured. Create a recurring product for it in the Bachs dashboard, then set its id in BACHS_PRODUCT_IDS (env) or bachsProductId in lib/billing/plans.ts.`,
         },
         { status: 500 },
       );
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
       reference,
       email: session.user.email,
       amountCents: plan.priceUsdCents,
-      productId: plan.bachsProductId,
+      productId,
       successUrl,
       cancelUrl,
       metadata: {

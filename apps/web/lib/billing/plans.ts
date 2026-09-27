@@ -275,6 +275,76 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
 export const PLAN_IDS = Object.keys(PLAN_CATALOG) as PlanId[];
 
 /**
+ * Product ids are per-environment: Bachs sandbox and production are
+ * completely isolated, so the four ids created in the sandbox are NOT the
+ * ids of the same-named products in production.
+ *
+ * The catalog holds the sandbox ids as the default. BACHS_PRODUCT_IDS
+ * overrides them so going live is an env swap -- the same reason
+ * BACHS_BASE_URL exists. Without this, changing only the base URL would
+ * make checkout fail with "product not found" because the catalog would
+ * be quoting sandbox ids to the production API.
+ *
+ * Shape: {"plus":"prod_...","goat":"prod_...","pro":"prod_...","max":"prod_..."}
+ * Unset (and in the browser, where this is never defined) falls back to
+ * the catalog, so the pricing page keeps rendering without it.
+ */
+let cachedProductIds: Record<string, string> | null | undefined;
+
+function environmentProductIds(): Record<string, string> | null {
+  if (cachedProductIds !== undefined) {
+    return cachedProductIds;
+  }
+
+  const raw = process.env.BACHS_PRODUCT_IDS;
+  if (!raw) {
+    cachedProductIds = null;
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    cachedProductIds =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, string>)
+        : null;
+  } catch {
+    // A malformed override must not take checkout down: fall back to the
+    // catalog and let the (very visible) product-not-found error tell the
+    // operator their JSON is wrong, rather than failing silently.
+    cachedProductIds = null;
+  }
+
+  return cachedProductIds;
+}
+
+/** The product id to sell for a plan in the current environment. */
+export function resolveProductIdForPlan(plan: PlanDefinition): string | null {
+  return environmentProductIds()?.[plan.id] ?? plan.bachsProductId;
+}
+
+/** Reverse lookup, for resolving a webhook's product_id back to a plan. */
+export function resolvePlanForProductId(
+  productId: string | null | undefined,
+): PlanId | null {
+  if (!productId) {
+    return null;
+  }
+
+  const fromEnvironment = Object.entries(environmentProductIds() ?? {}).find(
+    ([, id]) => id === productId,
+  );
+  if (fromEnvironment && isPlanId(fromEnvironment[0])) {
+    return fromEnvironment[0];
+  }
+
+  return (
+    Object.values(PLAN_CATALOG).find((plan) => plan.bachsProductId === productId)
+      ?.id ?? null
+  );
+}
+
+/**
  * The only model a Free-plan user may select. Gateway route id.
  *
  * Changed 2026-09-22 (owner request): gpt-5.6-luna -> qwen3.8-flash.

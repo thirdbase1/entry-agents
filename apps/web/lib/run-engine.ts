@@ -28,6 +28,7 @@ async function boot(): Promise<void> {
       "LIGHTFLOW_PG_URL (or POSTGRES_URL) is required for the Entry run engine",
     );
   }
+  console.log("[run-engine] BOOT LOG starting", process.env.LIGHTFLOW_PG_URL?.slice(-12));
   _store = await createPostgresStore(url);
   _engine = new Engine(_store, { pollMs: 50 });
   initWorkflowApi(_store, _engine);

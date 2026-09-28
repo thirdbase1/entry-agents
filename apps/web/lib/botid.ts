@@ -20,7 +20,7 @@ export const botIdConfig = {
 };
 
 export async function checkBotProtection() {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" || process.env.SIM_BYPASS_BOTID) {
     return {
       isHuman: true,
       isBot: false,

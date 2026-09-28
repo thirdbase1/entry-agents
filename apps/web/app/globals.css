@@ -175,37 +175,36 @@
     0 10px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.5) inset,
     0 -1px 0 rgba(0, 0, 0, 0.08) inset;
   --l-stage-overlay: rgba(0, 0, 0, 0.02);
-  --l-bg: #f4f0e9;
-  --l-surface: #fbfaf7;
-  --l-surface-2: #e9e3da;
-  --l-surface-3: rgba(42, 35, 29, 0.045);
-  --l-surface-4: rgba(42, 35, 29, 0.08);
-  --l-border: rgba(42, 35, 29, 0.16);
-  --l-border-subtle: rgba(42, 35, 29, 0.08);
-  --l-fg: #211d1a;
-  --l-fg-2: rgba(33, 29, 26, 0.72);
-  --l-fg-3: rgba(33, 29, 26, 0.52);
-  --l-fg-4: rgba(33, 29, 26, 0.36);
-  --l-fg-5: rgba(33, 29, 26, 0.2);
-  --l-fg-6: rgba(33, 29, 26, 0.1);
-  --l-accent: #e4572e;
-  --l-panel: #211d1a;
-  --l-panel-fg: rgba(0, 0, 0, 0.85);
-  --l-panel-fg-2: rgba(0, 0, 0, 0.6);
-  --l-panel-fg-3: rgba(0, 0, 0, 0.4);
-  --l-panel-fg-4: rgba(0, 0, 0, 0.22);
-  --l-panel-fg-5: rgba(0, 0, 0, 0.1);
-  --l-panel-border: rgba(0, 0, 0, 0.12);
-  --l-panel-surface: rgba(0, 0, 0, 0.05);
-  --l-panel-active: rgba(0, 0, 0, 0.07);
-  --l-panel-dot: rgba(0, 0, 0, 0.35);
-  --l-btn-bg: #0a0a0a;
+  --l-bg: #f5f7f2;
+  --l-surface: #ffffff;
+  --l-surface-2: #e7ece5;
+  --l-surface-3: rgba(15, 31, 48, 0.045);
+  --l-surface-4: rgba(15, 31, 48, 0.08);
+  --l-border: rgba(15, 31, 48, 0.15);
+  --l-border-subtle: rgba(15, 31, 48, 0.08);
+  --l-fg: #0f1f30;
+  --l-fg-2: rgba(15, 31, 48, 0.72);
+  --l-fg-3: rgba(15, 31, 48, 0.52);
+  --l-fg-4: rgba(15, 31, 48, 0.36);
+  --l-fg-5: rgba(15, 31, 48, 0.2);
+  --l-fg-6: rgba(15, 31, 48, 0.1);
+  --l-accent: #2454ff;
+  --l-panel: #0f1f30;
+  --l-panel-fg: rgba(255, 255, 255, 0.85);
+  --l-panel-fg-2: rgba(255, 255, 255, 0.6);
+  --l-panel-fg-3: rgba(255, 255, 255, 0.4);
+  --l-panel-fg-4: rgba(255, 255, 255, 0.22);
+  --l-panel-fg-5: rgba(255, 255, 255, 0.1);
+  --l-panel-border: rgba(255, 255, 255, 0.12);
+  --l-panel-surface: rgba(255, 255, 255, 0.05);
+  --l-panel-active: rgba(255, 255, 255, 0.07);
+  --l-panel-dot: rgba(255, 255, 255, 0.35);
+  --l-btn-bg: #0f1f30;
   --l-btn-fg: #ffffff;
-  --l-btn-hover: rgba(0, 0, 0, 0.8);
-  --l-code-bg: #eaeaea;
-  --l-window-shadow:
-    0 40px 80px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
-  --l-nav-bg: rgb(250, 250, 250);
+  --l-btn-hover: #2454ff;
+  --l-code-bg: #e7ece5;
+  --l-window-shadow: 0 40px 80px rgba(15, 31, 48, 0.12), 0 0 0 1px rgba(15, 31, 48, 0.06);
+  --l-nav-bg: rgba(255, 255, 255, 0.92);
 }
 
 .dark .landing {

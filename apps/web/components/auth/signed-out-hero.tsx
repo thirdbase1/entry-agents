@@ -21,30 +21,26 @@ export function SignedOutHero() {
 
   return (
     <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-accent)/20">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-(--l-accent)" />
       <div className="relative z-10">
         <LandingNav showSignIn={showNavCta} />
         <main>
-          <section className="relative px-6 pb-20 pt-20 sm:pt-28 md:pb-28 md:pt-36">
+          <section className="relative overflow-hidden px-6 pb-20 pt-16 sm:pb-28 sm:pt-24 lg:pb-36 lg:pt-32">
+            <div className="pointer-events-none absolute right-[-10%] top-[-16%] size-[620px] rounded-full border border-(--l-accent)/20" />
+            <div className="pointer-events-none absolute right-[4%] top-[-2%] size-[380px] rounded-full border border-(--l-accent)/10" />
             <div className="mx-auto max-w-[1320px]">
-              <div className="mb-10 flex items-center justify-between border-y border-(--l-border) py-3 text-[10px] font-medium uppercase text-(--l-fg-3)">
-                <span>Entry Agents / Series B infrastructure</span>
-                <span className="hidden sm:inline">Backed by builders</span>
+              <div className="mb-12 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-(--l-fg-3)">
+                <span>Entry / Agent infrastructure</span><span className="hidden sm:inline">Built for the next category</span>
               </div>
-              <div className="grid gap-16 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-24">
+              <div className="grid gap-14 lg:grid-cols-[1.1fr_.9fr] lg:items-end lg:gap-20">
                 <div>
-                  <p className="mb-7 font-mono text-xs uppercase text-(--l-accent)">The operating system for agentic work</p>
-                  <h1 className="max-w-[900px] text-balance text-[clamp(4rem,10vw,9.5rem)] font-medium leading-[.8] tracking-[-.09em]">Turn intent<br /><span className="text-(--l-accent)">into output.</span></h1>
-                  <div className="mt-10 grid max-w-[720px] gap-8 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <p className="text-pretty text-lg leading-relaxed text-(--l-fg-2) sm:text-xl">Entry gives every idea a team, a runtime, and a path to production. Describe the work. Watch a branch become software.</p>
-                    <div ref={ctaRef} className="flex flex-wrap items-center gap-4"><SignInButton size="lg" /><span className="text-[10px] uppercase text-(--l-fg-3)">Start building →</span></div>
-                  </div>
+                  <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-(--l-border) px-3 py-1.5 font-mono text-[10px] uppercase text-(--l-accent)"><span className="size-1.5 rounded-full bg-(--l-accent)" /> The control plane for agentic work</p>
+                  <h1 className="max-w-[900px] text-balance text-[clamp(3.8rem,9vw,8.5rem)] font-medium leading-[.86] tracking-[-.09em]">Software that<br /><span className="text-(--l-accent)">moves itself forward.</span></h1>
+                  <div ref={ctaRef} className="mt-10 flex flex-wrap items-center gap-5"><SignInButton size="lg" /><span className="max-w-[220px] text-sm leading-relaxed text-(--l-fg-2)">Give a capable team the context, tools, and runtime to ship.</span></div>
                 </div>
-                <aside className="border-l border-(--l-border) pl-6 lg:mt-20">
-                  <div className="flex items-center gap-2 text-[10px] uppercase text-(--l-fg-3)"><span className="size-2 rounded-full bg-(--l-accent)" /> Live runtime</div>
-                  <p className="mt-7 text-2xl leading-tight">The missing layer between a prompt and a pull request.</p>
-                  <div className="mt-12 space-y-4 border-t border-(--l-border) pt-4 text-xs text-(--l-fg-2)"><div className="flex justify-between"><span>Branch</span><span className="font-mono text-(--l-fg)">entry/ready</span></div><div className="flex justify-between"><span>Runtime</span><span className="font-mono text-(--l-fg)">isolated</span></div><div className="flex justify-between"><span>Status</span><span className="font-mono text-(--l-accent)">building</span></div></div>
-                </aside>
+                <div className="max-w-md border-l-2 border-(--l-accent) pl-6 lg:mb-2">
+                  <p className="text-xl leading-snug text-(--l-fg)">The shortest path from a sharp idea to a production-grade pull request.</p>
+                  <div className="mt-8 grid grid-cols-3 gap-3 border-t border-(--l-border) pt-4 text-[10px] uppercase text-(--l-fg-3)"><div><strong className="block font-mono text-lg text-(--l-fg)">01</strong> brief</div><div><strong className="block font-mono text-lg text-(--l-fg)">02</strong> build</div><div><strong className="block font-mono text-lg text-(--l-fg)">03</strong> ship</div></div>
+                </div>
               </div>
             </div>
           </section>

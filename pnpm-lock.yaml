@@ -214,8 +214,8 @@ importers:
         specifier: ^6.1.3
         version: 6.2.3
       lightflow-engine:
-        specifier: 0.2.10
-        version: 0.2.10
+        specifier: 0.2.12
+        version: 0.2.12
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.3)
@@ -4227,8 +4227,8 @@ packages:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  lightflow-engine@0.2.10:
-    resolution: {integrity: sha512-Ke7luQOfkGfc2h7K3Q34woetjq8ZEFdQz5qQ5x4Gaq1LN8WvTFG8JgAeHEF6wSAP+Zd2S6OKDF3gAakTrxsr5w==}
+  lightflow-engine@0.2.12:
+    resolution: {integrity: sha512-H50BHv6wh/w8OAe4gODtOnvMapxYtB466NDKEmO1MhPP1TOCwqynLQnQPCL7NMSoKuP/CY+nSCUF3uFgHBYNeQ==}
     engines: {node: '>=20'}
 
   lightningcss-android-arm64@1.32.0:
@@ -9341,7 +9341,7 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  lightflow-engine@0.2.10:
+  lightflow-engine@0.2.12:
     dependencies:
       pg: 8.23.0
     transitivePeerDependencies:

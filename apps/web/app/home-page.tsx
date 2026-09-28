@@ -77,8 +77,8 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-white text-foreground">
-      <header className="relative z-10 flex items-center justify-between border-b border-border bg-white px-4 py-3 sm:px-8 sm:py-5">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background text-foreground">
+      <header className="relative z-10 flex items-center justify-between border-b border-border bg-background px-4 py-3 sm:px-8 sm:py-5">
         <div className="flex items-center gap-2 sm:justify-self-start">
           <span className="text-lg font-semibold">Entry Agents</span>
         </div>

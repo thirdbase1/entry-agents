@@ -100,7 +100,7 @@ export function LandingBento() {
           {items.map((item, index) => (
             <article
               key={item.id}
-              className={`flex h-full flex-col border-b border-(--l-border) px-6 py-8 md:px-10 md:py-9 ${
+              className={`group relative flex h-full flex-col border-b border-(--l-border) px-6 py-8 transition-colors hover:bg-(--l-surface-3) md:px-10 md:py-9 ${
                 index % 2 === 1 ? "md:border-l md:border-l-(--l-border)" : ""
               } ${index >= 2 ? "md:border-b-0" : ""} ${
                 index > 0
@@ -108,7 +108,8 @@ export function LandingBento() {
                   : "lg:border-l-0"
               } lg:border-b-0`}
             >
-              <div className="font-mono text-[11px] text-(--l-fg-4)">
+              <div className="absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-(--l-accent) transition-transform duration-200 ease-out group-hover:scale-x-100" aria-hidden="true" />
+              <div className="font-mono text-[11px] text-(--l-accent)">
                 {item.id}
               </div>
               <div className="mt-7 flex h-10 items-center">{mark(index)}</div>

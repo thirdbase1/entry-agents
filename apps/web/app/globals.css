@@ -125,8 +125,8 @@
 }
 
 .landing {
-  --l-stage-slate-bg: #d4d4d4;
-  --l-hero-rule: rgba(0, 0, 0, 0.12);
+  --l-stage-slate-bg: #d9d5cf;
+  --l-hero-rule: rgba(28, 25, 23, 0.14);
   --l-stage-slate-img:
     radial-gradient(
       900px 420px at 26% 18%,
@@ -175,21 +175,21 @@
     0 10px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.5) inset,
     0 -1px 0 rgba(0, 0, 0, 0.08) inset;
   --l-stage-overlay: rgba(0, 0, 0, 0.02);
-  --l-bg: #fafafa;
-  --l-surface: #ffffff;
-  --l-surface-2: #f0f0f0;
-  --l-surface-3: rgba(0, 0, 0, 0.04);
-  --l-surface-4: rgba(0, 0, 0, 0.07);
-  --l-border: rgba(0, 0, 0, 0.12);
-  --l-border-subtle: rgba(0, 0, 0, 0.06);
-  --l-fg: #0a0a0a;
-  --l-fg-2: rgba(0, 0, 0, 0.7);
-  --l-fg-3: rgba(0, 0, 0, 0.5);
-  --l-fg-4: rgba(0, 0, 0, 0.35);
-  --l-fg-5: rgba(0, 0, 0, 0.18);
-  --l-fg-6: rgba(0, 0, 0, 0.08);
+  --l-bg: #f4f0e9;
+  --l-surface: #fbfaf7;
+  --l-surface-2: #e9e3da;
+  --l-surface-3: rgba(42, 35, 29, 0.045);
+  --l-surface-4: rgba(42, 35, 29, 0.08);
+  --l-border: rgba(42, 35, 29, 0.16);
+  --l-border-subtle: rgba(42, 35, 29, 0.08);
+  --l-fg: #211d1a;
+  --l-fg-2: rgba(33, 29, 26, 0.72);
+  --l-fg-3: rgba(33, 29, 26, 0.52);
+  --l-fg-4: rgba(33, 29, 26, 0.36);
+  --l-fg-5: rgba(33, 29, 26, 0.2);
+  --l-fg-6: rgba(33, 29, 26, 0.1);
   --l-accent: #e4572e;
-  --l-panel: #ffffff;
+  --l-panel: #211d1a;
   --l-panel-fg: rgba(0, 0, 0, 0.85);
   --l-panel-fg-2: rgba(0, 0, 0, 0.6);
   --l-panel-fg-3: rgba(0, 0, 0, 0.4);

@@ -126,6 +126,7 @@
 
 .landing {
   --l-stage-slate-bg: #d4d4d4;
+  --l-hero-rule: rgba(0, 0, 0, 0.12);
   --l-stage-slate-img:
     radial-gradient(
       900px 420px at 26% 18%,
@@ -187,7 +188,7 @@
   --l-fg-4: rgba(0, 0, 0, 0.35);
   --l-fg-5: rgba(0, 0, 0, 0.18);
   --l-fg-6: rgba(0, 0, 0, 0.08);
-  --l-accent: #ff8a3d;
+  --l-accent: #e4572e;
   --l-panel: #ffffff;
   --l-panel-fg: rgba(0, 0, 0, 0.85);
   --l-panel-fg-2: rgba(0, 0, 0, 0.6);

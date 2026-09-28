@@ -70,6 +70,12 @@ function mark(index: number) {
 export function LandingBento() {
   return (
     <section>
+      <div className="mx-auto max-w-[1320px] border-t border-(--l-border-subtle) px-6 pt-5 sm:px-10">
+        <div className="flex items-center justify-between text-[11px] font-medium uppercase text-(--l-fg-3)">
+          <span>03 / The stack</span>
+          <span className="hidden sm:inline">Production primitives, not promises</span>
+        </div>
+      </div>
       <div className="mx-auto max-w-[1320px] border-t border-(--l-border-subtle)">
         <div className="grid gap-6 border-b border-(--l-border) px-6 py-14 pb-10 sm:gap-10 sm:px-10 md:grid-cols-2 md:gap-0 md:pb-14 md:py-28">
           <div>

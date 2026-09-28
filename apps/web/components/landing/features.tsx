@@ -66,6 +66,12 @@ function Spotlight({
 export function LandingFeatures() {
   return (
     <section>
+      <div className="mx-auto max-w-[1320px] border-y border-(--l-border) px-6 py-5 sm:px-10">
+        <div className="flex items-center justify-between text-[11px] font-medium uppercase text-(--l-fg-3)">
+          <span>02 / How it works</span>
+          <span className="hidden sm:inline">The system, in three movements</span>
+        </div>
+      </div>
       <div className="relative mx-auto max-w-[1320px] overflow-hidden">
         <div
           className="absolute left-1/2 top-0 hidden h-full w-px md:block"

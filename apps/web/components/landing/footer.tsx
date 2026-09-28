@@ -4,6 +4,12 @@ import { ThemeToggle } from "./theme-toggle";
 export function LandingFooter() {
   return (
     <footer>
+      <div className="mx-auto max-w-[1320px] border-t border-(--l-border) px-6 py-5 sm:px-10">
+        <div className="flex items-center justify-between text-[11px] font-medium uppercase text-(--l-fg-3)">
+          <span>04 / Keep shipping</span>
+          <span className="hidden sm:inline">Entry Agents</span>
+        </div>
+      </div>
       <div className="mx-auto max-w-[1320px] md:border-t md:border-(--l-border)">
         <div className="grid sm:grid-cols-2 lg:grid-cols-3">
           <div className="px-6 pt-14 md:px-10 md:py-18">

@@ -20,27 +20,27 @@ export function SignedOutHero() {
   }, []);
 
   return (
-    <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-accent) selection:text-white">
+    <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-fg) selection:text-(--l-surface)">
       <LandingNav showSignIn={showNavCta} />
       <main>
-        <section className="relative border-b border-(--l-border) px-6 pb-20 pt-24 sm:pb-28 sm:pt-32 lg:pb-36 lg:pt-40">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-(--l-accent)" />
-          <div className="mx-auto max-w-[1320px]">
-            <div className="mb-20 flex items-start justify-between border-t border-(--l-border) pt-4 text-[10px] font-semibold uppercase text-(--l-fg-3)">
-              <span>Entry / 001</span><span className="hidden max-w-[180px] text-right sm:block">The operating system for serious agent work</span>
-            </div>
-            <div className="grid gap-12 lg:grid-cols-[1.25fr_.75fr] lg:gap-20">
-              <div>
-                <p className="mb-8 font-mono text-[11px] uppercase text-(--l-accent)">A machine for making things real</p>
-                <h1 className="max-w-[930px] text-balance text-[clamp(4rem,10vw,9.8rem)] font-medium leading-[.82] tracking-[-.1em]">Build the<br /><span className="text-(--l-accent)">unbuildable.</span></h1>
-                <div ref={ctaRef} className="mt-12 flex flex-wrap items-center gap-5"><SignInButton size="lg" /><span className="max-w-[240px] text-sm leading-relaxed text-(--l-fg-2)">A repository, runtime, and agent team that turns momentum into shipped software.</span></div>
+        <section className="relative min-h-[760px] border-b border-(--l-border) px-6 pb-16 pt-24 sm:pt-32 lg:pt-40">
+          <div className="mx-auto grid max-w-[1320px] lg:grid-cols-[72px_1fr]">
+            <div className="hidden border-r border-(--l-border) pr-4 lg:block"><span className="font-mono text-[10px] uppercase text-(--l-fg-3) [writing-mode:vertical-rl]">Entry / Field notes / 001</span></div>
+            <div className="lg:pl-16">
+              <div className="mb-16 flex justify-between border-t border-(--l-border) pt-4 text-[10px] font-semibold uppercase text-(--l-fg-3)"><span>Agent infrastructure for people who ship</span><span className="hidden sm:block">A new kind of workspace</span></div>
+              <div className="grid gap-16 lg:grid-cols-[1fr_300px] lg:gap-24">
+                <div>
+                  <p className="mb-7 font-mono text-[11px] uppercase text-(--l-fg-2)">A place for unfinished ideas</p>
+                  <h1 className="max-w-[900px] text-balance text-[clamp(4rem,10vw,10rem)] font-medium leading-[.79] tracking-[-.105em]">Make the<br /><em className="font-serif not-italic">next thing.</em></h1>
+                  <div ref={ctaRef} className="mt-14 flex flex-wrap items-center gap-6"><SignInButton size="lg" /><span className="max-w-[250px] border-l border-(--l-border) pl-5 text-sm leading-relaxed text-(--l-fg-2)">Turn a thought into a repository, a running system, and a pull request.</span></div>
+                </div>
+                <aside className="self-end border-t border-(--l-border) pt-5 lg:mb-2"><p className="font-mono text-[10px] uppercase text-(--l-fg-3)">The premise</p><p className="mt-5 text-xl leading-tight">Software is not a document. It is a sequence of proof.</p><p className="mt-8 text-sm leading-relaxed text-(--l-fg-2)">Entry keeps the context, tools, agents, and decisions together until the idea can stand on its own.</p></aside>
               </div>
-              <div className="flex flex-col justify-end lg:pb-2"><div className="border-l-2 border-(--l-accent) pl-6"><p className="max-w-sm text-xl leading-tight text-(--l-fg)">Most software waits for instructions. Entry keeps the thread between intention and proof.</p><p className="mt-8 max-w-xs text-sm leading-relaxed text-(--l-fg-2)">Entry gives every idea a place to become real — from first prompt to production pull request.</p></div></div>
+              <div className="mt-24 grid border-y border-(--l-border) sm:grid-cols-3"><div className="border-r border-(--l-border) py-4 pr-5"><span className="font-mono text-[10px] text-(--l-fg-3)">01 / FRAME</span><p className="mt-3 text-sm">Give the idea a shape.</p></div><div className="border-r border-(--l-border) py-4 px-5"><span className="font-mono text-[10px] text-(--l-fg-3)">02 / RUN</span><p className="mt-3 text-sm">Let the work move.</p></div><div className="py-4 pl-5"><span className="font-mono text-[10px] text-(--l-fg-3)">03 / PROVE</span><p className="mt-3 text-sm">Ship something real.</p></div></div>
             </div>
-            <div className="mt-24 grid grid-cols-2 border-y border-(--l-border) sm:grid-cols-4"><div className="border-r border-(--l-border) py-4 text-[10px] uppercase text-(--l-fg-3)">Brief <strong className="mt-2 block font-mono text-lg text-(--l-fg)">01</strong></div><div className="border-r border-(--l-border) py-4 pl-4 text-[10px] uppercase text-(--l-fg-3) sm:pl-6">Explore <strong className="mt-2 block font-mono text-lg text-(--l-fg)">02</strong></div><div className="border-r border-(--l-border) py-4 text-[10px] uppercase text-(--l-fg-3) sm:pl-6">Build <strong className="mt-2 block font-mono text-lg text-(--l-fg)">03</strong></div><div className="py-4 pl-4 text-[10px] uppercase text-(--l-fg-3) sm:pl-6">Ship <strong className="mt-2 block font-mono text-lg text-(--l-accent)">04</strong></div></div>
           </div>
         </section>
-        <section className="border-b border-(--l-border) px-6 py-16 sm:py-24"><div className="mx-auto max-w-[1320px]"><div className="mb-8 flex justify-between text-[10px] uppercase text-(--l-fg-3)"><span>Live workspace</span><span>Every session starts here</span></div><Stage tone="slate"><div className="mx-auto w-full max-w-[1160px]"><AppMockup /></div></Stage></div></section>
+        <section className="border-b border-(--l-border) px-6 py-20 sm:py-28"><div className="mx-auto grid max-w-[1320px] gap-8 lg:grid-cols-[180px_1fr]"><div className="font-mono text-[10px] uppercase text-(--l-fg-3)">The room<br />where it happens</div><Stage tone="slate"><div className="mx-auto w-full max-w-[1160px]"><AppMockup /></div></Stage></div></section>
         <LandingFeatures />
         <LandingBento />
         <LandingFooter />

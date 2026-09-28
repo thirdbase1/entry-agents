@@ -78,8 +78,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
 
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background text-foreground">
-      <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:linear-gradient(to_right,transparent_49.9%,color-mix(in_oklab,var(--border)_55%,transparent)_50%,transparent_50.1%),linear-gradient(to_bottom,transparent_49.9%,color-mix(in_oklab,var(--border)_55%,transparent)_50%,transparent_50.1%)] [background-size:72px_72px]" />
-      <header className="relative z-10 flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-8 sm:py-5">
+      <header className="relative z-10 flex items-center justify-between border-b border-border px-4 py-3 sm:px-8 sm:py-5">
         <div className="flex items-center gap-2 sm:justify-self-start">
           <span className="text-lg font-semibold">Entry Agents</span>
         </div>

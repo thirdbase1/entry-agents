@@ -14,7 +14,7 @@ const items: readonly BentoItem[] = [
   },
   {
     id: "002",
-    title: "AI Gateway",
+    title: "Entry Gateway",
     body: "Route requests across providers with built-in fallbacks, rate limiting, and observability.",
   },
   {
@@ -24,7 +24,7 @@ const items: readonly BentoItem[] = [
   },
   {
     id: "004",
-    title: "Workflow SDK",
+    title: "Lightflow SDK",
     body: "Durable, resumable agent workflows that survive restarts and coordinate multi-step operations.",
   },
 ];

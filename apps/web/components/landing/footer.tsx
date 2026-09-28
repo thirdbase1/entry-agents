@@ -74,7 +74,7 @@ export function LandingFooter() {
                 rel="noopener noreferrer"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                AI Gateway
+                Entry Gateway
               </a>
               <a
                 href="https://vercel.com/sandbox"
@@ -90,7 +90,7 @@ export function LandingFooter() {
                 rel="noopener noreferrer"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                Workflow SDK
+                Lightflow SDK
               </a>
             </div>
           </div>

@@ -42,7 +42,7 @@ export function SignedOutHero() {
                   <span>Autonomous engineering / 01</span>
                 </div>
                 <h1 className="max-w-[900px] text-balance text-[clamp(3.5rem,9vw,9.25rem)] font-medium leading-[0.86] tracking-[-0.075em]">
-                  Ship the work.
+                  Ship the <span className="text-(--l-accent)">work.</span>
                 </h1>
                 <p className="mt-8 max-w-[600px] text-pretty text-base leading-relaxed text-(--l-fg-2) sm:text-xl">
                   Give an AI coding agent a task and a repository. It works autonomously in an isolated cloud sandbox, then commits and pushes the result.

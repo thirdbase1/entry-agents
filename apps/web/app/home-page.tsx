@@ -77,8 +77,9 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <header className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:linear-gradient(to_right,transparent_49.9%,color-mix(in_oklab,var(--border)_55%,transparent)_50%,transparent_50.1%),linear-gradient(to_bottom,transparent_49.9%,color-mix(in_oklab,var(--border)_55%,transparent)_50%,transparent_50.1%)] [background-size:72px_72px]" />
+      <header className="relative z-10 flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-8 sm:py-5">
         <div className="flex items-center gap-2 sm:justify-self-start">
           <span className="text-lg font-semibold">Entry Agents</span>
         </div>
@@ -105,10 +106,17 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col items-center px-4 pt-8 sm:px-6 sm:pt-16">
-        <h1 className="mb-8 text-center text-3xl font-light text-foreground">
-          What should we ship next?
+      <main className="relative z-10 flex flex-1 flex-col items-center px-4 pb-16 pt-12 sm:px-8 sm:pt-24">
+        <div className="mb-10 flex w-full max-w-5xl items-end justify-between border-b border-border pb-5 text-[10px] font-mono uppercase text-muted-foreground">
+          <span>Workspace / New build</span>
+          <span className="hidden sm:inline">01 — Brief the machine</span>
+        </div>
+        <h1 className="mb-4 max-w-3xl text-center text-balance text-5xl font-medium leading-[0.9] tracking-[-0.07em] sm:text-7xl">
+          What deserves to exist?
         </h1>
+        <p className="mb-10 max-w-md text-center text-pretty text-sm leading-relaxed text-muted-foreground">
+          Start with intent. Entry will turn the shape of the idea into a working room.
+        </p>
 
         <SessionStarter
           onSubmit={handleCreateSession}

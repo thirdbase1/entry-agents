@@ -1,3 +1,4 @@
+import { makeStep } from "lightflow-engine/compat/workflow";
 import {
   completeBenchmarkRun,
   createBenchmarkRun,
@@ -55,7 +56,7 @@ interface TaskStepResult {
   errorMessage?: string;
 }
 
-async function createRunStep(
+const createRunStep = makeStep(async function createRunStep(
   modelIds: string[],
   triggeredBy: string | undefined,
 ): Promise<string> {
@@ -65,10 +66,10 @@ async function createRunStep(
     modelIds,
     ...(triggeredBy ? { triggeredBy } : {}),
   });
-}
+});
 
 /** Returns a plain, JSON-serializable modelId -> cost map (crosses a step boundary). */
-async function loadCostCatalogStep(): Promise<
+const loadCostCatalogStep = makeStep(async function loadCostCatalogStep(): Promise<
   Record<string, AvailableModelCost | undefined>
 > {
   "use step";
@@ -78,7 +79,7 @@ async function loadCostCatalogStep(): Promise<
     byId[model.id] = model.cost;
   }
   return byId;
-}
+});
 
 /**
  * Runs a single HumanEval task through the real agent harness. This is
@@ -86,7 +87,7 @@ async function loadCostCatalogStep(): Promise<
  * workflow run is interrupted, only the in-flight task is redone, not
  * every task before it (already-recorded results stay in the DB).
  */
-async function runTaskStep(
+const runTaskStep = makeStep(async function runTaskStep(
   modelId: string,
   taskId: string,
   cost: AvailableModelCost | undefined,
@@ -132,9 +133,9 @@ async function runTaskStep(
     ...(costCents != null ? { costCents } : {}),
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   };
-}
+});
 
-async function recordResultStep(
+const recordResultStep = makeStep(async function recordResultStep(
   runId: string,
   modelId: string,
   benchmark: BenchmarkName,
@@ -152,16 +153,16 @@ async function recordResultStep(
     ...(result.costCents != null ? { costCents: result.costCents } : {}),
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   });
-}
+});
 
-async function completeRunStep(
+const completeRunStep = makeStep(async function completeRunStep(
   runId: string,
   status: "completed" | "failed",
   errorMessage: string | undefined,
 ): Promise<void> {
   "use step";
   await completeBenchmarkRun(runId, status, errorMessage);
-}
+});
 
 export interface RunBenchmarkSuiteResult {
   runId: string;

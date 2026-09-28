@@ -1,3 +1,4 @@
+import { makeStep } from "lightflow-engine/compat/workflow";
 import { connectSandbox } from "@open-agents/sandbox";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import {
@@ -22,7 +23,7 @@ import {
  * is torn down mid-flight (e.g. a deploy landing at the wrong moment),
  * instead of the work vanishing with no trace.
  */
-async function finalizeArchivedSandboxStep(
+const finalizeArchivedSandboxStep = makeStep(async function finalizeArchivedSandboxStep(
   sessionId: string,
   logPrefix: string,
 ): Promise<{
@@ -73,7 +74,7 @@ async function finalizeArchivedSandboxStep(
   });
 
   return { action: "stopped" };
-}
+});
 
 export async function archiveSandboxStopWorkflow(
   sessionId: string,

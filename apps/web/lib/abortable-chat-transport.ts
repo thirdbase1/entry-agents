@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import {
   WorkflowChatTransport,
   type WorkflowChatTransportOptions,
-} from "@workflow/ai";
+} from "@/lib/workflow-chat-transport";
 
 type RequestBody = Record<string, unknown>;
 type RequestBodyFactory = () => RequestBody;

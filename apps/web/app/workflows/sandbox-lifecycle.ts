@@ -1,4 +1,5 @@
-import { sleep } from "workflow";
+import { makeStep } from "lightflow-engine/compat/workflow";
+import { sleep } from "lightflow-engine/compat/workflow";
 import {
   SANDBOX_LIFECYCLE_MIN_SLEEP_MS,
   SANDBOX_MIGRATION_MAX_ATTEMPTS,
@@ -62,7 +63,7 @@ async function claimLifecycleLease(
   return verified?.lifecycleRunId === runId;
 }
 
-async function computeLifecycleWakeDecision(
+const computeLifecycleWakeDecision = makeStep(async function computeLifecycleWakeDecision(
   sessionId: string,
   runId: string,
 ): Promise<LifecycleWakeDecision> {
@@ -91,27 +92,27 @@ async function computeLifecycleWakeDecision(
     shouldContinue: true,
     wakeAtMs: getLifecycleDueAtMs(session),
   };
-}
+});
 
-async function runLifecycleEvaluation(
+const runLifecycleEvaluation = makeStep(async function runLifecycleEvaluation(
   sessionId: string,
   reason: SandboxLifecycleReason,
 ): Promise<SandboxLifecycleEvaluationResult> {
   "use step";
   const { evaluateSandboxLifecycle } = await import("@/lib/sandbox/lifecycle");
   return evaluateSandboxLifecycle(sessionId, reason);
-}
+});
 
-async function runSandboxMigrationStep(
+const runSandboxMigrationStep = makeStep(async function runSandboxMigrationStep(
   sessionId: string,
   runId: string,
 ): Promise<SandboxMigrationResult> {
   "use step";
   const { performSandboxMigration } = await import("@/lib/sandbox/migration");
   return performSandboxMigration(sessionId, runId);
-}
+});
 
-async function clearLifecycleRunIdIfOwned(
+const clearLifecycleRunIdIfOwned = makeStep(async function clearLifecycleRunIdIfOwned(
   sessionId: string,
   runId: string,
 ): Promise<void> {
@@ -125,7 +126,7 @@ async function clearLifecycleRunIdIfOwned(
   }
 
   await updateSession(sessionId, { lifecycleRunId: null });
-}
+});
 
 export async function sandboxLifecycleWorkflow(
   sessionId: string,

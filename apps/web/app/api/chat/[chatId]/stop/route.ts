@@ -1,4 +1,4 @@
-import { getRun } from "workflow/api";
+import { getRun } from "lightflow-engine/compat/api";
 import {
   requireAuthenticatedUser,
   requireOwnedChatById,

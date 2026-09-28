@@ -1,6 +1,6 @@
 import "server-only";
 
-import { fetch as workflowFetch } from "workflow";
+import { fetch as workflowFetch } from "lightflow-engine/compat/workflow";
 import { z } from "zod";
 import { filterDisabledModels } from "./model-availability";
 import type {

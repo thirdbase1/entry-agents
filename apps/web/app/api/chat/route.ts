@@ -4,7 +4,7 @@ import {
   type InferUIMessageChunk,
 } from "ai";
 import { checkBotProtection } from "@/lib/botid";
-import { start } from "workflow/api";
+import { start } from "lightflow-engine/compat/api";
 import type { WebAgentUIMessage } from "@/app/types";
 import {
   claimChatActiveStreamId,
@@ -168,7 +168,7 @@ export async function POST(req: Request) {
   if (!claimed) {
     // Another request or workflow run owns the slot — cancel our duplicate.
     try {
-      const { getRun } = await import("workflow/api");
+      const { getRun } = await import("lightflow-engine/compat/api");
       getRun(run.runId).cancel();
     } catch {
       // Best-effort cleanup.
@@ -210,7 +210,7 @@ async function reconcileExistingActiveStream(
   chatId: string,
   activeStreamId: string,
 ): Promise<ExistingActiveStreamResolution> {
-  const { getRun } = await import("workflow/api");
+  const { getRun } = await import("lightflow-engine/compat/api");
   let currentStreamId: string | null = activeStreamId;
 
   for (

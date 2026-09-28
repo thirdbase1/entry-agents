@@ -1,3 +1,4 @@
+import { makeStep } from "lightflow-engine/compat/workflow";
 import { createHash } from "node:crypto";
 import { discoverSkills } from "@open-agents/agent";
 import {
@@ -134,7 +135,7 @@ async function getReadySessionSandbox(params: {
  * fails the run with a non-retryable SerializationError. Optional fields
  * are therefore *omitted*, not set to undefined.
  */
-export async function resolveChatSandboxRuntime(params: {
+export const resolveChatSandboxRuntime = makeStep(async function resolveChatSandboxRuntime(params: {
   userId: string;
   sessionId: string;
 }): Promise<ResolvedChatSandboxRuntime> {
@@ -191,7 +192,7 @@ export async function resolveChatSandboxRuntime(params: {
       : {}),
     skills,
   });
-}
+});
 
 // ── Image attachment offload ────────────────────────────────────────
 //

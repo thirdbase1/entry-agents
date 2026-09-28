@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { start } from "workflow/api";
+import { start } from "lightflow-engine/compat/api";
 import { runBenchmarkSuiteWorkflow } from "@/app/workflows/run-benchmarks";
 
 export const dynamic = "force-dynamic";

@@ -1,3 +1,4 @@
+import { makeStep } from "lightflow-engine/compat/workflow";
 import { isToolUIPart, type LanguageModelUsage, type UIMessageChunk } from "ai";
 import type { SandboxState, Sandbox } from "@open-agents/sandbox";
 import type { WebAgentUIMessage } from "@/app/types";
@@ -89,7 +90,7 @@ function filterNewTaskUsageEvents<T extends { toolCallId?: string }>(
   return deltaEvents;
 }
 
-export async function persistUserMessage(
+export const persistUserMessage = makeStep(async function persistUserMessage(
   chatId: string,
   message: WebAgentUIMessage,
 ): Promise<void> {
@@ -136,9 +137,9 @@ export async function persistUserMessage(
   } catch (error) {
     console.error("[workflow] Failed to persist user message:", error);
   }
-}
+});
 
-export async function persistAssistantMessageWithToolResults(
+export const persistAssistantMessageWithToolResults = makeStep(async function persistAssistantMessageWithToolResults(
   chatId: string,
   message: WebAgentUIMessage,
 ): Promise<void> {
@@ -180,9 +181,9 @@ export async function persistAssistantMessageWithToolResults(
       error,
     );
   }
-}
+});
 
-export async function persistAssistantMessage(
+export const persistAssistantMessage = makeStep(async function persistAssistantMessage(
   chatId: string,
   message: WebAgentUIMessage,
 ): Promise<void> {
@@ -207,14 +208,14 @@ export async function persistAssistantMessage(
   } catch (error) {
     console.error("[workflow] Failed to persist assistant message:", error);
   }
-}
+});
 
 /**
  * Atomic final persist (upstream open-agents #845): the assistant
  * message and the activeStreamId clear commit together in one
  * transaction, closing the refresh-replay window between them.
  */
-export async function persistFinalAssistantMessage(
+export const persistFinalAssistantMessage = makeStep(async function persistFinalAssistantMessage(
   chatId: string,
   message: WebAgentUIMessage,
   workflowRunId: string,
@@ -249,9 +250,9 @@ export async function persistFinalAssistantMessage(
   } catch (error) {
     console.error("[workflow] Failed to persist final assistant message:", error);
   }
-}
+});
 
-export async function refreshLifecycleActivity(
+export const refreshLifecycleActivity = makeStep(async function refreshLifecycleActivity(
   sessionId: string,
 ): Promise<void> {
   "use step";
@@ -261,9 +262,9 @@ export async function refreshLifecycleActivity(
   } catch (error) {
     console.error("[workflow] Failed to refresh lifecycle activity:", error);
   }
-}
+});
 
-export async function persistSandboxState(
+export const persistSandboxState = makeStep(async function persistSandboxState(
   sessionId: string,
   sandboxState: SandboxState,
 ): Promise<void> {
@@ -283,12 +284,12 @@ export async function persistSandboxState(
   } catch (error) {
     console.error("[workflow] Failed to persist sandbox state:", error);
   }
-}
+});
 
 const ACTIVE_STREAM_CLEAR_MAX_ATTEMPTS = 3;
 const ACTIVE_STREAM_CLEAR_RETRY_DELAY_MS = 50;
 
-export async function clearActiveStream(
+export const clearActiveStream = makeStep(async function clearActiveStream(
   chatId: string,
   workflowRunId: string,
 ): Promise<void> {
@@ -321,7 +322,7 @@ export async function clearActiveStream(
       await delay(ACTIVE_STREAM_CLEAR_RETRY_DELAY_MS);
     }
   }
-}
+});
 
 const BILLING_TURN_RELEASE_MAX_ATTEMPTS = 3;
 const BILLING_TURN_RELEASE_RETRY_DELAY_MS = 50;
@@ -333,7 +334,7 @@ const BILLING_TURN_RELEASE_RETRY_DELAY_MS = 50;
  * throws, since a stuck lock self-heals via the staleness fallback
  * anyway -- this is just the fast path.
  */
-export async function releaseUserBillingTurnStep(
+export const releaseUserBillingTurnStep = makeStep(async function releaseUserBillingTurnStep(
   userId: string,
   workflowRunId: string,
 ): Promise<void> {
@@ -356,7 +357,7 @@ export async function releaseUserBillingTurnStep(
       await delay(BILLING_TURN_RELEASE_RETRY_DELAY_MS);
     }
   }
-}
+});
 
 const ACTIVE_STREAM_CLAIM_MAX_ATTEMPTS = 3;
 const ACTIVE_STREAM_CLAIM_RETRY_DELAY_MS = 50;
@@ -382,7 +383,7 @@ export type ClaimActiveStreamResult = "claimed" | "conflict" | "error";
  * - `"conflict"` when a different run already owns the slot.
  * - `"error"` when the claim could not be persisted after retries.
  */
-export async function claimActiveStream(
+export const claimActiveStream = makeStep(async function claimActiveStream(
   chatId: string,
   workflowRunId: string,
   writable?: WritableStream<UIMessageChunk>,
@@ -440,7 +441,7 @@ export async function claimActiveStream(
   }
 
   return "error";
-}
+});
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
@@ -448,7 +449,7 @@ function delay(ms: number) {
   });
 }
 
-export async function recordWorkflowUsage(
+export const recordWorkflowUsage = makeStep(async function recordWorkflowUsage(
   userId: string,
   modelId: string,
   totalUsage: LanguageModelUsage | undefined,
@@ -647,9 +648,9 @@ export async function recordWorkflowUsage(
   } catch (error) {
     console.error("[workflow] Failed to record usage:", error);
   }
-}
+});
 
-export async function refreshDiffCache(
+export const refreshDiffCache = makeStep(async function refreshDiffCache(
   sessionId: string,
   sandboxState: SandboxState,
 ): Promise<void> {
@@ -662,16 +663,16 @@ export async function refreshDiffCache(
   } catch (error) {
     console.error("[workflow] Failed to refresh diff cache:", error);
   }
-}
+});
 
-export async function closeStream(
+export const closeStream = makeStep(async function closeStream(
   writable: WritableStream<UIMessageChunk>,
 ): Promise<void> {
   "use step";
   await writable.close();
-}
+});
 
-export async function sendFinish(
+export const sendFinish = makeStep(async function sendFinish(
   writable: WritableStream<UIMessageChunk>,
 ): Promise<void> {
   "use step";
@@ -681,9 +682,9 @@ export async function sendFinish(
   } finally {
     writer.releaseLock();
   }
-}
+});
 
-export async function hasAutoCommitChangesStep(params: {
+export const hasAutoCommitChangesStep = makeStep(async function hasAutoCommitChangesStep(params: {
   sandboxState: SandboxState;
 }): Promise<boolean> {
   "use step";
@@ -705,9 +706,9 @@ export async function hasAutoCommitChangesStep(params: {
     console.error("[workflow] Failed to preflight auto-commit changes:", error);
     return true;
   }
-}
+});
 
-export async function runAutoCommitStep(params: {
+export const runAutoCommitStep = makeStep(async function runAutoCommitStep(params: {
   userId: string;
   sessionId: string;
   sessionTitle: string;
@@ -736,9 +737,9 @@ export async function runAutoCommitStep(params: {
       error: error instanceof Error ? error.message : "Auto-commit failed",
     };
   }
-}
+});
 
-export async function runAutoCreatePrStep(params: {
+export const runAutoCreatePrStep = makeStep(async function runAutoCreatePrStep(params: {
   userId: string;
   sessionId: string;
   sessionTitle: string;
@@ -774,4 +775,4 @@ export async function runAutoCreatePrStep(params: {
       error: error instanceof Error ? error.message : "Auto-PR failed",
     };
   }
-}
+});

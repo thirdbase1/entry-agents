@@ -1,3 +1,4 @@
+import { makeStep } from "lightflow-engine/compat/workflow";
 import {
   APICallError,
   convertToModelMessages,
@@ -20,8 +21,8 @@ import {
   type VercelApiResult,
   type VercelCliToolResult,
 } from "@open-agents/agent";
-import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
-import { getRun } from "workflow/api";
+import { FatalError, getWorkflowMetadata, getWritable } from "lightflow-engine/compat/workflow";
+import { getRun } from "lightflow-engine/compat/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { settleStepCost } from "@/lib/billing/usage-accrual";
 import type { UsageAccrualState } from "@/lib/billing/usage-accrual";
@@ -414,7 +415,7 @@ function stripDanglingToolCalls(messages: ModelMessage[]): void {
 // change made mid-turn (while the agent is still working through tool
 // calls) takes effect on the very next step, not just on the next chat
 // message.
-async function resolveCurrentPermissionMode(params: {
+const resolveCurrentPermissionMode = makeStep(async function resolveCurrentPermissionMode(params: {
   userId: string;
   sessionId: string;
 }): Promise<"ask" | "autoAccept" | "fullAccess"> {
@@ -436,9 +437,9 @@ async function resolveCurrentPermissionMode(params: {
     rawPreferences?.defaultPermissionMode ??
     "ask"
   );
-}
+});
 
-async function resolveChatModelRuntime(params: {
+const resolveChatModelRuntime = makeStep(async function resolveChatModelRuntime(params: {
   userId: string;
   sessionId: string;
   chatId: string;
@@ -729,9 +730,9 @@ async function resolveChatModelRuntime(params: {
     guidedFrontendWorkflowEnabled:
       preferences?.guidedFrontendWorkflowEnabled ?? false,
   });
-}
+});
 
-async function persistInputMessages(
+const persistInputMessages = makeStep(async function persistInputMessages(
   chatId: string,
   messages: WebAgentUIMessage[],
 ): Promise<void> {
@@ -746,7 +747,7 @@ async function persistInputMessages(
     persistUserMessage(chatId, latestMessage),
     persistAssistantMessageWithToolResults(chatId, latestMessage),
   ]);
-}
+});
 
 function buildStepTiming(
   stepNumber: number,
@@ -895,7 +896,7 @@ function getSetupErrorMessage(error: unknown, isRepeatFailure = false): string {
  * differently to the user than a one-off transient blip. Never throws;
  * a lookup failure just means we fall back to the generic message.
  */
-async function checkIsRepeatFailureStep(
+const checkIsRepeatFailureStep = makeStep(async function checkIsRepeatFailureStep(
   chatId: string,
   errorCategory: ChatErrorCategory,
   excludeRunId: string,
@@ -926,7 +927,7 @@ async function checkIsRepeatFailureStep(
     );
     return false;
   }
-}
+});
 
 function isStepTimingError(
   error: unknown,
@@ -1213,7 +1214,7 @@ function upsertAssistantDataPart(
   };
 }
 
-async function sendDataPart(
+const sendDataPart = makeStep(async function sendDataPart(
   writable: Writable,
   part: WebAgentCommitDataPart | WebAgentPrDataPart,
 ) {
@@ -1224,7 +1225,7 @@ async function sendDataPart(
   } finally {
     writer.releaseLock();
   }
-}
+});
 
 /**
  * Writes the user's own message into the run stream.
@@ -1242,7 +1243,7 @@ async function sendDataPart(
  * even when its SSR transcript is stale, instead of depending on a merge
  * that only the client can perform.
  */
-async function sendUserMessageMarker(
+const sendUserMessageMarker = makeStep(async function sendUserMessageMarker(
   writable: Writable,
   marker: { id: string; text: string },
 ) {
@@ -1257,7 +1258,7 @@ async function sendUserMessageMarker(
   } finally {
     writer.releaseLock();
   }
-}
+});
 
 /**
  * Runs the actual GitHub commit/push work for the agent's
@@ -1273,7 +1274,7 @@ async function sendUserMessageMarker(
  * there. Takes/returns only plain, serializable data (sandbox *state*,
  * not the connected client) since step boundaries are checkpointed.
  */
-async function performAgentCommitAndPush(params: {
+const performAgentCommitAndPush = makeStep(async function performAgentCommitAndPush(params: {
   sandboxState: NonNullable<OpenAgentCallOptions["sandbox"]>["state"];
   userId: string;
   sessionId: string;
@@ -1310,7 +1311,7 @@ async function performAgentCommitAndPush(params: {
     commitUrl: result.commitUrl,
     error: result.error,
   });
-}
+});
 
 /**
  * Cheap Vercel-account-linked check for the agent's `vercel_cli` tool,
@@ -1387,7 +1388,7 @@ function requireSandboxContext(
  * pull in the drizzle client ("postgres") and the Vercel Sandbox SDK, which
  * the Workflow SDK's restricted "use workflow" bundle refuses to include.
  */
-async function getSandboxStatusStep(
+const getSandboxStatusStep = makeStep(async function getSandboxStatusStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1422,9 +1423,9 @@ async function getSandboxStatusStep(
     hasRepo: Boolean(session.repoOwner && session.repoName),
     isArchived: session.status === "archived",
   };
-}
+});
 
-async function provisionSandboxStep(
+const provisionSandboxStep = makeStep(async function provisionSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1436,9 +1437,9 @@ async function provisionSandboxStep(
   // click or lifecycle run can't double-provision.
   const kick = await kickSandboxProvisioningWorkflow(sessionId);
   return { kickStatus: kick.status, started: Boolean(kick.runId) };
-}
+});
 
-async function reconnectSandboxStep(
+const reconnectSandboxStep = makeStep(async function reconnectSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1474,9 +1475,9 @@ async function reconnectSandboxStep(
     await import("@/lib/sandbox/provisioning");
   const result = await provisionSessionSandbox({ sessionId });
   return withoutUndefined({ ...result, reconnected: true });
-}
+});
 
-async function snapshotSandboxStep(
+const snapshotSandboxStep = makeStep(async function snapshotSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1518,9 +1519,9 @@ async function snapshotSandboxStep(
   });
 
   return { snapshotted: true, snapshotId: result.snapshotId };
-}
+});
 
-async function migrateSandboxStep(
+const migrateSandboxStep = makeStep(async function migrateSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1539,9 +1540,9 @@ async function migrateSandboxStep(
     session.lifecycleRunId ?? `agent-migrate-${sessionId}`,
   );
   return withoutUndefined({ ...result });
-}
+});
 
-async function extendSandboxStep(
+const extendSandboxStep = makeStep(async function extendSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1564,9 +1565,9 @@ async function extendSandboxStep(
 
   const result = await sandbox.extendTimeout(60 * 60 * 1000);
   return { extended: true, expiresAt: result.expiresAt };
-}
+});
 
-async function deleteSandboxStep(
+const deleteSandboxStep = makeStep(async function deleteSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   "use step";
@@ -1608,9 +1609,9 @@ async function deleteSandboxStep(
       ? "hibernated"
       : "provisioning",
   };
-}
+});
 
-async function checkGithubConnectedStep(userId: string): Promise<boolean> {
+const checkGithubConnectedStep = makeStep(async function checkGithubConnectedStep(userId: string): Promise<boolean> {
   "use step";
 
   const { getUserOctokit } = await import("@/lib/github/client");
@@ -1619,14 +1620,14 @@ async function checkGithubConnectedStep(userId: string): Promise<boolean> {
   // refresh (better-auth refreshes from the stored (providerId, userId)
   // refresh token; no request-scoped headers involved).
   return (await getUserOctokit(userId)) !== null;
-}
+});
 
-async function checkVercelConnectedStep(userId: string): Promise<boolean> {
+const checkVercelConnectedStep = makeStep(async function checkVercelConnectedStep(userId: string): Promise<boolean> {
   "use step";
 
   const { hasVercelAccountLinked } = await import("@/lib/vercel/token");
   return hasVercelAccountLinked(userId);
-}
+});
 
 /**
  * Runs one generic GitHub REST API call for the agent's `github_cli`
@@ -1639,7 +1640,7 @@ async function checkVercelConnectedStep(userId: string): Promise<boolean> {
  * PRs and issues, comments, reviews, labels, branches, releases -- not
  * just whatever handful of actions we thought to hardcode.
  */
-async function performAgentGithubApiRequest(params: {
+const performAgentGithubApiRequest = makeStep(async function performAgentGithubApiRequest(params: {
   userId: string;
   // Optional since GitHub was decoupled from the session's repo: an
   // absolute API path ("/user", "/repos/{owner}/{repo}/...") needs
@@ -1702,7 +1703,7 @@ async function performAgentGithubApiRequest(params: {
         error instanceof Error ? error.message : "GitHub API request failed",
     };
   }
-}
+});
 
 function shellEscapeForVercelEnv(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
@@ -1767,7 +1768,7 @@ const VERCEL_CLI_PLACEHOLDER_TOKEN = "sandboxed_cli_do_not_use";
 const ENSURE_VERCEL_CLI_INSTALLED =
   "command -v vercel >/dev/null 2>&1 || npm install -g vercel >/dev/null 2>&1";
 
-async function performAgentVercelCli(params: {
+const performAgentVercelCli = makeStep(async function performAgentVercelCli(params: {
   userId: string;
   sandboxState: NonNullable<OpenAgentCallOptions["sandbox"]>["state"];
   workingDirectory: string;
@@ -1859,7 +1860,7 @@ async function performAgentVercelCli(params: {
         ),
       );
   }
-}
+});
 
 // Deliberately not the real token -- same reasoning as
 // VERCEL_CLI_PLACEHOLDER_TOKEN above, just for `gh`'s own local
@@ -1915,7 +1916,7 @@ const ENSURE_GH_CLI_INSTALLED = [
  * stay out of scope for an agent-initiated CLI call. Always revoked in
  * a `finally`, even on error/timeout, same as auto-commit-direct.ts.
  */
-async function performAgentGithubCli(params: {
+const performAgentGithubCli = makeStep(async function performAgentGithubCli(params: {
   userId: string;
   sandboxState: NonNullable<OpenAgentCallOptions["sandbox"]>["state"];
   workingDirectory: string;
@@ -1997,7 +1998,7 @@ async function performAgentGithubCli(params: {
       ),
     );
   }
-}
+});
 
 /**
  * Generic Vercel REST API passthrough for the agent's `vercel_api`
@@ -2010,7 +2011,7 @@ async function performAgentGithubCli(params: {
  * doesn't expose cleanly -- full deployment/build metadata, edge
  * config, webhooks, some project settings.
  */
-async function performAgentVercelApiRequest(params: {
+const performAgentVercelApiRequest = makeStep(async function performAgentVercelApiRequest(params: {
   userId: string;
   method: string;
   path: string;
@@ -2076,7 +2077,7 @@ async function performAgentVercelApiRequest(params: {
         error instanceof Error ? error.message : "Vercel API request failed",
     };
   }
-}
+});
 
 export async function runAgentWorkflow(options: Options) {
   "use workflow";
@@ -3971,7 +3972,7 @@ function isNonRetryableApiCallError(error: unknown): boolean {
   return false;
 }
 
-async function sendTextMessage(writable: Writable, id: string, text: string) {
+const sendTextMessage = makeStep(async function sendTextMessage(writable: Writable, id: string, text: string) {
   "use step";
   const writer = writable.getWriter();
   try {
@@ -3981,4 +3982,4 @@ async function sendTextMessage(writable: Writable, id: string, text: string) {
   } finally {
     writer.releaseLock();
   }
-}
+});

@@ -8,8 +8,8 @@ import type { UIMessageChunk } from "ai";
 // whole module namespace for every consumer, not just this file's own
 // import.
 import * as realAiModule from "ai";
-import * as realWorkflowModule from "workflow";
-import * as realWorkflowApiModule from "workflow/api";
+import * as realWorkflowModule from "lightflow-engine/compat/workflow";
+import * as realWorkflowApiModule from "lightflow-engine/compat/api";
 
 // ── Spy state ──────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { start, getRun } from "workflow/api";
+import { start, getRun } from "lightflow-engine/compat/api";
 import { sandboxProvisioningWorkflow } from "@/app/workflows/sandbox-provisioning";
 import {
   clearSessionSandboxProvisioningRunIdIfOwned,

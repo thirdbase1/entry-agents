@@ -1,6 +1,6 @@
 import "server-only";
 
-import { start } from "workflow/api";
+import { start } from "lightflow-engine/compat/api";
 import { archiveSandboxStopWorkflow } from "@/app/workflows/archive-sandbox-stop";
 
 /**

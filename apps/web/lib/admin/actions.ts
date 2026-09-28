@@ -73,7 +73,7 @@ import {
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getProviderFromModelId } from "@/components/provider-icons";
 import type { AvailableModelCost } from "@/lib/models";
-import { start } from "workflow/api";
+import { start } from "lightflow-engine/compat/api";
 import { runBenchmarkSuiteWorkflow } from "@/app/workflows/run-benchmarks";
 import {
   listRecentBenchmarkRunsWithProgress,

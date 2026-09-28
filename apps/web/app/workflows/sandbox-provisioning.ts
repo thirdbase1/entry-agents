@@ -1,5 +1,6 @@
+import { makeStep } from "lightflow-engine/compat/workflow";
 import { toErrorMessage } from "@open-agents/sandbox";
-import { getWorkflowMetadata } from "workflow";
+import { getWorkflowMetadata } from "lightflow-engine/compat/workflow";
 import {
   claimSessionSandboxProvisioningRunId,
   clearSessionSandboxProvisioningRunIdIfOwned,
@@ -11,7 +12,7 @@ import {
   SessionArchivedDuringProvisioningError,
 } from "@/lib/sandbox/provisioning";
 
-async function runProvisioning(sessionId: string, runId: string) {
+const runProvisioning = makeStep(async function runProvisioning(sessionId: string, runId: string) {
   "use step";
 
   const session = await getSessionById(sessionId);
@@ -59,7 +60,7 @@ async function runProvisioning(sessionId: string, runId: string) {
     await clearSessionSandboxProvisioningRunIdIfOwned(sessionId, runId);
     throw error;
   }
-}
+});
 
 export async function sandboxProvisioningWorkflow(sessionId: string) {
   "use workflow";

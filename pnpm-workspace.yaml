@@ -113,3 +113,5 @@ minimumReleaseAgeExclude:
   - "@hono/node-server@1.19.15"
   - nanoid@3.3.18
   - postcss@8.5.18
+  - lightflow-engine@0.2.2
+  - lightflow-engine@0.2.6

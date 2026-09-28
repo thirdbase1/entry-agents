@@ -20,27 +20,27 @@ export function SignedOutHero() {
   }, []);
 
   return (
-    <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-fg) selection:text-(--l-surface)">
+    <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-fg) selection:text-(--l-bg)">
       <LandingNav showSignIn={showNavCta} />
       <main>
-        <section className="relative min-h-[760px] border-b border-(--l-border) px-6 pb-16 pt-24 sm:pt-32 lg:pt-40">
-          <div className="mx-auto grid max-w-[1320px] lg:grid-cols-[72px_1fr]">
-            <div className="hidden border-r border-(--l-border) pr-4 lg:block"><span className="font-mono text-[10px] uppercase text-(--l-fg-3) [writing-mode:vertical-rl]">Entry / Field notes / 001</span></div>
-            <div className="lg:pl-16">
-              <div className="mb-16 flex justify-between border-t border-(--l-border) pt-4 text-[10px] font-semibold uppercase text-(--l-fg-3)"><span>Agent infrastructure for people who ship</span><span className="hidden sm:block">A new kind of workspace</span></div>
-              <div className="grid gap-16 lg:grid-cols-[1fr_300px] lg:gap-24">
-                <div>
-                  <p className="mb-7 font-mono text-[11px] uppercase text-(--l-fg-2)">A place for unfinished ideas</p>
-                  <h1 className="max-w-[900px] text-balance text-[clamp(4rem,10vw,10rem)] font-medium leading-[.79] tracking-[-.105em]">Make the<br /><em className="font-serif not-italic">next thing.</em></h1>
-                  <div ref={ctaRef} className="mt-14 flex flex-wrap items-center gap-6"><SignInButton size="lg" /><span className="max-w-[250px] border-l border-(--l-border) pl-5 text-sm leading-relaxed text-(--l-fg-2)">Turn a thought into a repository, a running system, and a pull request.</span></div>
-                </div>
-                <aside className="self-end border-t border-(--l-border) pt-5 lg:mb-2"><p className="font-mono text-[10px] uppercase text-(--l-fg-3)">The premise</p><p className="mt-5 text-xl leading-tight">Software is not a document. It is a sequence of proof.</p><p className="mt-8 text-sm leading-relaxed text-(--l-fg-2)">Entry keeps the context, tools, agents, and decisions together until the idea can stand on its own.</p></aside>
-              </div>
-              <div className="mt-24 grid border-y border-(--l-border) sm:grid-cols-3"><div className="border-r border-(--l-border) py-4 pr-5"><span className="font-mono text-[10px] text-(--l-fg-3)">01 / FRAME</span><p className="mt-3 text-sm">Give the idea a shape.</p></div><div className="border-r border-(--l-border) py-4 px-5"><span className="font-mono text-[10px] text-(--l-fg-3)">02 / RUN</span><p className="mt-3 text-sm">Let the work move.</p></div><div className="py-4 pl-5"><span className="font-mono text-[10px] text-(--l-fg-3)">03 / PROVE</span><p className="mt-3 text-sm">Ship something real.</p></div></div>
+        <section className="relative border-b border-(--l-border) px-6 pb-12 pt-28 sm:pt-36">
+          <div className="mx-auto max-w-[1320px]">
+            <div className="grid gap-10 border-y border-(--l-border) py-5 lg:grid-cols-[1fr_220px]">
+              <div className="flex items-center gap-4 font-mono text-[10px] uppercase text-(--l-fg-3)"><span className="size-2 bg-(--l-fg)" />Entry / Build log 001</div>
+              <span className="font-mono text-[10px] uppercase text-(--l-fg-3) lg:text-right">No handoff required</span>
             </div>
+            <div className="grid gap-12 py-20 lg:grid-cols-[minmax(0,1fr)_280px] lg:py-28">
+              <div>
+                <p className="mb-8 max-w-xs font-mono text-[11px] uppercase leading-relaxed text-(--l-fg-2)">The gap between a good idea and a working system is now a place you can enter.</p>
+                <h1 className="max-w-[1000px] text-balance text-[clamp(4rem,12vw,11.5rem)] font-medium leading-[.76] tracking-[-.11em]">Build<br /><span className="relative inline-block">in public<span className="absolute -right-6 top-1/2 hidden size-3 -translate-y-1/2 bg-(--l-fg) sm:block" /></span></h1>
+                <div ref={ctaRef} className="mt-16 flex flex-col gap-7 sm:flex-row sm:items-center"><SignInButton size="lg" /><p className="max-w-[280px] border-l border-(--l-border) pl-5 text-sm leading-relaxed text-(--l-fg-2)">A real repository. A real runtime. A clear path from intent to shipped work.</p></div>
+              </div>
+              <aside className="flex flex-col justify-between border-l border-(--l-border) pl-6 lg:pt-2"><div><span className="font-mono text-[10px] uppercase text-(--l-fg-3)">01 / The thesis</span><p className="mt-6 text-2xl leading-[.95]">Software gets better when the process stays visible.</p></div><p className="mt-12 text-sm leading-relaxed text-(--l-fg-2)">Entry is the working surface for ideas that need more than a prompt and less than a committee.</p></aside>
+            </div>
+            <div className="grid border-t border-(--l-border) sm:grid-cols-3"><div className="border-b border-(--l-border) py-5 sm:border-b-0 sm:border-r sm:pr-6"><span className="font-mono text-[10px] text-(--l-fg-3)">A / CONTEXT</span><p className="mt-3 text-sm">Start with the whole problem.</p></div><div className="border-b border-(--l-border) py-5 sm:border-b-0 sm:border-r sm:px-6"><span className="font-mono text-[10px] text-(--l-fg-3)">B / MOTION</span><p className="mt-3 text-sm">Let the system do the busywork.</p></div><div className="py-5 sm:pl-6"><span className="font-mono text-[10px] text-(--l-fg-3)">C / EVIDENCE</span><p className="mt-3 text-sm">Keep the proof with the work.</p></div></div>
           </div>
         </section>
-        <section className="border-b border-(--l-border) px-6 py-20 sm:py-28"><div className="mx-auto grid max-w-[1320px] gap-8 lg:grid-cols-[180px_1fr]"><div className="font-mono text-[10px] uppercase text-(--l-fg-3)">The room<br />where it happens</div><Stage tone="slate"><div className="mx-auto w-full max-w-[1160px]"><AppMockup /></div></Stage></div></section>
+        <section className="border-b border-(--l-border) px-6 py-20 sm:py-28"><div className="mx-auto grid max-w-[1320px] gap-8 lg:grid-cols-[180px_1fr]"><div className="font-mono text-[10px] uppercase text-(--l-fg-3)">02 / The<br />workbench</div><Stage tone="slate"><div className="mx-auto w-full max-w-[1160px]"><AppMockup /></div></Stage></div></section>
         <LandingFeatures />
         <LandingBento />
         <LandingFooter />

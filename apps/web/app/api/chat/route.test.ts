@@ -105,7 +105,7 @@ mock.module("ai", () => ({
     part.type === "tool-invocation" || part.type.startsWith("tool-"),
 }));
 
-mock.module("workflow/api", () => ({
+mock.module("lightflow-engine/compat/api", () => ({
   start: async (...args: unknown[]) => {
     routeEvents.push("start-workflow");
     startCalls.push(args);

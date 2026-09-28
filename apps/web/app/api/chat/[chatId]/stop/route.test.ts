@@ -45,7 +45,7 @@ globalThis.fetch = (async () =>
     headers: { "Content-Type": "application/json" },
   })) as unknown as typeof fetch;
 
-mock.module("workflow/api", () => ({
+mock.module("lightflow-engine/compat/api", () => ({
   getRun: () => ({
     cancel: spies.cancel,
   }),

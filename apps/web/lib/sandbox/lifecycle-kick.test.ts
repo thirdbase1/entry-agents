@@ -70,7 +70,7 @@ const spies = {
 
 const sandboxLifecycleWorkflow = Symbol("sandboxLifecycleWorkflow");
 
-mock.module("workflow/api", () => ({
+mock.module("lightflow-engine/compat/api", () => ({
   start: spies.start,
 }));
 

@@ -61,7 +61,7 @@ function createWorkflowReadableStream(startIndex?: number) {
   });
 }
 
-mock.module("workflow/api", () => ({
+mock.module("lightflow-engine/compat/api", () => ({
   getRun: () => {
     if (getRunShouldThrow) throw new Error("Run not found");
     return {

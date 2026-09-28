@@ -72,7 +72,7 @@ mock.module("@/lib/db/sessions", () => ({
   updateChatActiveStreamId: async () => {},
 }));
 
-mock.module("workflow/api", () => ({
+mock.module("lightflow-engine/compat/api", () => ({
   getRun: () => ({
     get status() {
       return Promise.resolve(mockWorkflowStatus);

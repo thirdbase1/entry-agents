@@ -210,7 +210,7 @@ function buildAgentSteps() {
 
 // ── Module mocks ───────────────────────────────────────────────────
 
-mock.module("workflow", () => ({
+mock.module("lightflow-engine/compat/workflow", () => ({
   ...realWorkflowModule,
   getWorkflowMetadata: () => ({ workflowRunId: "wrun_test-123" }),
   getWritable: () => {
@@ -223,7 +223,7 @@ mock.module("workflow", () => ({
   },
 }));
 
-mock.module("workflow/api", () => ({
+mock.module("lightflow-engine/compat/api", () => ({
   ...realWorkflowApiModule,
   getRun: () => ({
     get status() {

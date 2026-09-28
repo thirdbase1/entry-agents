@@ -20,36 +20,31 @@ export function SignedOutHero() {
   }, []);
 
   return (
-    <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-accent)/20">
-      <div className="relative z-10">
-        <LandingNav showSignIn={showNavCta} />
-        <main>
-          <section className="relative overflow-hidden px-6 pb-20 pt-16 sm:pb-28 sm:pt-24 lg:pb-36 lg:pt-32">
-            <div className="pointer-events-none absolute right-[-10%] top-[-16%] size-[620px] rounded-full border border-(--l-accent)/20" />
-            <div className="pointer-events-none absolute right-[4%] top-[-2%] size-[380px] rounded-full border border-(--l-accent)/10" />
-            <div className="mx-auto max-w-[1320px]">
-              <div className="mb-12 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-(--l-fg-3)">
-                <span>Entry / Agent infrastructure</span><span className="hidden sm:inline">Built for the next category</span>
-              </div>
-              <div className="grid gap-14 lg:grid-cols-[1.1fr_.9fr] lg:items-end lg:gap-20">
-                <div>
-                  <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-(--l-border) px-3 py-1.5 font-mono text-[10px] uppercase text-(--l-accent)"><span className="size-1.5 rounded-full bg-(--l-accent)" /> The control plane for agentic work</p>
-                  <h1 className="max-w-[900px] text-balance text-[clamp(3.8rem,9vw,8.5rem)] font-medium leading-[.86] tracking-[-.09em]">Software that<br /><span className="text-(--l-accent)">moves itself forward.</span></h1>
-                  <div ref={ctaRef} className="mt-10 flex flex-wrap items-center gap-5"><SignInButton size="lg" /><span className="max-w-[220px] text-sm leading-relaxed text-(--l-fg-2)">Give a capable team the context, tools, and runtime to ship.</span></div>
-                </div>
-                <div className="max-w-md border-l-2 border-(--l-accent) pl-6 lg:mb-2">
-                  <p className="text-xl leading-snug text-(--l-fg)">The shortest path from a sharp idea to a production-grade pull request.</p>
-                  <div className="mt-8 grid grid-cols-3 gap-3 border-t border-(--l-border) pt-4 text-[10px] uppercase text-(--l-fg-3)"><div><strong className="block font-mono text-lg text-(--l-fg)">01</strong> brief</div><div><strong className="block font-mono text-lg text-(--l-fg)">02</strong> build</div><div><strong className="block font-mono text-lg text-(--l-fg)">03</strong> ship</div></div>
-                </div>
-              </div>
+    <div className="landing relative isolate overflow-hidden bg-(--l-bg) text-(--l-fg) selection:bg-(--l-accent) selection:text-white">
+      <LandingNav showSignIn={showNavCta} />
+      <main>
+        <section className="relative border-b border-(--l-border) px-6 pb-20 pt-24 sm:pb-28 sm:pt-32 lg:pb-36 lg:pt-40">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-(--l-accent)" />
+          <div className="mx-auto max-w-[1320px]">
+            <div className="mb-20 flex items-start justify-between border-t border-(--l-border) pt-4 text-[10px] font-semibold uppercase text-(--l-fg-3)">
+              <span>Entry / 001</span><span className="hidden max-w-[180px] text-right sm:block">The operating system for serious agent work</span>
             </div>
-          </section>
-          <div className="mx-auto max-w-[1320px] px-4 sm:px-6"><Stage tone="slate"><div className="mx-auto w-full max-w-[1160px]"><AppMockup /></div></Stage></div>
-          <LandingFeatures />
-          <LandingBento />
-          <LandingFooter />
-        </main>
-      </div>
+            <div className="grid gap-12 lg:grid-cols-[1.25fr_.75fr] lg:gap-20">
+              <div>
+                <p className="mb-8 font-mono text-[11px] uppercase text-(--l-accent)">A new category of software</p>
+                <h1 className="max-w-[930px] text-balance text-[clamp(4rem,10vw,9.8rem)] font-medium leading-[.82] tracking-[-.1em]">Build the<br /><span className="text-(--l-accent)">unbuildable.</span></h1>
+                <div ref={ctaRef} className="mt-12 flex flex-wrap items-center gap-5"><SignInButton size="lg" /><span className="max-w-[240px] text-sm leading-relaxed text-(--l-fg-2)">A repository, runtime, and agent team that turns momentum into shipped software.</span></div>
+              </div>
+              <div className="flex flex-col justify-end lg:pb-2"><div className="border-l-2 border-(--l-accent) pl-6"><p className="max-w-sm text-xl leading-tight text-(--l-fg)">The best teams do not need another tool. They need a system that remembers how to move.</p><p className="mt-8 max-w-xs text-sm leading-relaxed text-(--l-fg-2)">Entry gives every idea a place to become real — from first prompt to production pull request.</p></div></div>
+            </div>
+            <div className="mt-24 grid grid-cols-2 border-y border-(--l-border) sm:grid-cols-4"><div className="border-r border-(--l-border) py-4 text-[10px] uppercase text-(--l-fg-3)">Brief <strong className="mt-2 block font-mono text-lg text-(--l-fg)">01</strong></div><div className="border-r border-(--l-border) py-4 pl-4 text-[10px] uppercase text-(--l-fg-3) sm:pl-6">Explore <strong className="mt-2 block font-mono text-lg text-(--l-fg)">02</strong></div><div className="border-r border-(--l-border) py-4 text-[10px] uppercase text-(--l-fg-3) sm:pl-6">Build <strong className="mt-2 block font-mono text-lg text-(--l-fg)">03</strong></div><div className="py-4 pl-4 text-[10px] uppercase text-(--l-fg-3) sm:pl-6">Ship <strong className="mt-2 block font-mono text-lg text-(--l-accent)">04</strong></div></div>
+          </div>
+        </section>
+        <section className="border-b border-(--l-border) px-6 py-16 sm:py-24"><div className="mx-auto max-w-[1320px]"><div className="mb-8 flex justify-between text-[10px] uppercase text-(--l-fg-3)"><span>Live workspace</span><span>Every session starts here</span></div><Stage tone="slate"><div className="mx-auto w-full max-w-[1160px]"><AppMockup /></div></Stage></div></section>
+        <LandingFeatures />
+        <LandingBento />
+        <LandingFooter />
+      </main>
     </div>
   );
 }

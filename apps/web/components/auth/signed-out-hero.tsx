@@ -8,21 +8,22 @@ import { LandingFeatures } from "@/components/landing/features";
 import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 
-const systemMap = [
-  ["01", "INTENT", "A brief with enough signal to act on."],
-  ["02", "CONTEXT", "A repository, branch, and living memory."],
-  ["03", "EXECUTION", "A sandbox where the attempt becomes visible."],
-  ["04", "PROOF", "A diff you can inspect, keep, or discard."],
+const flow = [
+  ["01", "Brief", "Describe the outcome, not the implementation."],
+  ["02", "Ground", "Attach the repository, branch, and constraints."],
+  ["03", "Run", "Let delegated work happen in an isolated room."],
+  ["04", "Review", "Keep the evidence. Reject the noise."],
 ] as const;
 
-function SignalMark() {
+function OrbitalIndex() {
   return (
-    <div aria-hidden="true" className="relative size-16 shrink-0 border border-(--l-fg) p-2">
-      <div className="grid size-full grid-cols-4 gap-1">
-        {Array.from({ length: 16 }, (_, index) => (
-          <span key={index} className={index % 5 === 0 || index === 10 ? "bg-(--l-fg)" : "border border-(--l-fg-5)"} />
-        ))}
-      </div>
+    <div aria-hidden="true" className="relative size-36 shrink-0 rounded-full border border-(--l-fg) p-3 sm:size-44">
+      <div className="absolute inset-5 rounded-full border border-(--l-border)" />
+      <div className="absolute inset-[2.65rem] rounded-full bg-(--l-fg) sm:inset-[3.25rem]" />
+      <span className="absolute left-1/2 top-1 -translate-x-1/2 font-mono text-[9px]">ENTRY / 001</span>
+      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-mono text-[9px]">OPEN SYSTEM</span>
+      <span className="absolute left-1 top-1/2 -translate-y-1/2 font-mono text-[9px]">INPUT</span>
+      <span className="absolute right-1 top-1/2 -translate-y-1/2 font-mono text-[9px]">OUTPUT</span>
     </div>
   );
 }
@@ -41,59 +42,24 @@ export function SignedOutHero() {
     <div className="landing bg-(--l-bg) text-(--l-fg) selection:bg-(--l-fg) selection:text-white">
       <LandingNav showSignIn={showNavCta} />
       <main>
-        <section className="border-b border-(--l-border) px-6 pb-20 pt-28 sm:pb-28 sm:pt-40">
+        <section className="border-b border-(--l-border) px-6 pb-20 pt-28 sm:pb-32 sm:pt-40">
           <div className="mx-auto max-w-[1320px]">
-            <div className="flex items-start justify-between gap-8 border-t border-(--l-fg) pt-5 font-mono text-[10px] uppercase">
-              <span>Entry / software work, made inspectable</span>
-              <span className="hidden max-w-48 text-right text-(--l-fg-3) sm:block">A repository-aware control surface for agents</span>
+            <div className="flex items-center justify-between border-y border-(--l-fg) py-3 font-mono text-[9px] uppercase">
+              <span>Entry / operating layer for software work</span>
+              <span className="hidden sm:inline">Status: accepting intent</span>
             </div>
-            <div className="grid gap-14 pt-16 lg:grid-cols-[1fr_300px] lg:gap-24 lg:pt-24">
+            <div className="grid gap-16 pt-16 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-24 lg:pt-24">
               <div>
-                <div className="mb-10 flex items-center gap-5">
-                  <SignalMark />
-                  <p className="max-w-xs font-mono text-[10px] uppercase leading-relaxed text-(--l-fg-3)">One place to brief, run, review, and release software work.</p>
-                </div>
-                <h1 className="max-w-[980px] text-balance text-[clamp(4rem,10.5vw,10rem)] font-medium leading-[0.78] tracking-[-0.11em]">
-                  Work in<br /><span className="ml-[8vw]">public.</span>
-                </h1>
-                <div ref={ctaRef} className="mt-16 flex flex-col gap-7 sm:flex-row sm:items-center">
-                  <SignInButton size="lg" />
-                  <p className="max-w-xs border-l border-(--l-border) pl-5 text-sm leading-relaxed text-(--l-fg-2)">Not another chat transcript. A visible path from intent to a change in your repository.</p>
-                </div>
+                <div className="mb-12 flex items-center gap-7"><OrbitalIndex /><p className="max-w-[170px] text-xs uppercase leading-relaxed text-(--l-fg-3)">A new surface for turning repository context into shipped software.</p></div>
+                <h1 className="max-w-[980px] text-balance text-[clamp(4rem,11vw,10.5rem)] font-medium leading-[0.78] tracking-[-0.12em]">Make the<br /><span className="ml-[11vw]">next move.</span></h1>
+                <div ref={ctaRef} className="mt-16 flex flex-col gap-7 sm:flex-row sm:items-center"><SignInButton size="lg" /><p className="max-w-xs border-l border-(--l-border) pl-5 text-sm leading-relaxed text-(--l-fg-2)">Entry gives every serious software request a place to become specific, runnable, and reviewable.</p></div>
               </div>
-              <div className="self-end lg:pb-2">
-                <div className="border-y border-(--l-border) py-5">
-                  <p className="font-mono text-[10px] uppercase text-(--l-fg-3)">The premise</p>
-                  <p className="mt-6 text-3xl leading-[0.9] tracking-[-0.07em] sm:text-4xl">If the work matters, the path to it should be legible.</p>
-                </div>
-                <div className="mt-5 flex justify-between font-mono text-[10px] uppercase text-(--l-fg-3)"><span>Trace 001</span><span>Ready / 24h</span></div>
-              </div>
+              <aside className="self-end border-l border-(--l-border) pl-6 lg:mb-2"><p className="font-mono text-[9px] uppercase text-(--l-fg-3)">A better unit of work</p><p className="mt-7 text-4xl leading-[0.86] tracking-[-0.08em]">Not a prompt. A complete attempt.</p><p className="mt-10 border-t border-(--l-border) pt-4 font-mono text-[9px] uppercase text-(--l-fg-3)">Repository → room → proof</p></aside>
             </div>
           </div>
         </section>
-
-        <section className="border-b border-(--l-border) px-6 py-5">
-          <div className="mx-auto grid max-w-[1320px] border-l border-(--l-border) sm:grid-cols-4">
-            {systemMap.map(([number, title, copy]) => (
-              <div key={number} className="border-b border-(--l-border) p-5 last:border-b-0 sm:border-b-0 sm:border-r sm:p-7 sm:last:border-r-0">
-                <div className="flex items-center justify-between font-mono text-[10px] text-(--l-fg-3)"><span>{number}</span><span>↗</span></div>
-                <p className="mt-12 font-mono text-[10px] uppercase">{title}</p>
-                <p className="mt-3 max-w-[190px] text-sm leading-snug text-(--l-fg-2)">{copy}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="border-b border-(--l-border) px-6 py-24 sm:py-36">
-          <div className="mx-auto grid max-w-[1320px] gap-12 lg:grid-cols-[180px_1fr]">
-            <div className="font-mono text-[10px] uppercase text-(--l-fg-3)"><span className="text-(--l-fg)">01</span><br />The room</div>
-            <div>
-              <div className="mb-10 flex flex-col justify-between gap-5 border-b border-(--l-border) pb-6 sm:flex-row sm:items-end"><div><p className="font-mono text-[10px] uppercase text-(--l-fg-3)">A live working surface</p><h2 className="mt-5 max-w-2xl text-balance text-5xl font-medium leading-[0.85] tracking-[-0.09em] sm:text-7xl">The interface is the evidence.</h2></div><span className="font-mono text-[10px] uppercase text-(--l-fg-3)">Observe / 0001</span></div>
-              <div className="border border-(--l-fg) p-2 sm:p-6"><AppMockup /></div>
-            </div>
-          </div>
-        </section>
-
+        <section className="border-b border-(--l-border) px-6 py-6"><div className="mx-auto grid max-w-[1320px] border-l border-(--l-border) sm:grid-cols-4">{flow.map(([number, title, copy]) => <div key={number} className="border-b border-(--l-border) p-6 last:border-b-0 sm:border-b-0 sm:border-r sm:p-8 sm:last:border-r-0"><div className="flex justify-between font-mono text-[9px] text-(--l-fg-3)"><span>{number}</span><span>+</span></div><p className="mt-14 text-2xl font-medium tracking-[-0.06em]">{title}</p><p className="mt-3 max-w-[190px] text-sm leading-snug text-(--l-fg-2)">{copy}</p></div>)}</div></section>
+        <section className="border-b border-(--l-border) px-6 py-24 sm:py-36"><div className="mx-auto grid max-w-[1320px] gap-12 lg:grid-cols-[180px_1fr]"><p className="font-mono text-[9px] uppercase text-(--l-fg-3)">01 / The working surface</p><div><div className="mb-10 flex flex-col justify-between gap-5 border-b border-(--l-border) pb-7 sm:flex-row sm:items-end"><h2 className="max-w-2xl text-balance text-5xl font-medium leading-[0.84] tracking-[-0.1em] sm:text-8xl">See the work<br />while it happens.</h2><span className="font-mono text-[9px] uppercase text-(--l-fg-3)">Live trace / 0001</span></div><div className="border border-(--l-fg) p-2 sm:p-6"><AppMockup /></div></div></div></section>
         <LandingFeatures />
         <LandingBento />
         <LandingFooter />

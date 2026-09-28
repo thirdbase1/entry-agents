@@ -37,12 +37,13 @@ export function SignedOutHero() {
           <div className="mx-auto max-w-[1320px] px-6">
             <div className="landing-hero-grid grid gap-12 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-20">
               <div className="max-w-[900px]">
-                <div className="mb-7 flex items-center gap-3 text-[11px] font-medium uppercase text-(--l-fg-3)">
-                  <span className="size-2 rounded-full bg-(--l-accent)" aria-hidden="true" />
+                <div className="mb-7 flex items-center gap-3 border-t border-(--l-border) pt-3 text-[11px] font-medium uppercase text-(--l-fg-3)">
+                  <span className="size-2 rounded-none bg-(--l-accent)" aria-hidden="true" />
                   <span>Autonomous engineering / 01</span>
+                  <span className="ml-auto tabular-nums text-(--l-fg-4)">Entry / 2026</span>
                 </div>
                 <h1 className="max-w-[900px] text-balance text-[clamp(3.5rem,9vw,9.25rem)] font-medium leading-[0.86] tracking-[-0.075em]">
-                  Ship the work.
+                  Ship the <em className="font-serif not-italic text-(--l-accent)">work.</em>
                 </h1>
                 <p className="mt-8 max-w-[600px] text-pretty text-base leading-relaxed text-(--l-fg-2) sm:text-xl">
                   Give an AI coding agent a task and a repository. It works autonomously in an isolated cloud sandbox, then commits and pushes the result.

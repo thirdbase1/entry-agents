@@ -1,128 +1,13 @@
 import { SignInButton } from "@/components/auth/sign-in-button";
 
-type BentoItem = {
-  readonly id: string;
-  readonly title: string;
-  readonly body: string;
-};
-
+type BentoItem = { readonly id: string; readonly title: string; readonly body: string; readonly tag: string };
 const items: readonly BentoItem[] = [
-  {
-    id: "001",
-    title: "AI SDK",
-    body: "Unified interface across models. Switch providers, stream responses, and call tools with a single API.",
-  },
-  {
-    id: "002",
-    title: "Entry Gateway",
-    body: "Route requests across providers with built-in fallbacks, rate limiting, and observability.",
-  },
-  {
-    id: "003",
-    title: "Sandbox",
-    body: "Secure, isolated environments for every session. Full filesystem, network, and runtime access.",
-  },
-  {
-    id: "004",
-    title: "Lightflow SDK",
-    body: "Durable, resumable agent workflows that survive restarts and coordinate multi-step operations.",
-  },
+  { id: "01", title: "AI SDK", tag: "model layer", body: "One clean interface for streaming, tool calls, and switching models without rewriting the agent." },
+  { id: "02", title: "Entry Gateway", tag: "routing layer", body: "A single control plane for provider routing, fallbacks, rate limits, and observability." },
+  { id: "03", title: "Sandbox", tag: "runtime layer", body: "A private, disposable machine for every session with the filesystem and network access work needs." },
+  { id: "04", title: "Lightflow SDK", tag: "durability layer", body: "Long-running workflows that checkpoint, retry, and reconnect instead of disappearing mid-task." },
 ];
 
-function mark(index: number) {
-  if (index === 0) {
-    return (
-      <div className="grid grid-cols-2 gap-1" aria-hidden="true">
-        <span className="size-2 border border-(--l-fg-4)" />
-        <span className="size-2 border border-(--l-fg-4)" />
-        <span className="size-2 border border-(--l-fg-4)" />
-        <span className="size-2 border border-(--l-fg-4)" />
-      </div>
-    );
-  }
-  if (index === 1) {
-    return (
-      <div className="flex items-center gap-1.5" aria-hidden="true">
-        <span className="h-px w-4 bg-(--l-fg-4)" />
-        <span className="h-px w-6 bg-(--l-fg-4)" />
-        <span className="h-px w-3 bg-(--l-fg-4)" />
-      </div>
-    );
-  }
-  if (index === 2) {
-    return (
-      <div className="flex flex-col gap-1" aria-hidden="true">
-        <span className="h-1 w-8 border border-(--l-fg-4)" />
-        <span className="h-1 w-6 border border-(--l-fg-4)" />
-        <span className="h-1 w-4 border border-(--l-fg-4)" />
-      </div>
-    );
-  }
-  return (
-    <div className="relative h-6 w-8" aria-hidden="true">
-      <span className="absolute left-0 top-0 size-2 border border-(--l-fg-4)" />
-      <span className="absolute right-0 top-0 size-2 border border-(--l-fg-4)" />
-      <span className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 border border-(--l-fg-4)" />
-    </div>
-  );
-}
-
 export function LandingBento() {
-  return (
-    <section>
-      <div className="mx-auto max-w-[1320px] border-t border-(--l-border-subtle) px-6 pt-5 sm:px-10">
-        <div className="flex items-center justify-between text-[11px] font-medium uppercase text-(--l-fg-3)">
-          <span>03 / The stack</span>
-          <span className="hidden sm:inline">Production primitives, not promises</span>
-        </div>
-      </div>
-      <div className="mx-auto max-w-[1320px] border-t border-(--l-border-subtle)">
-        <div className="grid gap-6 border-b border-(--l-border) px-6 py-14 pb-10 sm:gap-10 sm:px-10 md:grid-cols-2 md:gap-0 md:pb-14 md:py-28">
-          <div>
-            <h2 className="text-balance text-3xl font-semibold leading-[1.05] tracking-tighter sm:text-4xl md:text-6xl">
-              Infrastructure
-              <br />
-              that ships.
-            </h2>
-          </div>
-          <div className="md:pl-10">
-            <p className="max-w-md text-balance text-base leading-relaxed text-(--l-fg-2)">
-              Built on production-grade primitives from the Vercel ecosystem. No
-              synthetic demos &mdash; real infrastructure for real agents.
-            </p>
-            <div className="mt-6">
-              <SignInButton />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-4">
-          {items.map((item, index) => (
-            <article
-              key={item.id}
-              className={`group relative flex h-full flex-col border-b border-(--l-border) px-6 py-8 transition-colors hover:bg-(--l-surface-3) md:px-10 md:py-9 ${
-                index % 2 === 1 ? "md:border-l md:border-l-(--l-border)" : ""
-              } ${index >= 2 ? "md:border-b-0" : ""} ${
-                index > 0
-                  ? "lg:border-l lg:border-l-(--l-border)"
-                  : "lg:border-l-0"
-              } lg:border-b-0`}
-            >
-              <div className="absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-(--l-accent) transition-transform duration-200 ease-out group-hover:scale-x-100" aria-hidden="true" />
-              <div className="font-mono text-[11px] text-(--l-accent)">
-                {item.id}
-              </div>
-              <div className="mt-7 flex h-10 items-center">{mark(index)}</div>
-              <h3 className="mt-7 text-balance text-2xl font-semibold tracking-tighter">
-                {item.title}
-              </h3>
-              <p className="mt-4 flex-1 text-pretty text-sm leading-relaxed text-(--l-fg-2)">
-                {item.body}
-              </p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
+  return <section id="stack" className="mx-auto max-w-[1320px] px-6 sm:px-0"><div className="border-t border-(--l-border) px-0 py-5 sm:px-10"><div className="flex justify-between text-[11px] font-medium uppercase text-(--l-fg-3)"><span>03 / The stack</span><span className="hidden sm:inline">Four layers / one handoff</span></div></div><div className="border-y border-(--l-border) bg-(--l-surface)"><div className="grid gap-10 px-6 py-16 sm:px-10 md:grid-cols-[1fr_.8fr] md:py-24"><h2 className="text-balance text-5xl font-medium leading-[.88] tracking-[-.075em] sm:text-7xl">The parts<br /><span className="text-(--l-accent)">that make it real.</span></h2><div className="flex flex-col items-start justify-between gap-8"><p className="max-w-md text-pretty text-lg leading-relaxed text-(--l-fg-2)">No theater. Entry is an opinionated stack for turning intent into software that can be reviewed, merged, and maintained.</p><SignInButton /></div></div><div className="grid border-t border-(--l-border) md:grid-cols-2 lg:grid-cols-4">{items.map((item) => <article key={item.id} className="group border-b border-(--l-border) p-6 transition-colors hover:bg-(--l-accent) hover:text-white sm:p-10 lg:border-b-0 lg:border-r last:lg:border-r-0"><div className="flex items-center justify-between font-mono text-[11px] text-(--l-accent) group-hover:text-white"><span>{item.id}</span><span>{item.tag}</span></div><h3 className="mt-16 text-2xl font-medium tracking-[-.05em]">{item.title}</h3><p className="mt-4 text-sm leading-relaxed text-(--l-fg-2) group-hover:text-white/80">{item.body}</p></article>)}</div></div></section>;
 }

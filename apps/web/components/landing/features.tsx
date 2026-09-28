@@ -8,114 +8,18 @@ import { FeatureWorkflow } from "./feature-workflow";
 import { Stage, type StageTone } from "./stage";
 import { Window } from "./window";
 
-function Spotlight({
-  tone,
-  title,
-  description,
-  bullets,
-  flip,
-  window: windowContent,
-}: {
-  readonly tone: StageTone;
-  readonly title: string;
-  readonly description: string;
-  readonly bullets: readonly string[];
-  readonly flip?: boolean;
-  readonly window: ReactNode;
-}) {
-  return (
-    <div className="grid items-center md:grid-cols-2">
-      <div
-        className={cn(
-          "px-6 py-16 sm:px-10 md:py-20 lg:py-24",
-          flip ? "order-1 md:order-2" : "order-1 md:order-1",
-        )}
-      >
-        <h2 className="text-balance text-2xl font-semibold tracking-tighter sm:text-3xl md:text-4xl">
-          {title}
-        </h2>
-        <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-5 sm:text-lg">
-          {description}
-        </p>
-        <ul className="mt-4 space-y-3 sm:mt-5">
-          {bullets.map((b) => (
-            <li
-              key={b}
-              className="flex items-center gap-3 text-(--l-fg-2) sm:text-lg"
-            >
-              <span className="h-1.5 w-1.5 bg-(--l-fg-2)" />
-              {b}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div
-        className={flip ? "order-2 md:order-1 -mr-px" : "order-2 md:order-2"}
-      >
-        <Stage tone={tone}>
-          <div className="mx-auto w-full max-w-[1160px]">
-            <Window>{windowContent}</Window>
-          </div>
-        </Stage>
-      </div>
+function Spotlight({ tone, title, description, bullets, flip, window: content }: { readonly tone: StageTone; readonly title: string; readonly description: string; readonly bullets: readonly string[]; readonly flip?: boolean; readonly window: ReactNode }) {
+  return <article className="grid items-stretch border-b border-(--l-border) md:grid-cols-2">
+    <div className={cn("flex flex-col justify-center px-6 py-16 sm:px-10 md:py-24", flip ? "md:order-2" : "md:order-1")}>
+      <span className="font-mono text-xs text-(--l-accent)">0{flip ? 2 : 1} / SYSTEM</span>
+      <h2 className="mt-6 max-w-md text-balance text-3xl font-medium leading-[.95] tracking-[-.06em] sm:text-5xl">{title}</h2>
+      <p className="mt-6 max-w-lg text-pretty text-base leading-relaxed text-(--l-fg-2) sm:text-lg">{description}</p>
+      <ul className="mt-8 grid gap-3 text-sm text-(--l-fg-2)">{bullets.map((bullet) => <li key={bullet} className="flex gap-3"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-(--l-accent)" />{bullet}</li>)}</ul>
     </div>
-  );
+    <div className={cn("flex items-center bg-(--l-surface-2) p-4 sm:p-10", flip ? "md:order-1" : "md:order-2")}><Stage tone={tone}><div className="mx-auto w-full max-w-[1160px]"><Window>{content}</Window></div></Stage></div>
+  </article>;
 }
 
 export function LandingFeatures() {
-  return (
-    <section>
-      <div className="mx-auto max-w-[1320px] border-y border-(--l-border) px-6 py-5 sm:px-10">
-        <div className="flex items-center justify-between text-[11px] font-medium uppercase text-(--l-fg-3)">
-          <span>02 / How it works</span>
-          <span className="hidden sm:inline">The system, in three movements</span>
-        </div>
-      </div>
-      <div className="relative mx-auto max-w-[1320px] overflow-hidden">
-        <div
-          className="absolute left-1/2 top-0 hidden h-full w-px md:block"
-          style={{ backgroundColor: "var(--l-border)" }}
-        />
-        <div>
-          <Spotlight
-            tone="slate"
-            title="Agents that ship real code."
-            description="Each agent gets a full sandbox environment with filesystem, network, and runtime access. Describe what to build and let the agent work autonomously until it's done."
-            bullets={[
-              "File ops, search, shell, and task delegation built in",
-              "Explorer and executor subagents for parallel work",
-              "Multi-model support with Entry Gateway",
-            ]}
-            window={<FeatureAgent />}
-          />
-
-          <Spotlight
-            tone="ash"
-            title="Cloud sandboxes, not local machines."
-            description="Every session runs in an isolated cloud sandbox with its own branch — Boat or Vercel, whichever is selected for the session. Work is committed and pushed automatically — nothing is lost when the sandbox expires."
-            bullets={[
-              "Ephemeral environments with full git integration",
-              "Auto-hibernate on inactivity, instant restore",
-              "Snapshot and restore filesystem state",
-            ]}
-            flip
-            window={<FeatureSandbox />}
-          />
-
-          <Spotlight
-            tone="iron"
-            title="Durable workflows that survive anything."
-            description="Agent loops run as durable workflows that survive restarts, retry on failure, and coordinate multi-step operations over time. No work is ever lost mid-run."
-            bullets={[
-              "Resumable agent loops with automatic checkpointing",
-              "Post-finish: usage tracking, diff caching, auto-commit",
-              "Reconnect to running workflows from any client",
-            ]}
-            window={<FeatureWorkflow />}
-          />
-        </div>
-      </div>
-    </section>
-  );
+  return <section id="how-it-works" className="mx-auto max-w-[1320px] px-6 sm:px-0"><div className="border-y border-(--l-border) px-0 py-5 sm:px-10"><div className="flex justify-between text-[11px] font-medium uppercase text-(--l-fg-3)"><span>02 / How it works</span><span className="hidden sm:inline">Brief / build / deliver</span></div></div><Spotlight tone="slate" title="Agents with a place to work." description="Give an agent a real repository and a real runtime. It can inspect the codebase, make decisions, and keep moving without turning your laptop into a build server." bullets={["Full filesystem, network, and runtime access","Explorer and executor agents for parallel work","Entry Gateway for model routing"]} window={<FeatureAgent />} /><Spotlight tone="ash" title="A fresh branch, every time." description="Each session gets an isolated cloud sandbox and its own branch. Work is safe, repeatable, and ready to hand back when the work is finished." bullets={["Ephemeral environments with git integration","Automatic snapshots and instant restore","No local setup or dependency drift"]} flip window={<FeatureSandbox />} /><Spotlight tone="iron" title="Work that survives the handoff." description="Lightflow SDK keeps long-running agent loops resumable, observable, and coordinated from first instruction through final commit." bullets={["Checkpointed workflows with retry semantics","Usage tracking and diff caching","Reconnect from any client"]} window={<FeatureWorkflow />} /></section>;
 }

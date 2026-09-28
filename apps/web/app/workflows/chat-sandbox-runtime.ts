@@ -237,11 +237,10 @@ function buildImagePath(image: PendingImageAttachment, buffer: Buffer): string {
  * already there) and returns the workspace-relative path for each, in the
  * same order as the input array.
  */
-export async function persistImageAttachmentsToSandbox(params: {
+export const persistImageAttachmentsToSandbox = makeStep(async function persistImageAttachmentsToSandbox(params: {
   sandboxState: SandboxState;
   images: PendingImageAttachment[];
 }): Promise<string[]> {
-  "use step";
 
   if (params.images.length === 0) {
     return [];
@@ -273,4 +272,4 @@ export async function persistImageAttachmentsToSandbox(params: {
   }
 
   return paths;
-}
+});

@@ -304,10 +304,9 @@ function replaceImageAttachmentsWithPaths(
   });
 }
 
-const convertMessages = async (
+const convertMessages = makeStep(async function convertMessages(
   messages: WebAgentUIMessage[],
-): Promise<ModelMessage[]> => {
-  "use step";
+): Promise<ModelMessage[]> {
   const { webAgent } = await import("@/app/config");
   const dedupedMessages = messages
     .map(dedupeMessageReasoning)
@@ -337,7 +336,7 @@ const convertMessages = async (
       emptyMessages: "remove",
     }),
   );
-};
+});;
 
 /**
  * Defensive guard against AI_MissingToolResultsError (real incident,
@@ -1352,12 +1351,11 @@ const performAgentCommitAndPush = makeStep(async function performAgentCommitAndP
  * (pricing-only, unfiltered, kill-switch-free), which is both cheaper
  * per turn and correct.
  */
-async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
-  "use step";
+const fetchModelCostCatalogStep = makeStep(async function fetchModelCostCatalogStep(): Promise<AvailableModel[]> {
 
   const { fetchModelCostCatalog } = await import("@/lib/models-with-context");
   return withoutUndefined(await fetchModelCostCatalog());
-}
+});
 
 /**
  * Sandbox-dependent tool closures (commit/push, gh, vercel CLI) need a real
@@ -2904,7 +2902,7 @@ export async function runAgentWorkflow(options: Options) {
 // almost never fire.
 const MAX_TURN_SPEND_CENTS = 500;
 
-const runAgentStep = async (
+const runAgentStep = makeStep(async function runAgentStep(
   messages: ModelMessage[],
   originalMessages: WebAgentUIMessage[],
   messageId: string,
@@ -2922,8 +2920,7 @@ const runAgentStep = async (
   startingBalanceCents: number,
   enforceCreditBlock: boolean,
   windowBudgetCents: number | null,
-) => {
-  "use step";
+) {
 
   const stepStartedAt = new Date();
   const { webAgent } = await import("@/app/config");
@@ -3854,7 +3851,7 @@ const runAgentStep = async (
     stopMonitor.stop();
     await stopMonitor.done;
   }
-};
+});;
 
 function startStopMonitor(
   runId: string,

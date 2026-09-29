@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 import { withBotId } from "botid/next/config";
 
 const nextConfig: NextConfig = {
+  // Vercel's sandbox preview uses a per-session `*.vercel.run` hostname.
+  // Next's dev-origin protection otherwise rejects Server Component requests
+  // before the preview can render.
+  allowedDevOrigins: ["*.vercel.run"],
   images: {
     remotePatterns: [
       {

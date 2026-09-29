@@ -75,7 +75,7 @@ allowBuilds:
   sharp: true
 
 minimumReleaseAgeExclude:
-  - lightflow-engine@0.2.14
+  - lightflow-engine@0.2.16
   - esbuild@0.24.3
   - undici@6.23.0
   - undici@6.24.0

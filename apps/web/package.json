@@ -67,7 +67,7 @@
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
     "zod": "catalog:",
-    "lightflow-engine": "0.2.14"
+    "lightflow-engine": "0.2.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

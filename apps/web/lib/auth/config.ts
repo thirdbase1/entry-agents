@@ -46,7 +46,13 @@ function getAuthBaseURLFallback(): string | undefined {
 }
 
 function getAllowedAuthHosts(): string[] {
-  const hosts = new Set<string>(["localhost:3000", "127.0.0.1:3000"]);
+  const hosts = new Set<string>([
+    "localhost:3000",
+    "127.0.0.1:3000",
+    // Branch preview deployment (entry-run-engine branch) — better-auth rejects
+    // auth requests whose host isn't allowlisted, which breaks login on previews.
+    "entry-agents-git-entry-run-engine-thirdbase1s-projects.vercel.app",
+  ]);
 
   for (const value of [
     process.env.BETTER_AUTH_URL,

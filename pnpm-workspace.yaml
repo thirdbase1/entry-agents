@@ -75,7 +75,7 @@ allowBuilds:
   sharp: true
 
 minimumReleaseAgeExclude:
-  - lightflow-engine@0.2.13
+  - lightflow-engine@0.2.14
   - esbuild@0.24.3
   - undici@6.23.0
   - undici@6.24.0
@@ -114,5 +114,3 @@ minimumReleaseAgeExclude:
   - "@hono/node-server@1.19.15"
   - nanoid@3.3.18
   - postcss@8.5.18
-  - lightflow-engine@0.2.2
-  - lightflow-engine@0.2.10

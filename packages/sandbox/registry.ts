@@ -24,6 +24,7 @@ import {
 import { connectVercel } from "./vercel/connect.ts";
 import type { VercelState } from "./vercel/state.ts";
 import { connectLocal } from "./local/sandbox.ts";
+import type { LocalSandboxConnectOptions } from "./local/sandbox.ts";
 import { connectBoat } from "./boat/connect.ts";
 import { isBoatConfigured } from "./boat/client.ts";
 import type { BoatState } from "./boat/state.ts";
@@ -181,7 +182,10 @@ const localProvider: SandboxProvider = {
     if (state.type !== "local") {
       throw new UnsupportedSandboxProviderError(String(state.type));
     }
-    return connectLocal(state as { type: "local" } & { rootDir: string }, options);
+    return connectLocal(
+      state as { type: "local" } & { rootDir: string },
+      options as LocalSandboxConnectOptions | undefined,
+    );
   },
 
   buildProvisionState({ existing, sessionId, fresh }) {

@@ -9,6 +9,7 @@ import {
 } from "./tools/read-state";
 import {
   type SharedProviderModelId,
+  type GatewayConfig,
   createInertPlaceholderModel,
   sharedProvider,
   type ProviderOptionsByProvider,
@@ -46,6 +47,16 @@ import {
 export interface AgentModelSelection {
   id: SharedProviderModelId;
   providerOptionsOverrides?: ProviderOptionsByProvider;
+  /**
+   * Per-call gateway transport override (desktop/Phase 6, 2026-10-01).
+   * When set, prepareCall passes it to sharedProvider() as `config` so the
+   * model request authenticates WITHOUT GATEWAY_BASE_URL/GATEWAY_API_KEY
+   * ever being present in the host process environment — agent-run
+   * subprocesses therefore cannot read them. The web host leaves this
+   * undefined and keeps the existing env-var path; behavior is unchanged
+   * when absent.
+   */
+  gatewayConfig?: GatewayConfig;
   /**
    * Live context_window from Entry's gateway model catalog. The agent
    * package keeps a conservative static fallback for non-web hosts/tests,
@@ -240,10 +251,17 @@ export const openAgent = new ToolLoopAgent({
 
     const callModel = sharedProvider(mainSelection.id, {
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
+      // Desktop (Phase 6): per-call transport/auth config — keeps the
+      // session token out of the process environment entirely. Web hosts
+      // omit it and keep the env-var path.
+      ...(mainSelection.gatewayConfig ? { config: mainSelection.gatewayConfig } : {}),
     });
     const subagentModel = subagentSelection
       ? sharedProvider(subagentSelection.id, {
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
+          ...(subagentSelection.gatewayConfig
+            ? { config: subagentSelection.gatewayConfig }
+            : {}),
         })
       : undefined;
     const customInstructions = options.customInstructions;

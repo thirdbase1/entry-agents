@@ -1,0 +1,27 @@
+{
+  "name": "entry-desktop-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "ai": "6.0.194",
+    "nanoid": "^5.0.0",
+    "next": "16.3.3",
+    "pg": "^8.13.0",
+    "postgres": "^3.4.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "zod": "^4.4.3",
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

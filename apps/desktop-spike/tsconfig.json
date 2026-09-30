@@ -1,0 +1,17 @@
+{
+  "extends": "@open-agents/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../web/*"]
+    }
+  },
+  "include": ["src"]
+}

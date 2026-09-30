@@ -20,6 +20,13 @@ export type { SandboxState } from "./state.ts";
 export interface ConnectOptions {
   /** Environment variables available to sandbox commands */
   env?: Record<string, string>;
+  /**
+   * Extra filesystem roots the LocalSandbox may touch beyond its rootDir.
+   * Provider-specific by design (only LocalSandbox honours it — see
+   * LocalSandboxConnectOptions): remote providers ignore extra host roots.
+   * Forwarded to the provider's own connect options by the local adapter.
+   */
+  allowedRoots?: string[];
   /** GitHub token used only during setup clone/fetch, then cleared */
   githubToken?: string;
   /** Git user for commits */

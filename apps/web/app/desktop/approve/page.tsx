@@ -1,139 +1,168 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { approveDesktopDevice } from "./actions";
 import { useSession } from "@/hooks/use-session";
 import { SignInButton } from "@/components/auth/sign-in-button";
 
 /**
- * Entry Desktop sign-in approval page.
+ * Entry Desktop sign-in approval page — fully seamless.
  *
- * The desktop app opens this page in the user's browser with the 6-digit
- * code prefilled (?code=). The user signs in to Entry Web (Vercel or GitHub)
- * and approves the request. On approval, the page attempts to hand control
- * back to Entry Desktop via the entry:// deep link (cancellation only — the
- * session token never travels through the browser). A manual fallback is
- * kept for users who navigate here without the prefill.
+ * The desktop opens this page with ?code=NNNNNN (machine handshake, never
+ * displayed as user-facing UI).
+ *   - Signed in → the request approves automatically and the user is sent
+ *     straight back to Entry Desktop.
+ *   - Signed out → one provider button (Vercel or GitHub); the OAuth
+ *     callback returns here and approval then happens automatically.
+ * The session token never travels through the browser — the desktop keeps
+ * polling the backend and completes on its own.
  */
 function ApproveForm() {
   const params = useSearchParams();
   const { isAuthenticated, loading: sessionLoading } = useSession();
-  const [code, setCode] = useState("");
+  const code = (params.get("code") ?? "").replace(/\D/g, "").slice(0, 6);
+  const validCode = /^\d{6}$/.test(code);
   const [state, setState] = useState<"idle" | "working" | "done" | string>("idle");
+  const triedRef = useRef(false);
 
-  // Prefill from the desktop-initiated URL (?code=123456).
+  // Auto-approve as soon as we have a valid code AND a web session.
   useEffect(() => {
-    const c = (params.get("code") ?? "").replace(/\D/g, "").slice(0, 6);
-    if (/^\d{6}$/.test(c)) setCode(c);
-  }, [params]);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+    if (!validCode || !isAuthenticated || triedRef.current) return;
+    triedRef.current = true;
     setState("working");
-    const res = await approveDesktopDevice(code.trim());
-    if ("ok" in res) setState("done");
-    else setState(res.error);
+    void approveDesktopDevice(code).then((res) => {
+      if ("ok" in res) setState("done");
+      else setState(res.error);
+    });
+  }, [validCode, isAuthenticated, code]);
+
+  function backToDesktop() {
+    // Best-effort: focus the desktop app (registered protocol handler).
+    window.location.href = "entry://auth/complete";
   }
 
-  // Best-effort: focus the desktop app and tell it the user cancelled.
-  // Works when the entry:// protocol handler is registered (installed app).
-  function cancelToDesktop() {
-    window.location.href = "entry://auth/cancel";
+  // No code in the URL at all (manual visit): explain and bail cleanly.
+  if (!validCode) {
+    return (
+      <Centered>
+        <h1 className="text-lg font-semibold">Approve Entry Desktop</h1>
+        <p className="text-sm text-muted-foreground">
+          This page is opened automatically by Entry Desktop during sign-in.
+          Please start sign-in from the Entry Desktop app.
+        </p>
+      </Centered>
+    );
   }
 
+  if (state === "done") {
+    return (
+      <Centered>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/entry-logo.svg" alt="Entry" className="h-10" />
+        <h1 className="text-lg font-semibold">You&apos;re signed in</h1>
+        <p className="text-sm text-green-600">
+          Entry Desktop has been approved. Switch back to the app — it will
+          finish signing in automatically.
+        </p>
+        <button
+          type="button"
+          onClick={backToDesktop}
+          className="rounded bg-primary px-4 py-2 text-primary-foreground"
+        >
+          Return to Entry Desktop
+        </button>
+      </Centered>
+    );
+  }
+
+  if (state === "working" || sessionLoading) {
+    return (
+      <Centered>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/entry-logo.svg" alt="Entry" className="h-10" />
+        <h1 className="text-lg font-semibold">Signing you in…</h1>
+        <p className="text-sm text-muted-foreground">
+          {sessionLoading
+            ? "Checking your Entry session…"
+            : "Approving Entry Desktop…"}
+        </p>
+      </Centered>
+    );
+  }
+
+  // Signed out: one click on a provider; the OAuth callback returns here
+  // and approval then completes automatically.
+  if (!isAuthenticated) {
+    return (
+      <Centered>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/entry-logo.svg" alt="Entry" className="h-10" />
+        <h1 className="text-lg font-semibold">Approve Entry Desktop</h1>
+        <p className="text-sm text-muted-foreground">
+          <strong>Entry Desktop</strong> on your computer is requesting access
+          to your Entry account. Sign in to approve it — one click, that&apos;s
+          all.
+        </p>
+        <div className="flex w-full flex-col items-center gap-3">
+          <SignInButton
+            className="w-full"
+            provider="vercel"
+            callbackUrl={`/desktop/approve?code=${code}`}
+          />
+          <SignInButton
+            className="w-full"
+            provider="github"
+            callbackUrl={`/desktop/approve?code=${code}`}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => (window.location.href = "entry://auth/cancel")}
+          className="text-xs text-muted-foreground underline"
+        >
+          Cancel — don&apos;t sign in
+        </button>
+        {typeof state === "string" && state !== "idle" && (
+          <p className="text-sm text-red-600">
+            {state === "expired"
+              ? "That request has expired. Start sign-in again in Entry Desktop."
+              : state === "not_found" || state === "invalid_code"
+                ? "Request not found. Start sign-in again in Entry Desktop."
+                : "Something went wrong. Start sign-in again in Entry Desktop."}
+          </p>
+        )}
+      </Centered>
+    );
+  }
+
+  // Authenticated but the auto-approve returned an error (expired/not found).
+  return (
+    <Centered>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/entry-logo.svg" alt="Entry" className="h-10" />
+      <h1 className="text-lg font-semibold">Approve Entry Desktop</h1>
+      <p className="text-sm text-red-600">
+        {state === "expired"
+          ? "That request has expired. Start sign-in again in Entry Desktop."
+          : "That sign-in request could not be approved. Start sign-in again in Entry Desktop."}
+      </p>
+      <button
+        type="button"
+        onClick={() => (window.location.href = "entry://auth/cancel")}
+        className="text-xs text-muted-foreground underline"
+      >
+        Back to Entry Desktop
+      </button>
+    </Centered>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
       <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-lg border p-8 text-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/entry-logo.svg"
-          alt="Entry"
-          className="h-10 text-foreground"
-        />
-        <h1 className="text-lg font-semibold">Approve Entry Desktop</h1>
-
-        {state !== "done" ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              <strong>Entry Desktop</strong> on your computer is requesting
-              access to your Entry account. Approve to sign in there.
-            </p>
-
-            {/* Not signed in yet: offer both real provider sign-ins first.
-                The OAuth callback returns to this page with the code intact. */}
-            {!sessionLoading && !isAuthenticated && (
-              <div className="flex w-full flex-col items-center gap-3">
-                <p className="text-sm text-muted-foreground">
-                  First sign in to Entry with one of these accounts:
-                </p>
-                <SignInButton
-                  className="w-full"
-                  provider="vercel"
-                  callbackUrl={`/desktop/approve?code=${code}`}
-                />
-                <SignInButton
-                  className="w-full"
-                  provider="github"
-                  callbackUrl={`/desktop/approve?code=${code}`}
-                />
-                <p className="text-xs text-muted-foreground">
-                  …then come back to this tab and enter the code below.
-                </p>
-              </div>
-            )}
-
-            <form onSubmit={onSubmit} className="flex w-full flex-col gap-4">
-              <input
-                inputMode="numeric"
-                pattern="\d{6}"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                placeholder="000000"
-                className="rounded border px-3 py-2 text-center font-mono text-xl tracking-widest"
-                autoFocus
-              />
-              <button
-                type="submit"
-                disabled={code.length !== 6 || state === "working"}
-                className="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50"
-              >
-                {state === "working" ? "Approving…" : "Approve"}
-              </button>
-            </form>
-            <button
-              type="button"
-              onClick={cancelToDesktop}
-              className="text-xs text-muted-foreground underline"
-            >
-              Cancel — don&apos;t sign in
-            </button>
-            {typeof state === "string" && state !== "idle" && state !== "working" && (
-              <p className="text-sm text-red-600">
-                {state === "unauthorized"
-                  ? "Your session ended — use one of the sign-in buttons above, then try again."
-                  : state === "expired"
-                    ? "That code has expired. Start sign-in again in Entry Desktop."
-                    : "Code not found. Check the code shown in Entry Desktop."}
-              </p>
-            )}
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-green-600">
-              Approved. Return to Entry Desktop — sign-in completes
-              automatically.
-            </p>
-            <button
-              type="button"
-              onClick={cancelToDesktop}
-              className="text-xs text-muted-foreground underline"
-            >
-              Open Entry Desktop
-            </button>
-          </>
-        )}
+        {children}
       </div>
     </div>
   );

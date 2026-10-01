@@ -89,7 +89,7 @@ function req(method: string, body?: unknown): Request {
   return new Request("https://b.test/api/desktop/integrations", {
     method,
     ...(body !== undefined ? { body: JSON.stringify(body), headers: { "content-type": "application/json" } } : {}),
-  });
+  }) as never;
 }
 
 function reset(): void {

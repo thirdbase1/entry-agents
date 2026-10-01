@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { approveDesktopDevice } from "./actions";
+import { useSession } from "@/hooks/use-session";
+import { SignInButton } from "@/components/auth/sign-in-button";
 
 /**
  * Entry Desktop sign-in approval page.
@@ -16,6 +18,7 @@ import { approveDesktopDevice } from "./actions";
  */
 function ApproveForm() {
   const params = useSearchParams();
+  const { isAuthenticated, loading: sessionLoading } = useSession();
   const [code, setCode] = useState("");
   const [state, setState] = useState<"idle" | "working" | "done" | string>("idle");
 
@@ -56,6 +59,30 @@ function ApproveForm() {
               <strong>Entry Desktop</strong> on your computer is requesting
               access to your Entry account. Approve to sign in there.
             </p>
+
+            {/* Not signed in yet: offer both real provider sign-ins first.
+                The OAuth callback returns to this page with the code intact. */}
+            {!sessionLoading && !isAuthenticated && (
+              <div className="flex w-full flex-col items-center gap-3">
+                <p className="text-sm text-muted-foreground">
+                  First sign in to Entry with one of these accounts:
+                </p>
+                <SignInButton
+                  className="w-full"
+                  provider="vercel"
+                  callbackUrl={`/desktop/approve?code=${code}`}
+                />
+                <SignInButton
+                  className="w-full"
+                  provider="github"
+                  callbackUrl={`/desktop/approve?code=${code}`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  …then come back to this tab and enter the code below.
+                </p>
+              </div>
+            )}
+
             <form onSubmit={onSubmit} className="flex w-full flex-col gap-4">
               <input
                 inputMode="numeric"
@@ -85,7 +112,7 @@ function ApproveForm() {
             {typeof state === "string" && state !== "idle" && state !== "working" && (
               <p className="text-sm text-red-600">
                 {state === "unauthorized"
-                  ? "Please sign in to Entry first, then try again."
+                  ? "Your session ended — use one of the sign-in buttons above, then try again."
                   : state === "expired"
                     ? "That code has expired. Start sign-in again in Entry Desktop."
                     : "Code not found. Check the code shown in Entry Desktop."}

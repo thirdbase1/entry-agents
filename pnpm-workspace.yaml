@@ -71,8 +71,10 @@ allowBuilds:
   "@nestjs/core": false
   "@swc/core": true
   cbor-extract: true
+  electron: false
   esbuild: true
   sharp: true
+  sleep: false
 
 minimumReleaseAgeExclude:
   - esbuild@0.24.3

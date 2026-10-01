@@ -14,7 +14,12 @@ export async function GET(req: NextRequest) {
 
   const upstream = await fetch(
     `${(process.env.GATEWAY_BASE_URL ?? "").replace(/\/$/, "")}/v1/models`,
-    { next: { revalidate: 300 } },
+    {
+      next: { revalidate: 300 },
+      headers: process.env.GATEWAY_API_KEY
+        ? { Authorization: `Bearer ${process.env.GATEWAY_API_KEY}` }
+        : undefined,
+    },
   ).catch(() => null);
 
   if (!upstream?.ok) {

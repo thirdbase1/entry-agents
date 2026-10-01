@@ -31,6 +31,7 @@ async function getAccount(userId: string, provider: string) {
     SELECT account_id, access_token, refresh_token, access_token_expires_at, scope
     FROM accounts
     WHERE user_id = ${userId} AND provider_id = ${provider}
+    ORDER BY access_token_expires_at DESC NULLS FIRST
     LIMIT 1`;
   return (rows[0] as
     | { account_id: string; access_token: string | null; refresh_token: string | null; access_token_expires_at: Date | string | null; scope: string | null }

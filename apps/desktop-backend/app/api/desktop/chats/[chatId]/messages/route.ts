@@ -39,7 +39,14 @@ export async function POST(
   if (
     !body.messageId ||
     (body.role !== "user" && body.role !== "assistant") ||
-    !Array.isArray(body.parts)
+    !Array.isArray(body.parts) ||
+      !body.parts.every(
+        (p) =>
+          typeof p === "object" &&
+          p !== null &&
+          typeof (p as { text?: unknown }).text === "string" &&
+          (p as { type?: unknown }).type === "text",
+      )
   ) {
     return NextResponse.json(
       { error: "messageId, role (user|assistant), parts[] required" },

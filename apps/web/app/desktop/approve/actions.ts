@@ -46,9 +46,7 @@ export async function approveDesktopDevice(code: string): Promise<ApproveResult>
     WHERE code = ${code}
     LIMIT 1`);
 
-  const row = (rows.rows?.[0] ?? rows[0]) as
-    | { device_code: string; status: string; expires_at: Date | string }
-    | undefined;
+  const row = (rows as unknown as { device_code: string; status: string; expires_at: Date | string }[])[0];
   if (!row) return { error: "not_found" };
   if (new Date(row.expires_at).getTime() < Date.now()) return { error: "expired" };
 
@@ -58,7 +56,7 @@ export async function approveDesktopDevice(code: string): Promise<ApproveResult>
     WHERE user_id = ${session.user.id}
     ORDER BY expires_at DESC
     LIMIT 1`);
-  const tokenRow = (tokenRes.rows?.[0] ?? tokenRes[0]) as { token: string } | undefined;
+  const tokenRow = (tokenRes as unknown as { token: string }[])[0];
   if (!tokenRow?.token) return { error: "unauthorized" };
 
   if (row.status === "approved") return { ok: true };

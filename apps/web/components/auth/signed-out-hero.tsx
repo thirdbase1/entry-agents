@@ -48,9 +48,10 @@ export function SignedOutHero() {
 
             <div
               ref={heroButtonsRef}
-              className="mt-6 flex items-center gap-2 sm:mt-8"
+              className="mt-6 flex flex-wrap items-center gap-2 sm:mt-8"
             >
               <SignInButton size="lg" callbackUrl="/sessions" />
+              <SignInButton size="lg" provider="github" callbackUrl="/sessions" />
             </div>
           </div>
 

@@ -63,7 +63,9 @@ export async function POST(
       { status: 400 },
     );
   }
-  // Bare-array legacy shape: each entry must be a text part.
+  // Validate like web: parts entries must be objects with a string `type`.
+  // (The old text-only check rejected web-shape parts such as step-start and
+  // data-user-message, which the web UI needs to render desktop chats 1:1.)
   const partsForValidation = Array.isArray(body.parts)
     ? body.parts
     : ((body.parts as { parts?: unknown }).parts ?? []);
@@ -73,8 +75,7 @@ export async function POST(
       (p) =>
         typeof p === "object" &&
         p !== null &&
-        typeof (p as { text?: unknown }).text === "string" &&
-        (p as { type?: unknown }).type === "text",
+        typeof (p as { type?: unknown }).type === "string",
     )
   ) {
     return NextResponse.json(

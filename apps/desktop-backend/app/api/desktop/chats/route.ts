@@ -26,8 +26,25 @@ interface CreateChatBody {
   desktop?: boolean;
 }
 
-async function ensureDesktopAgentSession(userId: string, title: string) {
-  const id = `desktop-${crypto.randomUUID()}`;
+async function ensureDesktopAgentSession(userId: string, title: string, chatId?: string) {
+  // Deterministic per chat: one chat ↔ one session. A random id per call
+  // orphaned a session row every time an existing chatId re-persisted with a
+  // different session (ownership mismatch → 403 + empty session → web 404).
+  const id =
+    chatId && chatId.startsWith("desktop-")
+      ? chatId
+      : chatId
+        ? `desktop-${chatId}`
+        : `desktop-${crypto.randomUUID()}`;
+  const existing = await db.query.sessions.findFirst({
+    where: eq(sessions.id, id),
+  });
+  if (existing) {
+    if (existing.userId !== userId) {
+      return null;
+    }
+    return id;
+  }
   await db.insert(sessions).values({
     id,
     userId,
@@ -62,7 +79,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   } else if (body.desktop) {
-    sessionId = await ensureDesktopAgentSession(user.id, body.title ?? "Desktop chat");
+    const provisioned = await ensureDesktopAgentSession(
+      user.id,
+      body.title ?? "Desktop chat",
+      body.chatId,
+    );
+    if (!provisioned) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    sessionId = provisioned;
   } else {
     return NextResponse.json(
       { error: "chatId and sessionId required" },

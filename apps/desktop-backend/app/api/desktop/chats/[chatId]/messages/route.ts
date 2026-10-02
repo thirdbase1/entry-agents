@@ -13,13 +13,29 @@ export const runtime = "nodejs";
 
 /**
  * POST /api/desktop/chats/:chatId/messages — append a message (idempotent
- * on id via createChatMessageIfNotExists, same as web). Parts jsonb stored
- * verbatim so tool-invocation parts round-trip across surfaces byte-exact.
+ * on id via createChatMessageIfNotExists, same as web). The web chat page
+ * expects chat_messages.parts to hold the WHOLE UIMessage ({id, role,
+ * parts[]}) — mirroring apps/web/app/api/chat/route.ts — so that shape is
+ * stored verbatim. Legacy desktop clients that sent a bare parts array are
+ * wrapped into the full message shape on ingest so both render on web.
  */
 interface AppendMessageBody {
   messageId: string;
   role: "user" | "assistant";
   parts: unknown;
+}
+
+/** Wrap a legacy bare parts array into the full stored UIMessage shape. */
+function toStoredMessage(body: AppendMessageBody): unknown {
+  const p = body.parts as unknown;
+  if (Array.isArray(p)) {
+    return {
+      id: body.messageId,
+      role: body.role,
+      parts: p,
+    };
+  }
+  return p;
 }
 
 export async function POST(
@@ -39,14 +55,27 @@ export async function POST(
   if (
     !body.messageId ||
     (body.role !== "user" && body.role !== "assistant") ||
-    !Array.isArray(body.parts) ||
-      !body.parts.every(
-        (p) =>
-          typeof p === "object" &&
-          p !== null &&
-          typeof (p as { text?: unknown }).text === "string" &&
-          (p as { type?: unknown }).type === "text",
-      )
+    typeof body.parts !== "object" ||
+    body.parts === null
+  ) {
+    return NextResponse.json(
+      { error: "messageId, role (user|assistant), parts required" },
+      { status: 400 },
+    );
+  }
+  // Bare-array legacy shape: each entry must be a text part.
+  const partsForValidation = Array.isArray(body.parts)
+    ? body.parts
+    : ((body.parts as { parts?: unknown }).parts ?? []);
+  if (
+    !Array.isArray(partsForValidation) ||
+    !partsForValidation.every(
+      (p) =>
+        typeof p === "object" &&
+        p !== null &&
+        typeof (p as { text?: unknown }).text === "string" &&
+        (p as { type?: unknown }).type === "text",
+    )
   ) {
     return NextResponse.json(
       { error: "messageId, role (user|assistant), parts[] required" },
@@ -69,7 +98,7 @@ export async function POST(
     id: body.messageId,
     chatId,
     role: body.role,
-    parts: body.parts,
+    parts: toStoredMessage(body),
   } as never);
   await touchChat(chatId);
 

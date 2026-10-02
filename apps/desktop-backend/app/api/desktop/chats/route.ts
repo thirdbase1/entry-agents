@@ -19,10 +19,11 @@ export const runtime = "nodejs";
  * minimal owned "desktop" agent session and binds the chat to it.
  */
 interface CreateChatBody {
-  chatId: string;
+  chatId?: string;
   sessionId?: string;
   title?: string;
   modelId?: string;
+  reasoningEffort?: string;
   desktop?: boolean;
 }
 
@@ -108,6 +109,8 @@ export async function POST(req: NextRequest) {
     sessionId,
     title: body.title ?? "Desktop chat",
     modelId: body.modelId ?? null,
+    reasoningEffort: body.reasoningEffort ?? null,
+    status: "idle",
   });
 
   return NextResponse.json({ chat });

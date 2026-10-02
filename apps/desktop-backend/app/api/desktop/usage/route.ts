@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDesktopUser, unauthorized } from "@/lib/auth";
 import { db, users, creditTransactions } from "@/lib/db";
+import { usageEvents } from "@/lib/db/schema";
 import { and, eq, gte, sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
@@ -11,7 +12,8 @@ export const runtime = "nodejs";
  * "goat" — the only plan with rolling usage windows) the 5h/weekly/monthly
  * window totals. Reads the SAME tables the web billing page uses.
  *
- * (POST on this path records per-turn token usage — untouched.)
+ * POST /api/desktop/usage — records per-turn token usage (source=desktop)
+ * into the SAME usage_events table the web app writes via recordUsage().
  */
 
 interface WindowTotals {
@@ -98,4 +100,43 @@ export async function GET(req: NextRequest) {
     creditBalanceCents: u.creditBalanceCents,
     usageWindows,
   });
+}
+
+interface DesktopUsageBody {
+  modelId?: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  toolCallCount?: number;
+}
+
+export async function POST(req: NextRequest) {
+  const user = await requireDesktopUser(req);
+  if (!user) return unauthorized();
+
+  let body: DesktopUsageBody;
+  try {
+    body = (await req.json()) as DesktopUsageBody;
+  } catch {
+    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  const inputTokens = Math.max(0, Math.floor(body.inputTokens ?? 0));
+  const cachedInputTokens = Math.max(0, Math.floor(body.cachedInputTokens ?? 0));
+  const outputTokens = Math.max(0, Math.floor(body.outputTokens ?? 0));
+
+  await db.insert(usageEvents).values({
+    id: `desktop-${crypto.randomUUID()}`,
+    userId: user.id,
+    source: "desktop",
+    agentType: "main",
+    provider: body.modelId?.split("/")[0] ?? null,
+    modelId: body.modelId ?? null,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    toolCallCount: Math.max(0, Math.floor(body.toolCallCount ?? 0)),
+  });
+
+  return NextResponse.json({ ok: true });
 }

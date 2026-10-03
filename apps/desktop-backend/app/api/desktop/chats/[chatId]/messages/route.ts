@@ -120,8 +120,17 @@ export async function GET(
   if (!user) return unauthorized();
   const { chatId } = await params;
   try {
+    // Ownership: chats.sessionId → sessions.userId — same check as the chat
+    // GET and the messages POST (prevents cross-tenant chat reading; an
+    // unscoped getChatById/getChatMessages would leak any user's messages).
     const chat = await getChatById(chatId);
     if (!chat) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const session = chat.sessionId
+      ? await db.query.sessions.findFirst({ where: eq(sessions.id, chat.sessionId) })
+      : undefined;
+    if (!session || session.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const messages = await getChatMessages(chatId);
     return NextResponse.json({ messages });
   } catch (error) {

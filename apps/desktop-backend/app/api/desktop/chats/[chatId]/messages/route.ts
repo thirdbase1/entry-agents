@@ -3,6 +3,7 @@ import { requireDesktopUser, unauthorized } from "@/lib/auth";
 import {
   createChatMessageIfNotExists,
   getChatById,
+  getChatMessages,
   touchChat,
 } from "@/lib/db/sessions";
 import { db } from "@/lib/db/client";
@@ -104,4 +105,27 @@ export async function POST(
   await touchChat(chatId);
 
   return NextResponse.json({ message: message ?? null });
+}
+
+/**
+ * GET /api/desktop/chats/:chatId/messages — all stored messages for the
+ * chat, in order. The desktop client uses this to materialize server-side
+ * chats (created on web or another machine) into its local sidebar.
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ chatId: string }> },
+) {
+  const user = await requireDesktopUser(req);
+  if (!user) return unauthorized();
+  const { chatId } = await params;
+  try {
+    const chat = await getChatById(chatId);
+    if (!chat) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const messages = await getChatMessages(chatId);
+    return NextResponse.json({ messages });
+  } catch (error) {
+    console.error("GET /api/desktop/chats/:id/messages failed:", error);
+    return NextResponse.json({ error: "Failed to list messages" }, { status: 500 });
+  }
 }

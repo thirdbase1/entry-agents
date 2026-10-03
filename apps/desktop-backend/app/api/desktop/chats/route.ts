@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireDesktopUser, unauthorized } from "@/lib/auth";
 import { createChat, getChatById } from "@/lib/db/sessions";
 import { db } from "@/lib/db/client";
-import { sessions } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { chats, sessions } from "@/lib/db/schema";
+import { and, desc, eq, like } from "drizzle-orm";
 
 export const runtime = "nodejs";
 
@@ -114,4 +114,35 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({ chat });
+}
+
+/**
+ * GET /api/desktop/chats — list the authenticated desktop user's chats
+ * (sessions with a `desktop-` id), newest activity first. The desktop client
+ * merges these into its sidebar so chats created on the web or on another
+ * machine appear locally.
+ */
+export async function GET(req: NextRequest) {
+  const user = await requireDesktopUser(req);
+  if (!user) return unauthorized();
+  try {
+    const rows = await db
+      .select({
+        id: chats.id,
+        title: chats.title,
+        createdAt: chats.createdAt,
+        updatedAt: chats.updatedAt,
+        modelId: chats.modelId,
+        sessionId: chats.sessionId,
+      })
+      .from(chats)
+      .innerJoin(sessions, eq(chats.sessionId, sessions.id))
+      .where(and(eq(sessions.userId, user.id), like(sessions.id, "desktop-%")))
+      .orderBy(desc(chats.updatedAt))
+      .limit(200);
+    return NextResponse.json({ chats: rows });
+  } catch (error) {
+    console.error("GET /api/desktop/chats failed:", error);
+    return NextResponse.json({ error: "Failed to list chats" }, { status: 500 });
+  }
 }

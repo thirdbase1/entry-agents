@@ -10,11 +10,7 @@ import {
   SANDBOX_INACTIVITY_TIMEOUT_MS,
   SANDBOX_MIGRATION_LEAD_MS,
 } from "./config";
-import {
-  canOperateOnSandbox,
-  clearSandboxState,
-  getPersistentSandboxName,
-} from "./utils";
+import { canOperateOnSandbox, clearSandboxState, getModalVolumeName } from "./utils";
 
 export type SandboxLifecycleState =
   | "provisioning"
@@ -82,9 +78,13 @@ export function isSandboxMigrationDue(
   }
 
   // Capability-gated, not vendor-gated: only providers whose filesystem is
-  // destroyed by a stop need the pack/restore migration dance. Boat
-  // snapshots on stop and resumes with the workspace intact, so migration
-  // would be pure churn there (and would needlessly drop running work).
+  // destroyed by a stop need the pack/restore migration dance. Modal keeps
+  // the workspace on a Volume that outlives the sandbox, so reconnecting
+  // remounts the same bytes and migration would be pure churn (and would
+  // needlessly drop running work).
+  //
+  // With no provider reporting `workspaceMigration` this constant-returns
+  // false, which is what let the agent's `migrate` action be pruned.
   const provider = getSandboxProvider(String(sandboxState.type));
   if (!provider || !provider.capabilities.workspaceMigration) {
     return false;
@@ -314,7 +314,7 @@ export async function evaluateSandboxLifecycle(
       ...buildHibernatedLifecycleUpdate(),
     });
     console.log(
-      `[Lifecycle] Hibernated sandbox for session ${sessionId} (reason=${reason}, sandboxName=${getPersistentSandboxName(clearedState) ?? "none"}).`,
+      `[Lifecycle] Hibernated sandbox for session ${sessionId} (reason=${reason}, volume=${getModalVolumeName(clearedState) ?? "none"}).`,
     );
     return { action: "hibernated" };
   } catch (error) {

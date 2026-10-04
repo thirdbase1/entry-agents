@@ -3,12 +3,32 @@ import { z } from "zod";
 import { isAgentContext } from "./utils";
 import type { SandboxControlToolResult } from "../types";
 
+/**
+ * The actions this tool exposes.
+ *
+ * Pruned from the original set: `migrate` and `extend`.
+ *
+ *   - migrate: the workspace lives on a persistent Modal Volume, so
+ *     re-provisioning a sandbox remounts the same files and there is no
+ *     workspace to migrate. `connect()` already re-provisions
+ *     automatically when a recorded sandbox has expired, so an
+ *     agent-callable migrate would be a no-op that only risks killing
+ *     in-flight work for nothing.
+ *   - extend: Modal accepts `timeout`/`idle_timeout` only at creation,
+ *     both bounded by the 24h hard cap, so there is no way to stretch a
+ *     running sandbox from outside. The action existed only to paper
+ *     over providers that needed it.
+ *
+ * `status`, `provision` and `reconnect` remain because they are the ones
+ * the agent genuinely needs: a lazily-provisioned workspace has to be
+ * started, and "is it running / paused / missing" is what every other
+ * decision is based on. `snapshot` and `delete` stay destructive-but-
+ * genuine (the host implements both through the same code the UI uses).
+ */
 const sandboxActionSchema = z.enum([
   "status",
   "provision",
   "reconnect",
-  "migrate",
-  "extend",
   "snapshot",
   "delete",
 ]);
@@ -54,16 +74,16 @@ function hostResult(
 
 export function sandboxControlTool() {
   return tool({
-    description: `Control this session's workspace (sandbox) lifecycle: check its state, start/provision it, migrate it to a fresh sandbox, extend its expiry, or delete it.
+    description: `Control this session's workspace (sandbox) lifecycle: check its state, start/provision it, resume a paused one, snapshot it, or delete it.
 
 ACTIONS:
 - status: read-only. Returns whether the workspace is running, paused, or missing, its lifecycle state, and when it expires. ALWAYS call this first -- most lifecycle decisions are wrong without it.
 - provision: start the workspace for this session. Use when status reports no workspace and the task needs file or shell access.
 - reconnect: resume a paused/stopped workspace from its persisted state. Use when status reports paused and the task needs the files back.
-- migrate: move the current workspace to a fresh sandbox, carrying the working tree across. Use when the workspace is about to hit its duration cap, or is misbehaving.
 - snapshot: capture a restorable snapshot of the workspace filesystem. Use before a risky change, or to preserve state you want to come back to.
-- extend: push back the workspace's expiry. Use when it is about to expire mid-task.
 - delete: stop and tear down the workspace. This DESTROYS uncommitted work -- only use it when the user explicitly asks, or when the workspace is confirmed empty/disposable.
+
+The workspace is stored on a persistent volume, so it survives sandbox restarts and there is no migration or expiry extension to trigger -- a stopped sandbox is resumed with reconnect, and re-provisioning picks up the same files automatically.
 
 IMPORTANT:
 - These operations take effect for the whole session, not just your turn. Anything running in the workspace right now is interrupted.
@@ -102,17 +122,9 @@ IMPORTANT:
             const reconnected = await control.reconnect();
             return hostResult(reconnected, input.action);
           }
-          case "migrate": {
-            const migrated = await control.migrate();
-            return hostResult(migrated, input.action);
-          }
           case "snapshot": {
             const snapshotted = await control.snapshot();
             return hostResult(snapshotted, input.action);
-          }
-          case "extend": {
-            const extended = await control.extend();
-            return hostResult(extended, input.action);
           }
           case "delete": {
             const deleted = await control.delete();

@@ -4,8 +4,8 @@
  * This module is deliberately free of any provider SDK (or even Node)
  * imports so it is safe to pull into a browser bundle -- the sandbox
  * selector and the settings/preferences UI are client components that
- * need the provider list without dragging `@vercel/sandbox` (or a future
- * Boat client) into the client graph.
+ * need the provider list without dragging a provider SDK into the
+ * client graph.
  *
  * The server-side half that binds each id to its `connect()` lives in
  * ./registry.ts. Adding a provider means: add its state type, add its
@@ -13,7 +13,7 @@
  * below. Nothing in the agent, the workflows or the UI needs to change.
  */
 
-export type SandboxProviderId = "vercel" | "boat" | "local";
+export type SandboxProviderId = "modal" | "local";
 
 /**
  * What a sandbox provider can actually do.
@@ -62,50 +62,46 @@ export interface SandboxProviderMetadata {
   capabilities: SandboxCapabilities;
 }
 
-/** Vercel Sandbox, as configured by this app (non-persistent, drives opt-in). */
-export const VERCEL_CAPABILITIES: SandboxCapabilities = {
-  persistentResume: false,
-  drives: true,
-  snapshots: true,
-  execDetached: true,
-  killCommand: true,
-  publicPorts: true,
-  credentialBrokering: true,
-  timeoutExtension: true,
-  workspaceMigration: true,
-  // Vercel's documented `timeout <= 45m` API ceiling, shared with
-  // apps/web/lib/sandbox/config.ts (MAX_SANDBOX_TIMEOUT_MS).
-  maxTimeoutMs: 45 * 60 * 1000,
-};
-
 /**
- * Boat (docs.boat.dev): a full persistent Linux VM. Stop snapshots the
- * disk and pauses billing; resume restores it on a new machine under the
- * same sandbox id, so the workspace never needs to be migrated.
+ * Modal (modal.com): gVisor-isolated sandbox containers with the
+ * workspace on a persistent **Volume**.
+ *
+ * The volume is the whole story. Because the workspace is mounted from a
+ * distributed filesystem that outlives any container, re-provisioning a
+ * sandbox costs one boot and zero data transfer -- so `workspaceMigration`
+ * is false even though a single sandbox is capped at 24h. Migration would
+ * be pure churn: the new sandbox simply remounts the same bytes.
+ *
+ * `killCommand` is true, but via a documented workaround: Modal's
+ * ContainerProcess exposes no kill RPC (only `wait()`), so
+ * ModalCloudSandbox records each command's PID when it starts and
+ * killCommand() signals that PID from inside the sandbox. Callers that
+ * check this capability still get a working cross-process kill; see
+ * modal/sandbox.ts for the mechanism.
+ *
+ * `timeoutExtension` is false: Modal accepts only `timeout` +
+ * `idle_timeout` at creation, both bounded by the 24h hard cap, so a
+ * running sandbox's lifetime cannot be stretched from outside.
  */
-export const BOAT_CAPABILITIES: SandboxCapabilities = {
+export const MODAL_CAPABILITIES: SandboxCapabilities = {
+  // A Volume outlives the sandbox; stop() + reconnect sees the same files.
   persistentResume: true,
-  drives: false,
+  drives: true,
+  // snapshotFilesystem() captures a point-in-time Image (30-day TTL).
   snapshots: true,
   execDetached: true,
-  // No documented "kill process by id" endpoint; the command API only
-  // exposes start/status. Detached processes are not recorded as an
-  // active command, so there is nothing for the caller to kill either.
-  killCommand: false,
+  // PID-based, see modal/sandbox.ts killCommand().
+  killCommand: true,
+  // Encrypted tunnels + createConnectToken give public HTTPS URLs.
   publicPorts: true,
-  // GitHub and Vercel tokens are brokered per command in memory
-  // (BoatSandbox.setGitHubAuthToken / setVercelAuthToken) rather than
-  // injected at the network egress layer, because Boat offers no equivalent
-  // mechanism and its PATCH endpoint cannot hot-set env on a live sandbox.
+  // Per-exec env injection; see modal/sandbox.ts setGitHubAuthToken().
   credentialBrokering: true,
-  timeoutExtension: true,
+  // No API to extend a live sandbox past its configured timeout.
+  timeoutExtension: false,
+  // The Volume makes migration unnecessary rather than merely cheap.
   workspaceMigration: false,
-  // Requested TTL is capped at 7200s (2h): trial accounts reject any
-  // sandbox without auto-stop, and reject TTLs above 2h. See
-  // BOAT_TTL_CEILING_SECONDS. This used to claim 30 days -- the API
-  // ceiling -- while we were also sending `null` (no auto-stop), which is
-  // exactly what production was failing on.
-  maxTimeoutMs: 7_200 * 1000,
+  // Modal's documented hard ceiling on a single sandbox lifetime.
+  maxTimeoutMs: 24 * 60 * 60 * 1000,
 };
 
 /** Local directory + child_process. Dev/test only -- never a real session. */
@@ -126,17 +122,11 @@ export const SANDBOX_PROVIDER_METADATA: Record<
   SandboxProviderId,
   SandboxProviderMetadata
 > = {
-  vercel: {
-    id: "vercel",
-    displayName: "Vercel",
-    description: "Cloud sandbox",
-    capabilities: VERCEL_CAPABILITIES,
-  },
-  boat: {
-    id: "boat",
-    displayName: "Boat",
-    description: "Persistent Linux VM",
-    capabilities: BOAT_CAPABILITIES,
+  modal: {
+    id: "modal",
+    displayName: "Modal",
+    description: "Cloud sandbox on a persistent volume",
+    capabilities: MODAL_CAPABILITIES,
   },
   local: {
     id: "local",
@@ -147,25 +137,20 @@ export const SANDBOX_PROVIDER_METADATA: Record<
 };
 
 /** Every id the factory can dispatch to. */
-export const SANDBOX_TYPES = [
-  "vercel",
-  "boat",
-  "local",
-] as const satisfies readonly SandboxProviderId[];
+export const SANDBOX_TYPES = ["modal", "local"] as const satisfies readonly SandboxProviderId[];
 
 /**
  * Providers a user may pick in the UI. `local` is dev/test only.
  *
- * Ordered so the registry default (`boat`) leads: this list drives the
+ * Ordered so the registry default (`modal`) leads: this list drives the
  * selector and settings dropdown, and showing the default provider first
  * is what makes "which sandbox am I on" readable at a glance.
  */
 export const USER_SELECTABLE_SANDBOX_TYPES = [
-  "boat",
-  "vercel",
+  "modal",
 ] as const satisfies readonly SandboxProviderId[];
 
-export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "boat";
+export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "modal";
 
 export function isKnownSandboxType(value: unknown): value is SandboxProviderId {
   return (

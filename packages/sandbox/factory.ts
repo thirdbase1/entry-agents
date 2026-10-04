@@ -1,19 +1,20 @@
 import type { Sandbox, SandboxHooks } from "./interface.ts";
-import type { SandboxStatus } from "./types.ts";
+import type { SandboxStatus, DriveMountConfig } from "./types.ts";
 import { requireSandboxProvider } from "./registry.ts";
 import type { SandboxState } from "./state.ts";
 
 // Re-export SandboxStatus from types for convenience
 export type { SandboxStatus };
 export type { SandboxState } from "./state.ts";
+export type { DriveMountConfig };
 
 /**
  * Base connect options for all sandbox types.
  *
  * These are *advisory*: each provider interprets the subset it supports
- * and ignores the rest (Vercel honours `drives`/`vcpus`/`baseSnapshotId`,
- * Boat honours `timeout`/`ports`/`env` and has no drives concept at all).
- * Callers therefore pass one shape and stay provider-agnostic; anything
+ * and ignores the rest (Modal honours `drives`/`ports`/`timeout` and has
+ * no snapshot-resume, the local adapter honours almost nothing). Callers
+ * therefore pass one shape and stay provider-agnostic; anything
  * provider-specific is owned by the adapter, keyed off its capabilities in
  * registry-types.ts.
  */
@@ -42,7 +43,7 @@ export interface ConnectOptions {
    * picks one up on its next connection. Ignored by providers whose
    * capabilities report `drives: false`.
    */
-  drives?: import("./vercel/config.ts").DriveMountConfig;
+  drives?: DriveMountConfig;
   /** Whether to resume a stopped persistent sandbox session */
   resume?: boolean;
   /** Whether to create the named sandbox when it does not already exist */
@@ -70,7 +71,7 @@ export type SandboxConnectConfig = {
  * Connect to a sandbox. Dispatch is entirely registry-driven: the
  * `state.type` discriminator selects the provider, and an unregistered
  * type throws `UnsupportedSandboxProviderError` rather than falling back
- * to Vercel.
+ * to another provider.
  */
 export async function connectSandbox(
   configOrState: SandboxConnectConfig | SandboxState,

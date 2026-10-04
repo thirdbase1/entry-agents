@@ -12,11 +12,7 @@ interface TestSessionRecord {
   cloneUrl: string | null;
   prNumber: number | null;
   prStatus: "open" | "merged" | "closed" | null;
-  sandboxState: {
-    type: "vercel";
-    sandboxName?: string;
-    expiresAt?: number;
-  } | null;
+  sandboxState: { type: "modal"; volumeName?: string; expiresAt?: number } | { type: "local" } | null;
   snapshotUrl: string | null;
   lifecycleState: "active" | "archived" | null;
   lifecycleError: string | null;
@@ -125,6 +121,7 @@ const spies = {
   kickArchiveSandboxStopWorkflow: mock(
     (_sessionId: string, _logPrefix: string) => {},
   ),
+  deleteModalSessionVolume: mock(async (_volumeName: string) => {}),
 };
 
 mock.module("@/lib/db/sessions", () => ({
@@ -134,6 +131,10 @@ mock.module("@/lib/db/sessions", () => ({
 
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox: spies.connectSandbox,
+}));
+
+mock.module("./modal-volume", () => ({
+  deleteModalSessionVolume: spies.deleteModalSessionVolume,
 }));
 
 mock.module("@/lib/github/token", () => ({
@@ -165,8 +166,8 @@ function makeSessionRecord(
     prNumber: 42,
     prStatus: "open",
     sandboxState: {
-      type: "vercel",
-      sandboxName: "session_session-1",
+      type: "modal",
+      volumeName: "entry-workspace-session-1",
       expiresAt: Date.now() + 60_000,
     },
     snapshotUrl: null,
@@ -200,6 +201,9 @@ beforeEach(() => {
   spies.findPullRequest.mockImplementation(async () => ({
     found: false,
   }));
+  // mockClear() above keeps any implementation a previous test installed,
+  // so a volume-delete override has to be reset here or it leaks forward.
+  spies.deleteModalSessionVolume.mockImplementation(async () => {});
 });
 
 describe("archiveSession", () => {
@@ -269,15 +273,84 @@ describe("finalizeArchivedSessionSandboxInline", () => {
       sandboxExpiresAt: null,
       hibernateAfter: null,
       lifecycleError: "Archive finalization failed: sandbox connection failed",
+      // The Volume survives: it is the session's durable workspace, so
+      // clearing runtime state must not orphan it.
       sandboxState: {
-        type: "vercel",
-        sandboxName: "session_session-1",
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
       },
     });
 
     expect(sessionRecord?.sandboxState).toEqual({
-      type: "vercel",
-      sandboxName: "session_session-1",
+      type: "modal",
+      volumeName: "entry-workspace-session-1",
+    });
+  });
+
+  test("deletes the Modal Volume when the archived session owns one", async () => {
+    const { finalizeArchivedSessionSandboxInline } =
+      await archiveSessionModulePromise;
+
+    sessionRecord = makeSessionRecord({
+      status: "archived",
+      sandboxState: {
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
+        expiresAt: Date.now() + 60_000,
+      },
+      snapshotUrl: null,
+      lifecycleError: null,
+    });
+    sandboxQueue = [createMockSandbox()];
+
+    await finalizeArchivedSessionSandboxInline("session-1", "[Test]");
+
+    expect(sandboxQueue).toHaveLength(0);
+    expect(spies.deleteModalSessionVolume).toHaveBeenCalledWith(
+      "entry-workspace-session-1",
+    );
+  });
+
+  test("does not delete any volume for a sandbox without one", async () => {
+    const { finalizeArchivedSessionSandboxInline } =
+      await archiveSessionModulePromise;
+
+    sessionRecord = makeSessionRecord({
+      status: "archived",
+      sandboxState: { type: "local" },
+    });
+    sandboxQueue = [createMockSandbox()];
+
+    await finalizeArchivedSessionSandboxInline("session-1", "[Test]");
+
+    expect(spies.deleteModalSessionVolume).not.toHaveBeenCalled();
+  });
+
+  test("still archives when the volume deletion fails", async () => {
+    const { finalizeArchivedSessionSandboxInline } =
+      await archiveSessionModulePromise;
+
+    sessionRecord = makeSessionRecord({
+      status: "archived",
+      sandboxState: {
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
+        expiresAt: Date.now() + 60_000,
+      },
+    });
+    sandboxQueue = [createMockSandbox()];
+    spies.deleteModalSessionVolume.mockImplementation(async () => {
+      throw new Error("volume delete rejected");
+    });
+
+    await finalizeArchivedSessionSandboxInline("session-1", "[Test]");
+
+    // Losing the volume costs money, not the session's ability to archive.
+    const updateCalls = spies.updateSession.mock.calls as Array<
+      [string, Record<string, unknown>]
+    >;
+    expect(updateCalls[0]?.[1]).toMatchObject({
+      lifecycleState: "archived",
     });
   });
 
@@ -305,8 +378,8 @@ describe("finalizeArchivedSessionSandboxInline", () => {
     expect(recoveryPatch?.sandboxState).toBeUndefined();
     expect(sessionRecord?.sandboxState).toEqual(
       expect.objectContaining({
-        type: "vercel",
-        sandboxName: "session_session-1",
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
       }),
     );
   });

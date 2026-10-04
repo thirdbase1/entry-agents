@@ -32,7 +32,7 @@ const requestUrl = "https://open-agents.dev/api/test";
 const basePreferences: UserPreferencesData = {
   defaultModelId: "kimi-k3",
   defaultSubagentModelId: "kimi-k3",
-  defaultSandboxType: "vercel",
+  defaultSandboxType: "modal",
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,

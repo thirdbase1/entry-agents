@@ -21,12 +21,10 @@ import {
   type SandboxCapabilities,
   type SandboxProviderId,
 } from "./registry-types.ts";
-import { connectVercel } from "./vercel/connect.ts";
-import type { VercelState } from "./vercel/state.ts";
+import { connectModal } from "./modal/connect.ts";
+import { isModalConfigured } from "./modal/client.ts";
+import type { ModalState } from "./modal/state.ts";
 import { connectLocal } from "./local/sandbox.ts";
-import { connectBoat } from "./boat/connect.ts";
-import { isBoatConfigured } from "./boat/client.ts";
-import type { BoatState } from "./boat/state.ts";
 
 export class UnsupportedSandboxProviderError extends Error {
   readonly providerId: string;
@@ -89,86 +87,50 @@ function carryForward(
   return carried;
 }
 
-const vercelProvider: SandboxProvider = {
-  id: "vercel",
-  displayName: SANDBOX_PROVIDER_METADATA.vercel.displayName,
-  description: SANDBOX_PROVIDER_METADATA.vercel.description,
-  capabilities: SANDBOX_PROVIDER_METADATA.vercel.capabilities,
+const modalProvider: SandboxProvider = {
+  id: "modal",
+  displayName: SANDBOX_PROVIDER_METADATA.modal.displayName,
+  description: SANDBOX_PROVIDER_METADATA.modal.description,
+  capabilities: SANDBOX_PROVIDER_METADATA.modal.capabilities,
 
   async connect(state, options) {
-    if (state.type !== "vercel") {
+    if (state.type !== "modal") {
       throw new UnsupportedSandboxProviderError(String(state.type));
     }
-    return connectVercel(state as { type: "vercel" } & VercelState, options);
+    return connectModal(
+      state as { type: "modal" } & ModalState & { sessionId: string },
+      options,
+    );
   },
 
   buildProvisionState({ existing, sessionId, source, fresh }) {
     const current =
-      existing?.type === "vercel"
-        ? (existing as { type: "vercel" } & VercelState)
+      existing?.type === "modal"
+        ? (existing as { type: "modal" } & ModalState)
         : undefined;
+
+    // The Volume is the durable identity, so it is carried across a
+    // fresh provision; the sandbox id is NOT (it is a handle on a live
+    // container and is always re-derived by connect()).
     const carry = carryForward(
       current,
-      // `sandboxId` is legacy Vercel identity: it is always promoted to
-      // `sandboxName` below, so carrying it too would leave two handles.
-      fresh ? ["sandboxName", "sandboxId", "snapshotId"] : ["sandboxId"],
+      fresh ? ["sandboxId", "expiresAt"] : ["expiresAt"],
     );
 
-    const resumeHandle =
-      typeof carry.sandboxName === "string" && carry.sandboxName.length > 0
-        ? carry.sandboxName
-        : typeof carry.sandboxId === "string" && carry.sandboxId.length > 0
-          ? carry.sandboxId
-          : undefined;
-    const sandboxName = fresh ? undefined : (resumeHandle ?? `session_${sessionId}`);
+    const volumeName =
+      typeof carry.volumeName === "string" && carry.volumeName.length > 0
+        ? carry.volumeName
+        : `entry-workspace-${sessionId}`;
 
     return {
-      type: "vercel",
+      type: "modal",
       ...carry,
-      ...(sandboxName ? { sandboxName } : {}),
-      // NOTE: `persistent` is intentionally NOT set here. It is governed by
-      // ConnectOptions.persistent (provisioning passes false, snapshot
-      // restore passes true), and seeding it into state would win over the
-      // caller's option because connectVercel reads `state.persistent ??
-      // options.persistent`.
+      volumeName,
       ...(source ? { source } : {}),
     } as SandboxState;
   },
 
-  isAvailable: () => true,
-};
-
-const boatProvider: SandboxProvider = {
-  id: "boat",
-  displayName: SANDBOX_PROVIDER_METADATA.boat.displayName,
-  description: SANDBOX_PROVIDER_METADATA.boat.description,
-  capabilities: SANDBOX_PROVIDER_METADATA.boat.capabilities,
-
-  async connect(state, options) {
-    if (state.type !== "boat") {
-      throw new UnsupportedSandboxProviderError(String(state.type));
-    }
-    return connectBoat(state as { type: "boat" } & BoatState, options);
-  },
-
-  buildProvisionState({ existing, source, fresh }) {
-    const current =
-      existing?.type === "boat"
-        ? (existing as { type: "boat" } & BoatState)
-        : undefined;
-    const carry = carryForward(current, fresh ? ["sandboxId"] : []);
-
-    // Boat's identity is its id -- no caller-chosen name is needed, and
-    // there is no `persistent` flag: persistence is inherent (stop
-    // snapshots, resume restores).
-    return {
-      type: "boat",
-      ...carry,
-      ...(source ? { source } : {}),
-    } as SandboxState;
-  },
-
-  isAvailable: () => isBoatConfigured(),
+  isAvailable: () => isModalConfigured(),
 };
 
 const localProvider: SandboxProvider = {
@@ -198,8 +160,7 @@ const localProvider: SandboxProvider = {
 };
 
 export const SANDBOX_PROVIDERS: Record<SandboxProviderId, SandboxProvider> = {
-  vercel: vercelProvider,
-  boat: boatProvider,
+  modal: modalProvider,
   local: localProvider,
 };
 

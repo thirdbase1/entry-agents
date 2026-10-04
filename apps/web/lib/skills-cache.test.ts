@@ -13,25 +13,20 @@ const exampleSkills: SkillMetadata[] = [
 ];
 
 describe("skills cache", () => {
-  test("derives cache keys from sandbox name, legacy snapshot id, or local scope", () => {
+  test("derives cache keys from the durable volume name, or local scope", () => {
+    // The Modal volume is the only handle that outlives a sandbox, so it
+    // is what the cache key is built from; without it the key falls back
+    // to the untargeted "local" scope.
     expect(
       getSkillsCacheKey("session-1", {
-        type: "vercel",
-        sandboxName: "session_session-1",
-        snapshotId: "snap-123",
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
       }),
-    ).toBe("skills:v1:session-1:session_session-1");
+    ).toBe("skills:v1:session-1:entry-workspace-session-1");
 
     expect(
       getSkillsCacheKey("session-1", {
-        type: "vercel",
-        snapshotId: "snap-123",
-      }),
-    ).toBe("skills:v1:session-1:snap-123");
-
-    expect(
-      getSkillsCacheKey("session-1", {
-        type: "vercel",
+        type: "modal",
       }),
     ).toBe("skills:v1:session-1:local");
   });
@@ -43,7 +38,7 @@ describe("skills cache", () => {
       now: () => nowMs,
       getRedisClient: () => null,
     });
-    const sandboxState = { type: "vercel" as const };
+    const sandboxState = { type: "modal" as const };
 
     await cache.set("session-1", sandboxState, []);
 
@@ -76,8 +71,8 @@ describe("skills cache", () => {
       },
     });
     const sandboxState = {
-      type: "vercel" as const,
-      sandboxName: "session_session-1",
+      type: "modal" as const,
+      volumeName: "session_session-1",
     };
 
     await cache.set("session-1", sandboxState, exampleSkills);

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_SANDBOX_PROVIDER,
+  MODAL_CAPABILITIES,
+  LOCAL_CAPABILITIES,
   isKnownSandboxType,
   listUserSelectableSandboxProviders,
 } from "./registry-types.ts";
@@ -12,11 +14,6 @@ import {
   requireSandboxProvider,
   type SandboxProvider,
 } from "./registry.ts";
-import {
-  BOAT_CAPABILITIES,
-  LOCAL_CAPABILITIES,
-  VERCEL_CAPABILITIES,
-} from "./registry-types.ts";
 import { connectSandbox, type SandboxState } from "./factory.ts";
 import type { Sandbox } from "./interface.ts";
 
@@ -66,21 +63,30 @@ function stubConnect(
 }
 
 describe("sandbox provider registry", () => {
-  test("registers vercel and boat as user-selectable, local as dev-only", () => {
+  test("registers exactly modal (user-selectable) and local (dev-only)", () => {
+    // Vercel and Boat were removed when Modal became the only cloud
+    // provider. The registry is the single source of truth, so this test
+    // is what catches a stale provider id surviving anywhere in the app.
     const selectable = listUserSelectableSandboxProviders().map(
       (provider) => provider.id,
     );
-    expect(selectable).toEqual(["vercel", "boat"]);
+    // Modal leads: it is the registry default and the default provider's
+    // capabilities (volumes, no migration) are what Entry is built around.
+    expect(selectable).toEqual(["modal"]);
     expect(selectable).not.toContain("local");
 
+    expect(isKnownSandboxType("modal")).toBe(true);
     expect(isKnownSandboxType("local")).toBe(true);
+    // Removed providers must read as unknown, not as legacy-but-works.
+    expect(isKnownSandboxType("vercel")).toBe(false);
+    expect(isKnownSandboxType("boat")).toBe(false);
     expect(isKnownSandboxType("aws")).toBe(false);
     expect(isKnownSandboxType(undefined)).toBe(false);
   });
 
-  test("default provider is boat", () => {
-    expect(DEFAULT_SANDBOX_PROVIDER).toBe("boat");
-    expect(listUserSelectableSandboxProviders()[0]?.id).toBe("boat");
+  test("default provider is modal", () => {
+    expect(DEFAULT_SANDBOX_PROVIDER).toBe("modal");
+    expect(listUserSelectableSandboxProviders()[0]?.id).toBe("modal");
   });
 
   test("unknown provider fails safely instead of falling back", () => {
@@ -90,20 +96,38 @@ describe("sandbox provider registry", () => {
     expect(getSandboxProvider("aws")).toBeUndefined();
   });
 
-  test("an unconfigured boat provider is reported unavailable, not substituted", () => {
-    const originalKey = process.env.BOAT_API_KEY;
-    delete process.env.BOAT_API_KEY;
+  test("a removed provider is unregistered, not merely unavailable", () => {
+    // Removing a provider must make it UNKNOWN so a stale persisted row
+    // fails closed loudly, rather than silently resolving to a working
+    // provider and running the session somewhere the user did not pick.
+    expect(getSandboxProvider("vercel")).toBeUndefined();
+    expect(getSandboxProvider("boat")).toBeUndefined();
+    expect(() => requireSandboxProvider("vercel")).toThrow(
+      UnsupportedSandboxProviderError,
+    );
+    expect(() => requireSandboxProvider("boat")).toThrow(
+      UnsupportedSandboxProviderError,
+    );
+  });
+
+  test("an unconfigured modal provider is reported unavailable, not substituted", () => {
+    const originalId = process.env.MODAL_TOKEN_ID;
+    const originalSecret = process.env.MODAL_TOKEN_SECRET;
+    delete process.env.MODAL_TOKEN_ID;
+    delete process.env.MODAL_TOKEN_SECRET;
     try {
-      expect(requireSandboxProvider("boat").isAvailable()).toBe(false);
-      expect(() => requireAvailableSandboxProvider("boat")).toThrow(
+      expect(requireSandboxProvider("modal").isAvailable()).toBe(false);
+      expect(() => requireAvailableSandboxProvider("modal")).toThrow(
         UnsupportedSandboxProviderError,
       );
-      // Vercel stays available regardless -- availability never changes
-      // which provider a session is pinned to.
-      expect(requireAvailableSandboxProvider("vercel").id).toBe("vercel");
+      // Availability never changes which provider a session is pinned to:
+      // "modal is unconfigured" must never resolve to some other provider.
+      expect(requireSandboxProvider("modal").id).toBe("modal");
     } finally {
-      if (originalKey === undefined) delete process.env.BOAT_API_KEY;
-      else process.env.BOAT_API_KEY = originalKey;
+      if (originalId === undefined) delete process.env.MODAL_TOKEN_ID;
+      else process.env.MODAL_TOKEN_ID = originalId;
+      if (originalSecret === undefined) delete process.env.MODAL_TOKEN_SECRET;
+      else process.env.MODAL_TOKEN_SECRET = originalSecret;
     }
   });
 });
@@ -112,10 +136,13 @@ describe("provider selection reaches the runtime", () => {
   const restore: Array<() => void> = [];
 
   beforeEach(() => {
+    // The cloud provider must never be reachable except on an explicit
+    // request for it. If any code path forgets to pass a provider, this
+    // stub turns the mistake into a test failure instead of a sandbox.
     restore.push(
-      stubConnect("vercel", async () => {
+      stubConnect("modal", async () => {
         throw new Error(
-          "Vercel must not be used when another provider is selected",
+          "modal must not be used when another provider is selected",
         );
       }),
     );
@@ -125,25 +152,37 @@ describe("provider selection reaches the runtime", () => {
     while (restore.length > 0) restore.pop()?.();
   });
 
-  test("boat selection connects a boat sandbox, never vercel", async () => {
-    const boat = fakeSandbox("boat");
-    restore.push(stubConnect("boat", async () => boat));
+  test("modal selection connects a modal sandbox", async () => {
+    const modal = fakeSandbox("modal");
+    restore.push(stubConnect("modal", async () => modal));
 
-    const result = await connectSandbox({ state: { type: "boat" } });
-    expect(result).toBe(boat);
-    expect(result.workingDirectory).toBe("/tmp/boat");
+    const result = await connectSandbox({
+      state: { type: "modal", volumeName: "entry-workspace-abc" },
+    });
+    expect(result).toBe(modal);
+    expect(result.workingDirectory).toBe("/tmp/modal");
   });
 
-  test("vercel selection still connects vercel", async () => {
-    // Replace the always-throwing stub installed in beforeEach.
-    const vercel = fakeSandbox("vercel");
-    restore.push(stubConnect("vercel", async () => vercel));
+  test("local selection connects the local adapter", async () => {
+    const local = fakeSandbox("local");
+    restore.push(stubConnect("local", async () => local));
 
-    const result = await connectSandbox({ state: { type: "vercel" } });
-    expect(result).toBe(vercel);
+    const result = await connectSandbox({
+      state: { type: "local", rootDir: "/tmp/entry-sandbox-abc" },
+    });
+    expect(result).toBe(local);
+    expect(result.workingDirectory).toBe("/tmp/local");
   });
 
-  test("an unregistered provider rejects instead of silently using vercel", async () => {
+  test("a removed provider rejects instead of silently using modal", async () => {
+    // The migrated-away world: a session row still says vercel/boat.
+    // It must fail closed with the unsupported-provider error.
+    await expect(
+      connectSandbox({ state: { type: "vercel" } as unknown as SandboxState }),
+    ).rejects.toThrow(UnsupportedSandboxProviderError);
+    await expect(
+      connectSandbox({ state: { type: "boat" } as unknown as SandboxState }),
+    ).rejects.toThrow(UnsupportedSandboxProviderError);
     await expect(
       connectSandbox({ state: { type: "aws" } as unknown as SandboxState }),
     ).rejects.toThrow(UnsupportedSandboxProviderError);
@@ -151,99 +190,101 @@ describe("provider selection reaches the runtime", () => {
 });
 
 describe("provider state shape and persistence", () => {
-  test("vercel provision state names the session sandbox the same way as before", () => {
-    const state = requireSandboxProvider("vercel").buildProvisionState({
+  test("modal provision state derives a stable volume name from the session", () => {
+    const state = requireSandboxProvider("modal").buildProvisionState({
       sessionId: "abc",
-    });
-
-    expect(state).toEqual({ type: "vercel", sandboxName: "session_abc" });
-  });
-
-  test("a session with no persisted provider falls back to the registry default", () => {
-    expect(DEFAULT_SANDBOX_PROVIDER).toBe("boat");
-  });
-
-  test("vercel provision state promotes a legacy sandboxId to sandboxName", () => {
-    const state = requireSandboxProvider("vercel").buildProvisionState({
-      sessionId: "abc",
-      existing: { type: "vercel", sandboxId: "sbx-old" },
     });
 
     expect(state).toEqual({
-      type: "vercel",
-      sandboxName: "sbx-old",
+      type: "modal",
+      volumeName: "entry-workspace-abc",
     });
   });
 
-  test("boat provision state keeps the persisted bx id across reconnects", () => {
-    const provider = requireSandboxProvider("boat");
+  test("modal provision state keeps the persisted volume across reconnects", () => {
+    const provider = requireSandboxProvider("modal");
 
     const first = provider.buildProvisionState({ sessionId: "abc" });
-    expect(first).toEqual({ type: "boat" });
-
     const reopened = provider.buildProvisionState({
       sessionId: "abc",
-      existing: { type: "boat", sandboxId: "bx_f7k2q9hd" },
+      existing: { type: "modal", volumeName: "entry-workspace-abc" },
     });
-    expect(reopened).toEqual({ type: "boat", sandboxId: "bx_f7k2q9hd" });
+
+    expect(reopened).toEqual({
+      type: "modal",
+      volumeName: "entry-workspace-abc",
+    });
+    // The volume name is the durable identity, so it must never churn.
+    expect(reopened).toMatchObject({
+      volumeName: (first as { volumeName: string }).volumeName,
+    });
   });
 
-  test("fresh provision drops identity so a new sandbox is created", () => {
-    const vercel = requireSandboxProvider("vercel").buildProvisionState({
+  test("fresh provision drops the sandbox id but keeps the volume", () => {
+    // Modal keeps the volume name even on a fresh provision: the volume is
+    // what holds the workspace, and dropping it would orphan the session's
+    // files. Only the (dead) sandbox id is discarded.
+    const modal = requireSandboxProvider("modal").buildProvisionState({
       sessionId: "abc",
       fresh: true,
-      existing: { type: "vercel", sandboxName: "session_abc" },
+      existing: {
+        type: "modal",
+        volumeName: "entry-workspace-abc",
+        sandboxId: "sb-dead",
+      },
     });
-    expect(vercel).toEqual({ type: "vercel" });
-
-    const boat = requireSandboxProvider("boat").buildProvisionState({
-      sessionId: "abc",
-      fresh: true,
-      existing: { type: "boat", sandboxId: "bx_f7k2q9hd" },
+    expect(modal).toEqual({
+      type: "modal",
+      volumeName: "entry-workspace-abc",
     });
-    expect(boat).toEqual({ type: "boat" });
   });
 
-  test("source is carried through for every provider", () => {
+  test("source is carried through for modal", () => {
     const source = { repo: "https://github.com/o/r.git", branch: "main" };
 
-    for (const id of ["vercel", "boat"] as const) {
-      const state = requireSandboxProvider(id).buildProvisionState({
-        sessionId: "abc",
-        source,
-      });
-      expect(state).toMatchObject({ type: id, source });
-    }
+    const state = requireSandboxProvider("modal").buildProvisionState({
+      sessionId: "abc",
+      source,
+    });
+    expect(state).toMatchObject({ type: "modal", source });
+  });
+
+  test("local drops source because it never clones a repository", () => {
+    // The local adapter only owns a rootDir; a git workspace is the cloud
+    // provider's job. Pinning it here documents the asymmetry instead of
+    // leaving the local state to silently drift.
+    const state = requireSandboxProvider("local").buildProvisionState({
+      sessionId: "abc",
+      source: { repo: "https://github.com/o/r.git" },
+    });
+    expect(state).toEqual({ type: "local", rootDir: "/tmp/entry-sandbox-abc" });
   });
 });
 
 describe("capability differences", () => {
-  test("only providers with a destructive stop need workspace migration", () => {
-    expect(VERCEL_CAPABILITIES.workspaceMigration).toBe(true);
-    expect(VERCEL_CAPABILITIES.persistentResume).toBe(false);
-
-    expect(BOAT_CAPABILITIES.workspaceMigration).toBe(false);
-    expect(BOAT_CAPABILITIES.persistentResume).toBe(true);
+  test("modal never needs workspace migration because the volume persists", () => {
+    // A Modal sandbox is capped at 24h, but its Volume is not:
+    // re-provisioning remounts the same files, so migration would be pure
+    // churn. This is the capability that keeps the agent's
+    // `migrate` action pruned.
+    expect(MODAL_CAPABILITIES.workspaceMigration).toBe(false);
+    expect(MODAL_CAPABILITIES.persistentResume).toBe(true);
+    expect(MODAL_CAPABILITIES.drives).toBe(true);
   });
 
-  test("drives and credential brokering are vercel-only", () => {
-    expect(VERCEL_CAPABILITIES.drives).toBe(true);
-    expect(BOAT_CAPABILITIES.drives).toBe(false);
-
-    expect(VERCEL_CAPABILITIES.credentialBrokering).toBe(true);
-    expect(BOAT_CAPABILITIES.credentialBrokering).toBe(false);
-  });
-
-  test("timeout ceilings differ per provider", () => {
-    expect(VERCEL_CAPABILITIES.maxTimeoutMs).toBe(45 * 60 * 1000);
-    expect(BOAT_CAPABILITIES.maxTimeoutMs).toBe(30 * 24 * 60 * 60 * 1000);
+  test("modal reports the timeout ceiling honestly and has no extension", () => {
+    // `extend` was pruned from the agent tools for the same reason: Modal
+    // accepts only `timeout` + `idle_timeout` at creation, both bounded
+    // by the 24h hard cap.
+    expect(MODAL_CAPABILITIES.maxTimeoutMs).toBe(24 * 60 * 60 * 1000);
+    expect(MODAL_CAPABILITIES.timeoutExtension).toBe(false);
     expect(LOCAL_CAPABILITIES.maxTimeoutMs).toBeNull();
   });
 
   test("capabilities are reachable from the registered provider", () => {
-    expect(requireSandboxProvider("boat").capabilities).toBe(BOAT_CAPABILITIES);
-    expect(requireSandboxProvider("vercel").capabilities).toBe(
-      VERCEL_CAPABILITIES,
+    expect(requireSandboxProvider("modal").capabilities).toBe(
+      MODAL_CAPABILITIES,
     );
+    expect(requireSandboxProvider("local").capabilities).toBe(LOCAL_CAPABILITIES);
   });
 });

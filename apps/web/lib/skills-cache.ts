@@ -41,20 +41,18 @@ function getSharedRedisClient(): SkillsCacheRedisClient | null {
 }
 
 function getSandboxScope(state: SandboxState | null | undefined): string {
-  if (state && "sandboxName" in state) {
-    const sandboxName = state.sandboxName;
-    if (typeof sandboxName === "string" && sandboxName.length > 0) {
-      return sandboxName;
+  // The Modal Volume is the only handle that outlives a sandbox, so it is
+  // the natural scope for a skills cache: two sessions with their own
+  // volumes get independent entries, and a re-provisioned sandbox that
+  // remounts the same volume correctly inherits its cached skills.
+  if (state && "volumeName" in state) {
+    const volumeName = state.volumeName;
+    if (typeof volumeName === "string" && volumeName.length > 0) {
+      return volumeName;
     }
   }
 
-  if (state && "snapshotId" in state) {
-    const snapshotId = state.snapshotId;
-    if (typeof snapshotId === "string" && snapshotId.length > 0) {
-      return snapshotId;
-    }
-  }
-
+  // A local sandbox has no durable handle, so it gets the unscoped entry.
   return "local";
 }
 

@@ -1,8 +1,19 @@
-import type { SandboxState, VercelState } from "@open-agents/sandbox";
+import type { SandboxState } from "@open-agents/sandbox";
 import { isKnownSandboxType } from "@open-agents/sandbox/registry.js";
 import { SANDBOX_EXPIRES_BUFFER_MS } from "./config";
 
-export type VercelSandboxState = { type: "vercel" } & VercelState;
+/**
+ * Modal's state shape. Declared structurally (not imported from
+ * @open-agents/sandbox, whose Modal types are server-only) because this
+ * module is pulled into client bundles too.
+ */
+export type ModalSandboxState = {
+  type: "modal";
+  sandboxId?: string;
+  volumeName?: string;
+  expiresAt?: number;
+  source?: { repo: string; branch?: string; newBranch?: string };
+};
 
 /**
  * Lives here (rather than in provisioning.ts, where it originated) so
@@ -39,30 +50,27 @@ function getSandboxExpiresAt(state: unknown): number | undefined {
   return typeof expiresAt === "number" ? expiresAt : undefined;
 }
 
-function getLegacySandboxId(state: unknown): string | null {
-  if (!state || typeof state !== "object") {
-    return null;
-  }
-
-  const sandboxId = (state as { sandboxId?: unknown }).sandboxId;
-  return hasNonEmptyString(sandboxId) ? sandboxId : null;
-}
-
 export function getSessionSandboxName(sessionId: string): string {
   return `session_${sessionId}`;
 }
 
-export function getPersistentSandboxName(state: unknown): string | null {
+export function getResumableSandboxName(state: unknown): string | null {
+  // Modal's resumable handle is the Volume, not the sandbox: a sandbox id
+  // is only ever a handle on a live container, while the volume holds the
+  // workspace across container lifetimes.
+  return getModalVolumeName(state);
+}
+
+/** Modal's durable workspace volume name, when the state is Modal's. */
+export function getModalVolumeName(state: unknown): string | null {
   if (!state || typeof state !== "object") {
     return null;
   }
-
-  const sandboxName = (state as { sandboxName?: unknown }).sandboxName;
-  return hasNonEmptyString(sandboxName) ? sandboxName : null;
-}
-
-export function getResumableSandboxName(state: unknown): string | null {
-  return getPersistentSandboxName(state) ?? getLegacySandboxId(state);
+  if ((state as { type?: unknown }).type !== "modal") {
+    return null;
+  }
+  const volumeName = (state as { volumeName?: unknown }).volumeName;
+  return hasNonEmptyString(volumeName) ? volumeName : null;
 }
 
 export function hasResumableSandboxState(state: unknown): boolean {
@@ -122,19 +130,18 @@ export function isSandboxNotFoundError(message: string): boolean {
   return (
     normalized.includes("status code 404") ||
     normalized.includes("sandbox not found") ||
-    // Boat's structured error envelope (BoatApiError) reports `404` +
-    // `not_found` in the message; the `status code 404` clause above
-    // already covers it, this is the explicit spelling.
-    normalized.includes("status code 404: not_found")
+    // Modal's first-party SDK throws a bare `NotFoundError` whose message
+    // names the resource id, e.g. "Sandbox sb-... not found".
+    normalized.includes("notfounderror")
   );
 }
 
 /**
  * Check if an error message indicates the sandbox VM is permanently unavailable.
  *
- * Deliberately not vendor-branded: Boat (docs.boat.dev) failures are
- * matched by their documented error codes, so both providers flow through
- * the same clear-state-and-reprovision path with no `type === "..."` branch.
+ * Deliberately not vendor-branded: Modal's SDK failures are matched by
+ * their documented error messages, so every error flows through the same
+ * clear-state-and-reprovision path with no `type === "..."` branch.
  */
 export function isSandboxUnavailableError(message: string): boolean {
   const normalized = message.toLowerCase();
@@ -152,10 +159,14 @@ export function isSandboxUnavailableError(message: string): boolean {
     (normalized.includes("status code 400") &&
       normalized.includes("resume") &&
       normalized.includes("snapshot")) ||
-    // Boat codes for a machine that cannot come back: the VM is gone or
-    // its snapshot could not be restored.
-    normalized.includes("machine_not_running") ||
-    normalized.includes("resume_failed")
+    // Modal's spellings for a sandbox that is no longer usable: the
+    // container was reaped (its 24h cap or idle timeout elapsed) or it
+    // never existed. Both mean "provision a fresh one on the same
+    // volume", which is Modal's normal re-provision path.
+    normalized.includes("sandbox is not running") ||
+    normalized.includes("sandbox_timed_out") ||
+    normalized.includes("has already finished") ||
+    normalized.includes("sandbox has been terminated")
   );
 }
 
@@ -170,20 +181,30 @@ function hasRuntimeState(state: SandboxState): boolean {
 
 /**
  * Clear sandbox runtime state while preserving durable resume state when available.
+ *
+ * For Modal the "durable resume state" is the Volume: dropping it would
+ * orphan the session's workspace, so it is carried through even on a hard
+ * 404 (which would otherwise lose the resume handle).
  */
 export function clearSandboxState(
   state: SandboxState | null | undefined,
 ): SandboxState | null {
   if (!state) return null;
 
-  const sandboxName = getPersistentSandboxName(state);
-  const sandboxId = sandboxName ? null : getLegacySandboxId(state);
+  // Only Modal has durable resume state to preserve; a local sandbox
+  // has none, so it clears down to its bare discriminator.
+  const volumeName = getModalVolumeName(state);
+  if (volumeName) {
+    return {
+      type: state.type,
+      volumeName,
+      ...((state as ModalSandboxState).source
+        ? { source: (state as ModalSandboxState).source }
+        : {}),
+    } as SandboxState;
+  }
 
-  return {
-    type: state.type,
-    ...(sandboxName ? { sandboxName } : {}),
-    ...(sandboxId ? { sandboxId } : {}),
-  } as SandboxState;
+  return { type: state.type } as SandboxState;
 }
 
 /**

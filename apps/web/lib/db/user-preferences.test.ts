@@ -13,7 +13,7 @@ describe("toUserPreferencesData", () => {
     expect(toUserPreferencesData()).toEqual({
       defaultModelId: "gpt-5.6-sol",
       defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
+      defaultSandboxType: "modal",
       defaultDiffMode: "unified",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -46,11 +46,11 @@ describe("toUserPreferencesData", () => {
       enabledModelIds: [],
     });
 
-    expect(result.defaultSandboxType).toBe("vercel");
+    expect(result.defaultSandboxType).toBe("modal");
     expect(result.defaultDiffMode).toBe("unified");
   });
 
-  test("normalizes legacy hybrid sandbox types to vercel", async () => {
+  test("normalizes legacy hybrid sandbox types to the default provider", async () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
@@ -69,7 +69,7 @@ describe("toUserPreferencesData", () => {
       enabledModelIds: [],
     });
 
-    expect(result.defaultSandboxType).toBe("vercel");
+    expect(result.defaultSandboxType).toBe("modal");
     expect(result.defaultDiffMode).toBe("unified");
   });
 
@@ -79,7 +79,7 @@ describe("toUserPreferencesData", () => {
     const result = toUserPreferencesData({
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
+      defaultSandboxType: "modal",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -103,7 +103,7 @@ describe("toUserPreferencesData", () => {
     const result = toUserPreferencesData({
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
+      defaultSandboxType: "modal",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -130,7 +130,7 @@ describe("toUserPreferencesData", () => {
     const result = toUserPreferencesData({
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
+      defaultSandboxType: "modal",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,

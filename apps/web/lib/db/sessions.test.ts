@@ -71,50 +71,66 @@ mock.module("./client", () => ({
 const sessionsModulePromise = import("./sessions");
 
 describe("normalizeLegacySandboxState", () => {
-  test("rewrites legacy vercel-compatible sandbox ids onto sandboxName", async () => {
+  test("drops state from a removed provider so the session re-provisions", async () => {
     const { normalizeLegacySandboxState } = await sessionsModulePromise;
 
-    const result = normalizeLegacySandboxState({
-      type: "hybrid",
-      sandboxId: "sbx-legacy-1",
-      snapshotId: "snap-legacy-1",
-      expiresAt: 123,
-    });
-
-    expect(result).toEqual({
-      type: "vercel",
-      sandboxName: "sbx-legacy-1",
-      snapshotId: "snap-legacy-1",
-      expiresAt: 123,
-    });
-  });
-
-  test("moves persisted session_<id> identifiers onto sandboxName", async () => {
-    const { normalizeLegacySandboxState } = await sessionsModulePromise;
-
+    // Returning the dead handle would make connect() throw
+    // UnsupportedSandboxProviderError on EVERY future reconnect -- a
+    // permanently broken session. null means "no live sandbox", so the
+    // next connect provisions a fresh one on a new volume.
     expect(
       normalizeLegacySandboxState({
         type: "vercel",
-        sandboxId: "session_123",
-        expiresAt: 456,
+        sandboxName: "session_123",
+        expiresAt: 123,
       }),
-    ).toEqual({
-      type: "vercel",
-      sandboxName: "session_123",
-      expiresAt: 456,
-    });
+    ).toBeNull();
+
+    expect(
+      normalizeLegacySandboxState({
+        type: "boat",
+        sandboxId: "bx_legacy-1",
+        expiresAt: 123,
+      }),
+    ).toBeNull();
+
+    // "hybrid" is the oldest label and also reads as unregistered.
+    expect(
+      normalizeLegacySandboxState({
+        type: "hybrid",
+        sandboxId: "sbx-legacy-1",
+        expiresAt: 123,
+      }),
+    ).toBeNull();
   });
 
-  test("leaves supported sandbox states unchanged", async () => {
+  test("leaves state from a registered provider untouched", async () => {
     const { normalizeLegacySandboxState } = await sessionsModulePromise;
 
-    const state = {
-      type: "vercel",
-      sandboxName: "session_current-1",
-      expiresAt: 456,
+    // Modal's durable handle is the volume -- it must survive normalization
+    // exactly as stored, including the sandbox id of the live container.
+    const modalState = {
+      type: "modal",
+      volumeName: "entry-workspace-session_current-1",
+      sandboxId: "sb-live",
+      expiresAt: Date.now() + 60_000,
     } as const;
 
-    expect(normalizeLegacySandboxState(state)).toEqual(state);
+    expect(normalizeLegacySandboxState(modalState)).toEqual(modalState);
+
+    const localState = { type: "local", rootDir: "/tmp/x" } as const;
+    expect(normalizeLegacySandboxState(localState)).toEqual(localState);
+  });
+
+  test("passes non-object values through untouched", async () => {
+    const { normalizeLegacySandboxState } = await sessionsModulePromise;
+
+    expect(normalizeLegacySandboxState(null)).toBeNull();
+    expect(normalizeLegacySandboxState(undefined)).toBeUndefined();
+    // A malformed row with no discriminator: nothing to normalize, so it
+    // is returned as-is and callers treat a typeless object as absent.
+    const malformed: unknown = { volumeName: "x" };
+    expect(normalizeLegacySandboxState(malformed)).toBe(malformed as null);
   });
 });
 

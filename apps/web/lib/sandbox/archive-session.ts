@@ -5,7 +5,7 @@ import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { findPullRequest, getPullRequestStatus } from "@/lib/github/pulls";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { kickArchiveSandboxStopWorkflow } from "./archive-sandbox-kick";
-import { canOperateOnSandbox, clearSandboxState } from "./utils";
+import { canOperateOnSandbox, clearSandboxState, getModalVolumeName } from "./utils";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type SessionUpdateInput = Parameters<typeof updateSession>[1];
@@ -160,6 +160,26 @@ export async function finalizeArchivedSessionSandboxInline(
 
     const sandbox = await connectSandbox(archivedSession.sandboxState);
     await sandbox.stop();
+
+    // A Modal Volume is a BILLED resource that survives the sandbox, so
+    // archiving must reclaim it. Deleting the volume after the sandbox is
+    // down is safe: the workspace lives on the volume and no sandbox is
+    // attached. A session that should keep resumable state must not use
+    // this path -- it keeps its handle via clearSandboxState().
+    const volumeName = getModalVolumeName(archivedSession.sandboxState);
+    if (volumeName) {
+      try {
+        const { deleteModalSessionVolume } = await import("./modal-volume");
+        await deleteModalSessionVolume(volumeName);
+      } catch (error) {
+        // Losing the volume only costs money, not the session's ability to
+        // archive; logged and moved past so the archive itself completes.
+        console.warn(
+          `[archive] volume ${volumeName} delete failed:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
 
     await updateSession(sessionId, {
       snapshotUrl: null,

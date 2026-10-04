@@ -81,14 +81,18 @@ export interface SandboxLifecycleHooksContext {
  * archiveSession), so there is exactly one implementation of every
  * workspace operation. All of them may reject; the tool surfaces the
  * rejection as a tool error rather than killing the turn.
+ *
+ * There is deliberately no `migrate` or `extend` callback: the workspace
+ * lives on a persistent Modal Volume, so a sandbox that expires is
+ * re-provisioned onto the same volume (nothing to migrate) and a running
+ * sandbox's lifetime cannot be extended from outside. See
+ * packages/agent/tools/sandbox.ts for why.
  */
 export interface SandboxControlContext {
   status: () => Promise<Record<string, unknown>>;
   provision: () => Promise<Record<string, unknown>>;
   reconnect: () => Promise<Record<string, unknown>>;
-  migrate: () => Promise<Record<string, unknown>>;
   snapshot: () => Promise<Record<string, unknown>>;
-  extend: () => Promise<Record<string, unknown>>;
   delete: () => Promise<Record<string, unknown>>;
 }
 

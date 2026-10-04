@@ -14,7 +14,22 @@ This file provides guidance for AI coding agents working in this repository.
 
 Authentication uses [Better Auth](https://www.better-auth.com/) with Vercel OAuth (sign-in) and GitHub OAuth (repo access). Config lives in `apps/web/lib/auth/config.ts`. Sessions are managed by better-auth's built-in session system — there is no manual JWE/encryption layer.
 
-Key env vars: `BETTER_AUTH_SECRET` (session signing), `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID` + `VERCEL_APP_CLIENT_SECRET` (Vercel OAuth), plus GitHub App credentials for repo access. See `apps/web/.env.example` for the full list.
+Key env vars: `BETTER_AUTH_SECRET` (session signing), `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID` + `VERCEL_APP_CLIENT_SECRET` (Vercel OAuth), plus GitHub App credentials for repo access.
+
+## Sandbox provider
+
+Agents run in sandboxes provisioned by a provider **registry plugin** (`packages/sandbox`): each provider owns its adapter (`<provider>/connect.ts`, `state.ts`), registers itself in `registry.ts` + `registry-types.ts`, and declares what it can do via `SandboxCapabilities`. Nothing in the agent, workflows, or UI branches on a provider name — behaviour is read off capabilities.
+
+Registered providers: **modal** (default) and **local** (dev/test only). Vercel and Boat were removed; `isKnownSandboxType()` returns false for them, so a stale session row fails closed and re-provisions instead of erroring forever.
+
+Modal specifics that are easy to get wrong:
+
+- **Credentials** resolve in exactly one place, `packages/sandbox/modal/client.ts`, from `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`. Never write a token to sandbox state, tool output, or logs; `setGitHubAuthToken` is per-exec env injection, never persisted.
+- **The workspace Volume** is mounted at `/workspace` (a symlink to `/__modal/volumes/<id>`) and **requires `OPEN_AGENTS_SANDBOX_DRIVE=true`**. Without it no volume is attached, and the "no migration needed" property silently does not hold.
+- **No workspace migration**: `MODAL_CAPABILITIES.workspaceMigration` is false because the Volume outlives any sandbox. Re-provisioning remounts the same bytes.
+- **No kill RPC**: `ContainerProcess` has only `wait()`, so commands are wrapped to echo a `__ENTRY_PID__` marker and `killCommand()` signals that PID in-sandbox. Reading that PID MUST be incremental (`getReader()`), never `readText()` — the latter only resolves at EOF, which a detached command never reaches.
+
+See `apps/web/.env.example` for the full environment variable list.
 
 ## Database & Migrations
 

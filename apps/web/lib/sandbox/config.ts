@@ -4,7 +4,7 @@
  */
 
 import { isHobbyResourceProfile } from "../deployment/resource-profile.ts";
-import type { DriveMountConfig } from "@open-agents/sandbox/vercel/config.js";
+import type { DriveMountConfig } from "@open-agents/sandbox";
 
 /**
  * Mount path for the session workspace drive. This is the same directory
@@ -33,18 +33,6 @@ export const DEFAULT_SANDBOX_DRIVE_MOUNT_PATH = "/vercel/sandbox";
 const DEFAULT_SANDBOX_DRIVE_MAX_SIZE_BYTES = 1024 ** 3;
 
 /**
- * A drive is reclaimable once it has not been updated for this long.
- *
- * Measured against the DRIVE's own `updatedAt`, not the session's: a
- * drive stops being touched the moment its sandbox detaches, so drive
- * age is the honest signal that nothing is actively writing to it. 38
- * hours (reduced by 34h from the original 3 days, per owner) is far
- * longer than any real session goes idle, so active work is never caught
- * by this.
- */
-export const SANDBOX_DRIVE_MAX_IDLE_MS = 38 * 60 * 60 * 1000;
-
-/**
  * Drive name for a session's persistent workspace.
  *
  * A drive attaches to exactly ONE sandbox at a time (the SDK's
@@ -55,11 +43,6 @@ export const SANDBOX_DRIVE_MAX_IDLE_MS = 38 * 60 * 60 * 1000;
  */
 export function getSessionDriveName(sessionId: string): string {
   return `entry-agents-session-${sessionId}`;
-}
-
-/** Prefix shared by every drive this app creates. */
-export function getSessionDrivePrefix(): string {
-  return "entry-agents-session-";
 }
 
 /**

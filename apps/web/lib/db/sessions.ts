@@ -1,4 +1,5 @@
 import type { SandboxState } from "@open-agents/sandbox";
+import { isKnownSandboxType } from "@open-agents/sandbox/registry.js";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./client";
 import {
@@ -29,6 +30,23 @@ const activeStreamOrLiveStatusSql = sql<boolean>`(
   OR ${chats.status} IN ('queued', 'running', 'sleeping', 'resuming')
 )`;
 
+/**
+ * Normalize a persisted sandbox state for the CURRENT provider set.
+ *
+ * Legacy rows are a fact of life here. The important behaviour is that a
+ * session whose provider was REMOVED (vercel, boat, or the even older
+ * "hybrid" label) must not be handed back as a usable state -- the
+ * registry would throw `UnsupportedSandboxProviderError` at connect time
+ * and the user is stuck in a permanent failure loop. Returning `null`
+ * instead makes the caller treat the session as provisioned-but-empty, so
+ * the next connect provisions a FRESH Modal sandbox (on a new volume) with
+ * no dead handle to trip over. This is the migration path for the Modal
+ * switch: no data copy, because the old workspace is on a provider we no
+ * longer talk to.
+ *
+ * States belonging to a still-registered provider pass through untouched,
+ * including all of their durable identity fields.
+ */
 export function normalizeLegacySandboxState(
   sandboxState: unknown,
 ): SandboxState | null | undefined {
@@ -37,33 +55,15 @@ export function normalizeLegacySandboxState(
   }
 
   const state = sandboxState as Record<string, unknown>;
-  const normalizedType = state.type === "hybrid" ? "vercel" : state.type;
-  const sandboxName =
-    typeof state.sandboxName === "string" && state.sandboxName.length > 0
-      ? state.sandboxName
-      : typeof state.sandboxId === "string" && state.sandboxId.length > 0
-        ? state.sandboxId
-        : undefined;
+  const type = typeof state.type === "string" ? state.type : undefined;
 
-  if (normalizedType !== "vercel") {
-    return sandboxState as SandboxState;
+  // Unregistered provider: drop the state so the session re-provisions
+  // rather than failing to connect forever.
+  if (type !== undefined && !isKnownSandboxType(type)) {
+    return null;
   }
 
-  if (normalizedType === state.type && sandboxName === undefined) {
-    return sandboxState as SandboxState;
-  }
-
-  const normalizedState: Record<string, unknown> = {
-    ...state,
-    type: normalizedType,
-  };
-
-  if (sandboxName !== undefined) {
-    normalizedState.sandboxName = sandboxName;
-    delete normalizedState.sandboxId;
-  }
-
-  return normalizedState as unknown as SandboxState;
+  return sandboxState as SandboxState;
 }
 
 function normalizeSessionRecord<T extends { sandboxState: unknown }>(

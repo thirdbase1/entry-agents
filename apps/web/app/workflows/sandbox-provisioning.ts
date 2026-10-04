@@ -44,13 +44,12 @@ async function runProvisioning(sessionId: string, runId: string) {
     }
 
     // Use toErrorMessage() (not bare error.message) so the persisted
-    // lifecycleError carries the real API response body -- the
-    // @vercel/sandbox SDK's APIError keeps .message generic ("Status
-    // code 400 is not ok") and puts the actual cause on separate
-    // .text/.json properties. Found 2026-08-27 while debugging a real
-    // 400 that reached this catch with no diagnosable detail at all
-    // (same generic-message gap as the 2026-08-24 402/quota incident,
-    // just never patched for the general provisioning-failure path).
+    // lifecycleError carries the real API response body -- the Modal SDK
+    // keeps .message generic ("Status code 400 is not ok") and puts the
+    // actual cause on separate .text/.json properties. Same
+    // generic-message gap as the earlier Vercel-era incidents, so the
+    // helper stayed provider-neutral and moved into the sandbox
+    // package root.
     const message = toErrorMessage(error);
     await updateSession(sessionId, {
       lifecycleState: "failed",

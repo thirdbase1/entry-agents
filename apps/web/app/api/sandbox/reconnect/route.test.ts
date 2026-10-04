@@ -20,8 +20,8 @@ let sessionRecord: {
   lifecycleState: "failed" | "active" | "hibernated";
   lifecycleError: string | null;
   sandboxState: {
-    type: "vercel";
-    sandboxName?: string;
+    type: "modal";
+    volumeName?: string;
     expiresAt?: number;
   };
   lastActivityAt: Date | null;
@@ -61,18 +61,18 @@ mock.module("@/lib/sandbox/lifecycle", () => ({
 
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async (state: {
-    type: "vercel";
-    sandboxName?: string;
+    type: "modal";
+    volumeName?: string;
     expiresAt?: number;
   }) => {
     const expiresAt = Date.now() + 2 * 60_000;
     return {
-      workingDirectory: "/vercel/sandbox",
+      workingDirectory: "/workspace",
       expiresAt,
       exec: async () => probeResult,
       getState: () => ({
         ...state,
-        ...(state.sandboxName ? { sandboxName: state.sandboxName } : {}),
+        ...(state.volumeName ? { volumeName: state.volumeName } : {}),
         expiresAt,
       }),
     };
@@ -98,8 +98,8 @@ describe("/api/sandbox/reconnect", () => {
       lifecycleState: "failed",
       lifecycleError: "snapshot failed",
       sandboxState: {
-        type: "vercel",
-        sandboxName: "session_session-1",
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
         expiresAt: now + 5 * 60_000,
       },
       lastActivityAt: new Date(now - 5_000),
@@ -159,8 +159,8 @@ describe("/api/sandbox/reconnect", () => {
     expect(updateCalls[0]?.patch.lifecycleState).toBe("hibernated");
     expect(updateCalls[0]?.patch.lifecycleError).toBeNull();
     expect(updateCalls[0]?.patch.sandboxState).toEqual({
-      type: "vercel",
-      sandboxName: "session_session-1",
+      type: "modal",
+      volumeName: "entry-workspace-session-1",
     });
   });
 
@@ -193,7 +193,7 @@ describe("/api/sandbox/reconnect", () => {
     expect(updateCalls[0]?.patch.lifecycleState).toBe("hibernated");
     expect(updateCalls[0]?.patch.lifecycleError).toBeNull();
     expect(updateCalls[0]?.patch.sandboxState).toEqual({
-      type: "vercel",
+      type: "modal",
     });
   });
 });

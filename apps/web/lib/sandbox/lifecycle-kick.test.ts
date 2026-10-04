@@ -14,8 +14,9 @@ type TestSessionRecord = {
     | "archived"
     | "failed";
   sandboxState: {
-    type: "vercel";
-    sandboxId: string;
+    type: "modal";
+    volumeName: string;
+    expiresAt?: number;
   } | null;
   lifecycleRunId: string | null;
 };
@@ -112,8 +113,8 @@ describe("kickSandboxLifecycleWorkflow", () => {
       status: "running",
       lifecycleState: "active",
       sandboxState: {
-        type: "vercel",
-        sandboxId: "sandbox-1",
+        type: "modal",
+        volumeName: "entry-workspace-session-1",
       },
       lifecycleRunId: null,
     };

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { VercelSandboxState } from "./utils";
+import type { ModalSandboxState } from "./utils";
 import {
   clearUnavailableSandboxState,
   isSandboxUnavailableError,
@@ -30,22 +30,25 @@ describe("isSandboxUnavailableError", () => {
 });
 
 describe("clearUnavailableSandboxState", () => {
-  const state: VercelSandboxState = {
-    type: "vercel",
-    sandboxName: "session_test",
-    snapshotId: "snap_dead",
+  const state: ModalSandboxState = {
+    type: "modal",
+    volumeName: "entry-workspace-session_test",
     expiresAt: Date.now() + 60_000,
   };
 
-  test("drops the stale snapshotId for the snapshot-resume 400", () => {
+  test("keeps the volume through a hard 404 so the workspace survives", () => {
+    // The unlike-the-old-world behaviour: Modal's volume is the durable
+    // workspace, so a NotFound (the container was reaped) must NOT wipe it
+    // -- only the runtime fields are cleared. Losing the volume here would
+    // orphan the session's files.
     const cleared = clearUnavailableSandboxState(
       state,
-      "Status code 400 is not ok: Cannot resume sandbox: no snapshot available.",
+      "Sandbox sb-dead not found",
     );
 
     expect(cleared).toEqual({
-      type: "vercel",
-      sandboxName: "session_test",
+      type: "modal",
+      volumeName: "entry-workspace-session_test",
     });
   });
 
@@ -53,8 +56,8 @@ describe("clearUnavailableSandboxState", () => {
     const cleared = clearUnavailableSandboxState(state, "sandbox is stopped");
 
     expect(cleared).toEqual({
-      type: "vercel",
-      sandboxName: "session_test",
+      type: "modal",
+      volumeName: "entry-workspace-session_test",
     });
   });
 });

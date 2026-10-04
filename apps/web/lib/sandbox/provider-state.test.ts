@@ -6,19 +6,18 @@ import { isSandboxMigrationDue } from "./lifecycle";
 import {
   isSandboxState,
   isSandboxUnavailableError,
-  type VercelSandboxState,
+  type ModalSandboxState,
 } from "./utils";
 
 describe("provider-neutral sandbox state guards", () => {
   test("accepts every registered provider", () => {
-    expect(isSandboxState({ type: "vercel", sandboxName: "session_1" })).toBe(
+    expect(isSandboxState({ type: "modal", volumeName: "session_1" })).toBe(
       true,
     );
-    expect(isSandboxState({ type: "boat", sandboxId: "bx_1" })).toBe(true);
     expect(isSandboxState({ type: "local", rootDir: "/tmp/x" })).toBe(true);
   });
 
-  test("rejects unknown providers instead of coercing them to vercel", () => {
+  test("rejects unknown providers instead of coercing them to modal", () => {
     expect(isSandboxState({ type: "hybrid" })).toBe(false);
     expect(isSandboxState({ type: "aws" })).toBe(false);
     expect(isSandboxState({ type: "boatx" })).toBe(false);
@@ -27,105 +26,97 @@ describe("provider-neutral sandbox state guards", () => {
     expect(isSandboxState("vercel")).toBe(false);
   });
 
-  test("keeps working for existing vercel sessions", () => {
-    const legacy: VercelSandboxState = {
-      type: "vercel",
-      sandboxName: "session_abc",
-      persistent: false,
+  test("a removed provider reads as unknown, so its state fails closed", () => {
+    // Vercel and Boat sessions still exist in the DB. The interesting
+    // property is that they must NOT be accepted as valid state -- that
+    // is what forces them onto the clear-and-reprovision path instead of
+    // being silently routed to the modal provider.
+    expect(isKnownSandboxType("vercel")).toBe(false);
+    expect(isKnownSandboxType("boat")).toBe(false);
+    expect(isSandboxState({ type: "vercel", sandboxName: "session_abc" })).toBe(
+      false,
+    );
+    expect(isSandboxState({ type: "boat", sandboxId: "bx_abc" })).toBe(false);
+  });
+
+  test("keeps working for existing modal sessions", () => {
+    const current: ModalSandboxState = {
+      type: "modal",
+      volumeName: "entry-workspace-abc",
       expiresAt: Date.now() + 60_000,
     };
 
-    expect(isSandboxState(legacy)).toBe(true);
-    expect(isKnownSandboxType(legacy.type)).toBe(true);
+    expect(isSandboxState(current)).toBe(true);
+    expect(isKnownSandboxType(current.type)).toBe(true);
   });
 });
 
 describe("lifecycle capability gating", () => {
   const nearExpiry = () => Date.now() + SANDBOX_MIGRATION_LEAD_MS / 2;
 
-  test("migration is due for vercel (destructive stop) but not for boat", () => {
-    const vercelState = {
-      type: "vercel",
-      sandboxName: "session_abc",
+  test("migration is never due for modal because the volume persists", () => {
+    const modalState = {
+      type: "modal",
+      volumeName: "entry-workspace-abc",
       expiresAt: nearExpiry(),
     } as const;
 
-    const boatState = {
-      type: "boat",
-      sandboxId: "bx_abc",
-      expiresAt: nearExpiry(),
-    } as const;
-
-    expect(getSandboxProvider("vercel")?.capabilities.workspaceMigration).toBe(
-      true,
-    );
-    expect(getSandboxProvider("boat")?.capabilities.workspaceMigration).toBe(
+    expect(getSandboxProvider("modal")?.capabilities.workspaceMigration).toBe(
       false,
     );
 
-    expect(isSandboxMigrationDue(vercelState)).toBe(true);
-    expect(isSandboxMigrationDue(boatState)).toBe(false);
+    // This is the whole point of the Modal switch: even when the sandbox
+    // is about to hit its 24h ceiling, migration is NOT triggered, because
+    // the re-provisioned sandbox remounts the same volume. The old
+    // workspace-pack/restore dance would be pure churn.
+    expect(isSandboxMigrationDue(modalState)).toBe(false);
   });
 
   test("migration is never due without an expiry", () => {
     expect(
       isSandboxMigrationDue({
-        type: "vercel",
-        sandboxName: "session_abc",
+        type: "modal",
+        volumeName: "entry-workspace-abc",
       } as const),
     ).toBe(false);
     expect(isSandboxMigrationDue(null)).toBe(false);
     expect(isSandboxMigrationDue(undefined)).toBe(false);
   });
 
-  test("an expired boat sandbox still reports hibernation-worthy but not migratable", () => {
-    const boatState = {
-      type: "boat",
-      sandboxId: "bx_abc",
+  test("an expired modal sandbox is still not migratable", () => {
+    const modalState = {
+      type: "modal",
+      volumeName: "entry-workspace-abc",
       expiresAt: Date.now() - 1,
     } as const;
 
-    expect(isSandboxMigrationDue(boatState)).toBe(false);
+    expect(isSandboxMigrationDue(modalState)).toBe(false);
   });
 });
 
 describe("provider-agnostic error classification", () => {
-  test("matches vercel failures", () => {
+  test("matches modal failures", () => {
+    // Modal's container is gone: the 24h cap or an idle timeout reaped it,
+    // or the sandbox was terminated. All mean "re-provision on the same
+    // volume", so they are treated as unavailable and the state is cleared.
+    expect(isSandboxUnavailableError("Sandbox is not running")).toBe(true);
+    expect(isSandboxUnavailableError("sandbox_timed_out")).toBe(true);
+    expect(isSandboxUnavailableError("Sandbox has already finished")).toBe(
+      true,
+    );
+    expect(isSandboxUnavailableError("sandbox has been terminated")).toBe(true);
     expect(
       isSandboxUnavailableError("Request failed with status code 410"),
     ).toBe(true);
-    expect(isSandboxUnavailableError("sandbox is stopped and non-persistent")).toBe(
-      true,
-    );
-    expect(
-      isSandboxUnavailableError(
-        "Cannot resume sandbox: no snapshot available",
-      ),
-    ).toBe(true);
   });
 
-  test("matches boat failures", () => {
+  test("does not treat quota or rate-limit errors as unavailable", () => {
+    // A quota block is real -- the degraded-memory retry in
+    // modal/connect.ts handles it -- but it is NOT a dead sandbox, so it
+    // must not clear the session's durable volume reference.
     expect(
       isSandboxUnavailableError(
-        "Boat API error status code 404: not_found - Sandbox bx_gone does not exist",
-      ),
-    ).toBe(true);
-    expect(
-      isSandboxUnavailableError(
-        "Boat API error status code 400: machine_not_running - machine is not running",
-      ),
-    ).toBe(true);
-    expect(
-      isSandboxUnavailableError(
-        "Boat API error status code 409: resume_failed - snapshot missing",
-      ),
-    ).toBe(true);
-  });
-
-  test("does not treat transient restores or quota errors as unavailable", () => {
-    expect(
-      isSandboxUnavailableError(
-        "Boat API error status code 402: billing_required - add a payment method",
+        "Request failed with status code 507: quota exceeded",
       ),
     ).toBe(false);
     expect(

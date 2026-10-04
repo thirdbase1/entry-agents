@@ -1520,52 +1520,6 @@ async function snapshotSandboxStep(
   return { snapshotted: true, snapshotId: result.snapshotId };
 }
 
-async function migrateSandboxStep(
-  sessionId: string,
-): Promise<Record<string, unknown>> {
-  "use step";
-
-  const { getSessionById } = await import("@/lib/db/sessions");
-  const { performSandboxMigration } = await import("@/lib/sandbox/migration");
-
-  const session = await getSessionById(sessionId);
-  if (!session) {
-    throw new Error("Session not found");
-  }
-  // A migration run owns the workspace; reusing the session's existing run
-  // id keeps the safety net that force-kills in-flight commands intact.
-  const result = await performSandboxMigration(
-    sessionId,
-    session.lifecycleRunId ?? `agent-migrate-${sessionId}`,
-  );
-  return withoutUndefined({ ...result });
-}
-
-async function extendSandboxStep(
-  sessionId: string,
-): Promise<Record<string, unknown>> {
-  "use step";
-
-  const { getSessionById } = await import("@/lib/db/sessions");
-  const { connectSandbox } = await import("@open-agents/sandbox");
-
-  const session = await getSessionById(sessionId);
-  if (!session?.sandboxState) {
-    throw new Error("There is no workspace to extend yet.");
-  }
-
-  const sandbox = await connectSandbox(session.sandboxState);
-  if (!sandbox.extendTimeout) {
-    return {
-      extended: false,
-      reason: "This sandbox does not support extending its timeout.",
-    };
-  }
-
-  const result = await sandbox.extendTimeout(60 * 60 * 1000);
-  return { extended: true, expiresAt: result.expiresAt };
-}
-
 async function deleteSandboxStep(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
@@ -3225,9 +3179,7 @@ const runAgentStep = async (
             status: () => getSandboxStatusStep(controlContext.sessionId),
             provision: () => provisionSandboxStep(controlContext.sessionId),
             reconnect: () => reconnectSandboxStep(controlContext.sessionId),
-            migrate: () => migrateSandboxStep(controlContext.sessionId),
             snapshot: () => snapshotSandboxStep(controlContext.sessionId),
-            extend: () => extendSandboxStep(controlContext.sessionId),
             delete: () => deleteSandboxStep(controlContext.sessionId),
           }
         : undefined,

@@ -19,14 +19,6 @@ export {
   type WorkspacePayload,
 } from "./migrate.ts";
 
-// drive reclamation
-export {
-  cleanupStaleDrives,
-  type DriveCleanupOptions,
-  type DriveCleanupResult,
-  type DriveSessionStatus,
-} from "./drive-cleanup.ts";
-
 // shared types
 export type { Source, FileEntry, SandboxStatus } from "./types.ts";
 
@@ -47,8 +39,7 @@ export {
   SANDBOX_PROVIDER_METADATA,
   USER_SELECTABLE_SANDBOX_TYPES,
   DEFAULT_SANDBOX_PROVIDER,
-  VERCEL_CAPABILITIES,
-  BOAT_CAPABILITIES,
+  MODAL_CAPABILITIES,
   LOCAL_CAPABILITIES,
   getSandboxCapabilities,
   getSandboxProviderMetadata,
@@ -90,29 +81,19 @@ export {
   type FileWithContent,
 } from "./git.ts";
 
-// vercel
-export {
-  connectVercelSandbox,
-  VercelSandbox,
-  toErrorMessage,
-  type VercelSandboxConfig,
-  type VercelSandboxConnectConfig,
-  type VercelState,
-} from "./vercel/index.ts";
-
 // local
 export { LocalSandbox, connectLocal } from "./local/sandbox.ts";
 export type { LocalState } from "./local/state.ts";
 
-// boat
-export {
-  BoatSandbox,
-  connectBoat,
-  BoatApiError,
-  BoatConfigurationError,
-  BOAT_DEFAULT_WORKING_DIRECTORY,
-  isBoatConfigured,
-  isBoatNotFoundError,
-  type BoatSandboxConnectOptions,
-  type BoatState,
-} from "./boat/index.ts";
+// provider-neutral drive types (moved out of ./vercel/config.ts when
+// Vercel was dropped; Modal volumes are drives too)
+export type { DriveMountConfig, DriveMountSpec } from "./types.ts";
+
+// Error-shape helper: the SDK keeps the real cause on .text/.json while
+// .message stays generic, so a bare `error.message` loses the diagnosis.
+export { toErrorMessage } from "./modal/client.ts";
+
+// Modal client + volume lifecycle, for server-side callers that need to
+// reclaim an archived session's workspace. The credential resolution stays
+// inside modal/client.ts; callers only ever see these functions.
+export { createModalClient, deleteModalVolume } from "./modal/client.ts";

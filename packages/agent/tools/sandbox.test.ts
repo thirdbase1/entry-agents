@@ -9,25 +9,21 @@ const { sandboxControlTool } = await import("./sandbox");
 function contextWith(overrides: {
   status?: () => Promise<Record<string, unknown>>;
   provision?: () => Promise<Record<string, unknown>>;
-  migrate?: () => Promise<Record<string, unknown>>;
-  extend?: () => Promise<Record<string, unknown>>;
   delete?: () => Promise<Record<string, unknown>>;
   reconnect?: () => Promise<Record<string, unknown>>;
   snapshot?: () => Promise<Record<string, unknown>>;
 }) {
   return {
     sandbox: {
-      state: { type: "vercel" as const, sandboxId: "sbx-1" },
-      workingDirectory: "/repo",
+      state: { type: "modal" as const, volumeName: "entry-workspace-s1" },
+      workingDirectory: "/workspace",
     },
     model: "test-model",
     sandboxControl: {
       status: overrides.status ?? (async () => ({ status: "running" })),
       provision: overrides.provision ?? (async () => ({ started: true })),
       reconnect: overrides.reconnect ?? (async () => ({ reconnected: true })),
-      migrate: overrides.migrate ?? (async () => ({ action: "migrated" })),
       snapshot: overrides.snapshot ?? (async () => ({ snapshotId: "snap-1" })),
-      extend: overrides.extend ?? (async () => ({ extended: true })),
       delete: overrides.delete ?? (async () => ({ deleted: true })),
     },
   };
@@ -67,10 +63,6 @@ describe("sandboxControlTool", () => {
         calls.push("provision");
         return { started: true };
       },
-      migrate: async () => {
-        calls.push("migrate");
-        return { action: "migrated" };
-      },
       reconnect: async () => {
         calls.push("reconnect");
         return { reconnected: true };
@@ -78,10 +70,6 @@ describe("sandboxControlTool", () => {
       snapshot: async () => {
         calls.push("snapshot");
         return { snapshotId: "snap-1" };
-      },
-      extend: async () => {
-        calls.push("extend");
-        return { extended: true };
       },
       delete: async () => {
         calls.push("delete");
@@ -92,8 +80,6 @@ describe("sandboxControlTool", () => {
     for (const action of [
       "provision",
       "reconnect",
-      "migrate",
-      "extend",
       "snapshot",
       "delete",
     ] as const) {
@@ -104,32 +90,25 @@ describe("sandboxControlTool", () => {
       expect(result).toMatchObject({ success: true, action });
     }
 
-    expect(calls).toEqual([
-      "provision",
-      "reconnect",
-      "migrate",
-      "extend",
-      "snapshot",
-      "delete",
-    ]);
+    expect(calls).toEqual(["provision", "reconnect", "snapshot", "delete"]);
   });
 
   test("a host failure becomes a tool error, not a thrown turn", async () => {
     const context = contextWith({
-      migrate: async () => {
-        throw new Error("Sandbox migration is still running");
+      snapshot: async () => {
+        throw new Error("Sandbox snapshot is still running");
       },
     });
 
     const result = await sandboxControlTool().execute?.(
-      { action: "migrate" },
+      { action: "snapshot" },
       executionOptions(context),
     );
 
     expect(result).toMatchObject({
       success: false,
-      action: "migrate",
-      error: "Sandbox migration is still running",
+      action: "snapshot",
+      error: "Sandbox snapshot is still running",
     });
   });
 

@@ -1,6 +1,5 @@
-import type { BoatState } from "./boat/state.ts";
 import type { LocalState } from "./local/state.ts";
-import type { VercelState } from "./vercel/state.ts";
+import type { ModalState } from "./modal/state.ts";
 
 /**
  * Unified sandbox state type. Use the `type` discriminator to determine
@@ -8,9 +7,9 @@ import type { VercelState } from "./vercel/state.ts";
  * `sessions.sandbox_state` (jsonb), so the discriminator is the durable
  * record of which provider owns a session.
  *
- * "vercel" -- remote Vercel Sandbox container.
- *
- * "boat" -- remote Boat persistent Linux VM (docs.boat.dev).
+ * "modal" -- remote Modal sandbox (gVisor container) with the workspace
+ * on a persistent Modal Volume. See modal/state.ts. This is the default
+ * provider for every new session.
  *
  * "local" -- plain local directory + child_process, no remote
  * provisioning. Only used by local dev/test tooling and the harness
@@ -18,6 +17,5 @@ import type { VercelState } from "./vercel/state.ts";
  * real user sessions. See local/state.ts.
  */
 export type SandboxState =
-  | ({ type: "vercel" } & VercelState)
-  | ({ type: "boat" } & BoatState)
+  | ({ type: "modal" } & ModalState)
   | ({ type: "local" } & LocalState);

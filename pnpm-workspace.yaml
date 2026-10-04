@@ -76,6 +76,12 @@ allowBuilds:
   cbor-extract: true
   electron: false
   esbuild: true
+  # protobufjs is a direct dependency of the `modal` SDK and runs a
+  # `postinstall` that re-runs gulp + pbts. The tarball already ships
+  # index.js and dist/, so it is not required to build — but pnpm blocks
+  # it by default and Vercel's builder treats an ignored build script as
+  # a hard `pnpm install` failure. Opt in explicitly.
+  protobufjs: true
   sharp: true
   sleep: false
 

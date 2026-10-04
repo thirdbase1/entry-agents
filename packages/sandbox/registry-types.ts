@@ -104,13 +104,13 @@ export const MODAL_CAPABILITIES: SandboxCapabilities = {
   maxTimeoutMs: 24 * 60 * 60 * 1000,
 };
 
-/** Local directory + child_process. Dev/test only -- never a real session. */
+/** Local directory + child_process. The desktop execution layer. */
 export const LOCAL_CAPABILITIES: SandboxCapabilities = {
   persistentResume: true,
   drives: false,
   snapshots: false,
-  execDetached: false,
-  killCommand: false,
+  execDetached: true,
+  killCommand: true,
   publicPorts: false,
   credentialBrokering: false,
   timeoutExtension: false,
@@ -130,8 +130,8 @@ export const SANDBOX_PROVIDER_METADATA: Record<
   },
   local: {
     id: "local",
-    displayName: "Local",
-    description: "Local directory (development only)",
+    displayName: "This computer",
+    description: "Runs directly on this machine (desktop)",
     capabilities: LOCAL_CAPABILITIES,
   },
 };
@@ -150,6 +150,41 @@ export const USER_SELECTABLE_SANDBOX_TYPES = [
   "modal",
 ] as const satisfies readonly SandboxProviderId[];
 
+/**
+ * Providers that are valid choices for a given runtime context but are
+ * hidden from the shared web selector. The web deployment runs on Vercel:
+ * "This computer" there would mean the Vercel server's filesystem, which
+ * is unsafe and misleading, so `local` stays out of
+ * USER_SELECTABLE_SANDBOX_TYPES. A desktop host opts in by adding `local`
+ * to its context — no desktop behavior is hard-coded into the web app,
+ * and remote providers remain selectable on desktop too.
+ */
+export const CONTEXT_SANDBOX_TYPES = {
+  web: [],
+  desktop: ["local"],
+} as const satisfies Record<string, readonly SandboxProviderId[]>;
+
+/** Providers user-selectable in the given runtime context (web ⊆ desktop). */
+export function listProvidersForContext(
+  context: keyof typeof CONTEXT_SANDBOX_TYPES = "web",
+): SandboxProviderId[] {
+  return [
+    ...USER_SELECTABLE_SANDBOX_TYPES,
+    ...CONTEXT_SANDBOX_TYPES[context],
+  ];
+}
+
+/** Is `value` a selectable provider in the given runtime context? */
+export function isSelectableInContext(
+  value: unknown,
+  context: keyof typeof CONTEXT_SANDBOX_TYPES = "web",
+): boolean {
+  return listProvidersForContext(context).includes(
+    value as SandboxProviderId,
+  );
+}
+
+/** Provider used when a session has no explicit choice. */
 export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "modal";
 
 export function isKnownSandboxType(value: unknown): value is SandboxProviderId {

@@ -25,6 +25,7 @@ import { connectModal } from "./modal/connect.ts";
 import { isModalConfigured } from "./modal/client.ts";
 import type { ModalState } from "./modal/state.ts";
 import { connectLocal } from "./local/sandbox.ts";
+import type { LocalSandboxConnectOptions } from "./local/sandbox.ts";
 
 export class UnsupportedSandboxProviderError extends Error {
   readonly providerId: string;
@@ -143,7 +144,10 @@ const localProvider: SandboxProvider = {
     if (state.type !== "local") {
       throw new UnsupportedSandboxProviderError(String(state.type));
     }
-    return connectLocal(state as { type: "local" } & { rootDir: string }, options);
+    return connectLocal(
+      state as { type: "local" } & { rootDir: string },
+      options as LocalSandboxConnectOptions | undefined,
+    );
   },
 
   buildProvisionState({ existing, sessionId, fresh }) {

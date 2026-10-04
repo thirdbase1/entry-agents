@@ -46,6 +46,45 @@ function isOptimisticChatId(chatId: string): boolean {
 const OPTIMISTIC_CHAT_RETRY_DELAY_MS = 100;
 const OPTIMISTIC_CHAT_RETRY_ATTEMPTS = 50;
 
+/**
+ * Normalizes a stored chat_messages row into a WebAgentUIMessage.
+ *
+ * Web persists the WHOLE UIMessage ({id, role, parts}) in the `parts` column
+ * (see app/api/chat/route.ts — `parts: latestMessage`), so the common case is
+ * that the column IS the message. The desktop client historically persisted
+ * only the bare parts ARRAY, which made every desktop-authored message render
+ * as undefined.parts and blew up the chat page with "Something went wrong".
+ * Accept both shapes: a bare array is wrapped, an object is passed through.
+ */
+function normalizeStoredMessage(m: {
+  id: string;
+  role: string;
+  parts: unknown;
+  createdAt: Date;
+}): WebAgentUIMessage {
+  const raw = m.parts as unknown;
+  if (Array.isArray(raw)) {
+    return {
+      id: m.id,
+      role: m.role as WebAgentUIMessage["role"],
+      parts: raw,
+    } as WebAgentUIMessage;
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as { id?: unknown; role?: unknown; parts?: unknown };
+    return {
+      id: typeof obj.id === "string" ? obj.id : m.id,
+      role: (typeof obj.role === "string" ? obj.role : m.role) as WebAgentUIMessage["role"],
+      parts: Array.isArray(obj.parts) ? obj.parts : [],
+    } as WebAgentUIMessage;
+  }
+  return {
+    id: m.id,
+    role: m.role as WebAgentUIMessage["role"],
+    parts: [],
+  } as WebAgentUIMessage;
+}
+
 async function getInitialModels() {
   try {
     return await fetchAvailableLanguageModelsWithContext();
@@ -128,7 +167,7 @@ export default async function SessionChatPage({
     notFound();
   }
 
-  const initialMessages = dbMessages.map((m) => m.parts as WebAgentUIMessage);
+  const initialMessages = dbMessages.map((m) => normalizeStoredMessage(m));
 
   // Compute generation duration for each assistant message:
   // duration = assistant.createdAt − preceding user.createdAt

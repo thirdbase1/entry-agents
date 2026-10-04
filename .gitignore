@@ -49,3 +49,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Agent tool scratch (web-fetch cache etc) -- never commit
 .open-harness/
+apps/desktop-spike/.env
+
+# Phase 8: desktop build artifacts — never commit generated bundles or Next build output
+apps/desktop-backend/.next/
+apps/desktop-spike/electron-dist/
+apps/desktop-spike/*.tmp.*

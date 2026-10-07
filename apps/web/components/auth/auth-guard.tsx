@@ -27,6 +27,7 @@ export function AuthGuard({
             <div className="flex flex-wrap items-center justify-center gap-2">
               <SignInButton />
               <SignInButton provider="github" />
+              <SignInButton provider="google" />
             </div>
           </div>
         )}

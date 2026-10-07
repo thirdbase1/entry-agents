@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Entry Agents">
+  <rect width="64" height="64" rx="16" fill="#101114"/>
+  <path d="M17 15h35l-6 9H26l-5 7h18l-6 9H17l-5-7 5-9-5-7 5-9Z" fill="#f4f4f5"/>
+  <path d="M17 42h25l7 9H22l-10-9h5Z" fill="#a1a1aa"/>
+</svg>

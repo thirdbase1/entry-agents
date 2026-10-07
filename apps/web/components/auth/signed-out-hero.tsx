@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { SignInButton } from "@/components/auth/sign-in-button";
 import { AppMockup } from "@/components/landing/app-mockup";
 import { LandingBento } from "@/components/landing/bento";
+import { LandingFaq } from "@/components/landing/faq";
 import { LandingFeatures } from "@/components/landing/features";
 import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
@@ -50,8 +51,12 @@ export function SignedOutHero() {
               ref={heroButtonsRef}
               className="mt-6 flex flex-wrap items-center gap-2 sm:mt-8"
             >
-              <SignInButton size="lg" callbackUrl="/sessions" />
-              <SignInButton size="lg" provider="github" callbackUrl="/sessions" />
+              <Link
+                href="/login"
+                className="inline-flex min-h-10 items-center rounded-md bg-(--l-fg) px-5 text-sm font-medium text-(--l-bg) transition-opacity hover:opacity-85"
+              >
+                Start building
+              </Link>
             </div>
           </div>
 
@@ -68,6 +73,7 @@ export function SignedOutHero() {
 
         <LandingFeatures />
         <LandingBento />
+        <LandingFaq />
         <LandingFooter />
       </div>
     </div>

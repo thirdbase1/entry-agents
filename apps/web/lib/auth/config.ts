@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import type {
   GithubProfile,
+  GoogleProfile,
   VercelProfile,
 } from "better-auth/social-providers";
 import { nanoid } from "nanoid";
@@ -81,6 +82,16 @@ function mapVercelProfileToUser(profile: VercelProfile): { username: string } {
   };
 }
 
+function mapGoogleProfileToUser(profile: GoogleProfile): { username: string } {
+  return {
+    username: deriveAuthUsername({
+      id: profile.sub,
+      email: profile.email,
+      name: profile.name,
+    }),
+  };
+}
+
 function mapGitHubProfileToUser(profile: GithubProfile): { username: string } {
   return {
     username: deriveAuthUsername({
@@ -143,7 +154,7 @@ export const auth = betterAuth({
     encryptOAuthTokens: true,
     accountLinking: {
       enabled: true,
-      trustedProviders: ["vercel", "github"],
+      trustedProviders: ["vercel", "github", "google"],
       allowDifferentEmails: true,
     },
   },
@@ -160,6 +171,11 @@ export const auth = betterAuth({
       clientId: process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ?? "",
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
       mapProfileToUser: mapGitHubProfileToUser,
+    },
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      mapProfileToUser: mapGoogleProfileToUser,
     },
   },
 

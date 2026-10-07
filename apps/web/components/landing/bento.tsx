@@ -1,4 +1,4 @@
-import { SignInButton } from "@/components/auth/sign-in-button";
+import Link from "next/link";
 
 type BentoItem = {
   readonly id: string;
@@ -85,7 +85,12 @@ export function LandingBento() {
               synthetic demos &mdash; real infrastructure for real agents.
             </p>
             <div className="mt-6">
-              <SignInButton />
+              <Link
+                href="/login"
+                className="inline-flex min-h-9 items-center rounded-md bg-(--l-fg) px-4 text-sm font-medium text-(--l-bg) transition-opacity hover:opacity-85"
+              >
+                Get started
+              </Link>
             </div>
           </div>
         </div>

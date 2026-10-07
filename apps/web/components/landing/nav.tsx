@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { SignInButton } from "@/components/auth/sign-in-button";
 import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/hooks/use-session";
@@ -54,7 +53,9 @@ export function LandingNav({
                   <UserAvatarDropdown />
                 </>
               ) : (
-                <SignInButton size="sm" />
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/login">Sign in</Link>
+                </Button>
               )}
             </div>
           )}

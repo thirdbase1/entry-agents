@@ -55,7 +55,7 @@ const themeInitializationScript = `
 const isPreviewDeployment = process.env.VERCEL_ENV === "preview";
 const faviconPath = isPreviewDeployment
   ? "/favicon-preview.svg"
-  : "/entry-logo.jpg";
+  : "/entry-icon.svg";
 const metadataBase =
   process.env.VERCEL_ENV === "production" &&
   process.env.VERCEL_PROJECT_PRODUCTION_URL

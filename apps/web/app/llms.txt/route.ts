@@ -4,6 +4,10 @@ const content = `# Entry Agents
 
 > Entry Agents is a cloud platform for AI coding agents that work on repository tasks in isolated sandboxes and ship code through Git.
 
+## Full context
+
+- [llms-full.txt](${SITE_URL}/llms-full.txt): Extended product context for LLMs — how sessions work, models, pricing, benchmarks, security.
+
 ## Public pages
 
 - [Entry Agents](${SITE_URL}/): Product overview and sign-in.

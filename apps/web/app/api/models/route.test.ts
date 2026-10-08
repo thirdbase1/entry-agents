@@ -193,7 +193,7 @@ describe("/api/models context window enrichment", () => {
     expect(requestedUrls).toContain("https://models.dev/api.json");
   });
 
-  // Renamed 2026-08-20: the restricted model in the hosted demo changed
+  // Renamed 2026-08-20: the restricted model in the current environment changed
   // from Claude Opus to kimi-k3 when the app moved off the Vercel AI
   // Gateway onto entry-gateway (see RESTRICTED_MODEL_PREFIXES's comment
   // in lib/model-access.ts) -- this test still asserted the old model
@@ -329,7 +329,7 @@ describe("/api/models context window enrichment", () => {
   // carrying `.response.models` as a best-effort raw list on validation
   // failure -- app code caught that shape to recover). Confirmed via
   // code read: fetchGatewayModels() in lib/models-with-context.ts (the
-  // self-hosted-gateway implementation that replaced the AI SDK gateway,
+  // managed-gateway implementation that replaced the AI SDK gateway,
   // see the "Opencode Zen" migration) has no such recovery path --
   // gatewayModelsResponseSchema.parse() either succeeds for the whole
   // response or throws, and a non-2xx HTTP response throws a plain

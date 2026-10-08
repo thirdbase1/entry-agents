@@ -57,12 +57,9 @@ Benchmarks on the site are real runs from Entry Agents' own agent harness, using
 - [Pricing](${SITE_URL}/pricing): Credit-based plans.
 - [Models](${SITE_URL}/model): Supported models, prices and context windows.
 - [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from the real harness.
-- [Deploy your own](${SITE_URL}/deploy-your-own): Deploy a copy of the platform to Vercel.
 - [Sign in](${SITE_URL}/login): Sign in with Vercel, Google or GitHub.
 
-## Self-hosting
 
-The platform can be deployed as your own Vercel project; the "Deploy your own" page provisions a copy with the full template unlocked.
 
 Canonical site: ${SITE_URL}
 `;
@@ -74,3 +71,4 @@ export function GET() {
     },
   });
 }
+

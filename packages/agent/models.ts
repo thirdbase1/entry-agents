@@ -13,7 +13,7 @@ import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
 /**
  * Shared AI provider (owner decision, 2026-08-10): all model calls in this
- * app go through Entry's own self-hosted gateway (OpenAI-compatible,
+ * app go through Entry's own managed model gateway (OpenAI-compatible,
  * source in the separate `entry-gateway` service, deployed on Vercel) --
  * NOT Vercel's AI Gateway, and not a direct call to any upstream model
  * provider. The gateway owns upstream routing (Opencode Zen today, more
@@ -39,7 +39,7 @@ function getSharedProviderConfig(): { baseURL: string; apiKey: string } {
 
   if (!baseURL || !apiKey) {
     throw new Error(
-      "GATEWAY_BASE_URL / GATEWAY_API_KEY must be set -- all model calls go through Entry's self-hosted gateway, not Vercel AI Gateway and not a direct provider call.",
+      "GATEWAY_BASE_URL / GATEWAY_API_KEY must be set -- all model calls go through Entry's managed model gateway, not Vercel AI Gateway and not a direct provider call.",
     );
   }
 

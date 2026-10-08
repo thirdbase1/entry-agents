@@ -374,7 +374,7 @@ describe("/api/chat route", () => {
 
     expect(response.status).toBe(403);
     expect(body.error).toBe(
-      "This hosted demo has a 5 message limit. Deploy your own copy to unlock the full Entry Agent template.",
+      "This session has a 5 message limit.",
     );
     expect(startCalls).toHaveLength(0);
   });

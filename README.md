@@ -96,49 +96,6 @@ ELEVENLABS_API_KEY=
 - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: optional base snapshot for fresh sandboxes. If unset, sandboxes start from Vercel's standard Sandbox runtime. Use a snapshot created in/accessible to your own Vercel scope.
 - `ELEVENLABS_API_KEY`: voice transcription.
 
-## Deploy your own copy on Vercel
-
-1. Fork this repo.
-2. Import the repo into Vercel. Neon Postgres is auto-provisioned if you use the deploy button above.
-3. Generate a secret for session signing:
-
-   ```bash
-   openssl rand -base64 32   # BETTER_AUTH_SECRET
-   ```
-
-4. Add env vars in Vercel project settings:
-
-   ```env
-   POSTGRES_URL=
-   BETTER_AUTH_SECRET=
-   ```
-
-5. Deploy once to get a stable production URL.
-6. Create a Vercel OAuth app with callback URL:
-
-   ```text
-   https://YOUR_DOMAIN/api/auth/callback/vercel
-   ```
-
-7. Add these env vars and redeploy:
-
-   ```env
-   NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
-   VERCEL_APP_CLIENT_SECRET=
-   ```
-
-8. If you want the full GitHub-enabled coding-agent flow, create a GitHub App using:
-
-   - Homepage URL: `https://YOUR_DOMAIN`
-   - Callback URL: `https://YOUR_DOMAIN/api/auth/callback/github`
-   - Setup URL: `https://YOUR_DOMAIN/api/github/app/callback`
-
-   In the GitHub App settings:
-   - use the GitHub App's Client ID and Client Secret for `NEXT_PUBLIC_GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
-   - make the app public if you want org installs to work cleanly
-
-9. Add the GitHub App env vars and redeploy.
-10. Optionally add Redis/KV, `OPEN_AGENTS_RESOURCE_PROFILE=hobby` for Hobby-compatible resource defaults, the canonical production URL vars, and your own `VERCEL_SANDBOX_BASE_SNAPSHOT_ID` if you want fresh sandboxes to start from a preconfigured image.
 
 ## Local setup
 

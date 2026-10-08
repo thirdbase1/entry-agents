@@ -182,7 +182,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/messages/[messageId]", () => 
 
     expect(response.status).toBe(403);
     expect(body.error).toBe(
-      "Message deletion is disabled in the hosted demo. Deploy your own copy to unlock full controls.",
+      "Message deletion is disabled for this session.",
     );
     expect(deleteCalls).toHaveLength(0);
   });

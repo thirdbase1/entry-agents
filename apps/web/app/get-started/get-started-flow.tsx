@@ -290,7 +290,7 @@ function GitHubConnectStep({
     return (
       <div className="space-y-3">
         <p className="text-xs text-zinc-500">
-          In the hosted demo, you can start chats without connecting GitHub.
+          You can start chats without connecting GitHub.
         </p>
         <Button
           size="sm"

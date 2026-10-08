@@ -10,15 +10,15 @@ const LOCAL_DEVELOPMENT_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 export const MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT = 5;
 export const MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT = 1;
 export const MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT_ERROR =
-  "This hosted demo has a 5 message limit. Deploy your own copy to unlock the full Entry Agent template.";
+  "This session has a 5 message limit.";
 export const MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR =
-  "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Entry Agent template.";
+  "Your account includes 1 trial session.";
 export const MANAGED_TEMPLATE_TRIAL_DELETE_MESSAGE_ERROR =
-  "Message deletion is disabled in the hosted demo. Deploy your own copy to unlock full controls.";
+  "Message deletion is disabled for this session.";
 export const MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR =
-  "The code editor is disabled in the hosted demo. Deploy your own copy to unlock the full Entry Agent template.";
+  "The code editor is disabled for this session.";
 export const MANAGED_TEMPLATE_TRIAL_GITHUB_SESSION_ERROR =
-  "GitHub-backed sessions are disabled in the hosted demo. Deploy your own copy to unlock repository support, or start a new chat without a repository.";
+  "GitHub-backed sessions are disabled for this session. Start a new chat without a repository.";
 
 function normalizeHost(value?: string | URL) {
   const rawValue =

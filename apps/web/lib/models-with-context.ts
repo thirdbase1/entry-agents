@@ -296,7 +296,7 @@ const gatewayModelsResponseSchema = z.object({
 });
 
 /**
- * Fetches the live model list from Entry's self-hosted gateway
+ * Fetches the live model list from Entry's managed model gateway
  * (entry-gateway, deployed on Vercel). This is intentionally a live network call, not a
  * hardcoded catalog -- adding/removing a model is a config change on the
  * gateway (GATEWAY env vars in its own dashboard), and this app picks it
@@ -357,7 +357,7 @@ async function fetchGatewayModelsUncached(): Promise<GatewayModel[]> {
 
   if (!baseURL || !apiKey) {
     throw new Error(
-      "GATEWAY_BASE_URL / GATEWAY_API_KEY must be set to fetch the model list from Entry's self-hosted gateway.",
+      "GATEWAY_BASE_URL / GATEWAY_API_KEY must be set to fetch the model list from Entry's managed model gateway.",
     );
   }
 

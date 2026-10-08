@@ -8,7 +8,7 @@ import type { Session } from "@/lib/session/types";
 const RESTRICTED_MODEL_PREFIXES = ["kimi-k3"];
 
 export const MANAGED_TEMPLATE_TRIAL_MODEL_ACCESS_ERROR =
-  "Kimi K3 is disabled in the hosted demo. Deploy your own copy to unlock full model access.";
+  "Kimi K3 is disabled for this account.";
 
 type SessionLike = Pick<Session, "authProvider" | "user"> | null | undefined;
 

@@ -173,7 +173,7 @@ describe("/api/sessions POST vercel project linking", () => {
 
     expect(response.status).toBe(403);
     expect(body.error).toBe(
-      "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Entry Agent template.",
+      "Your account includes 1 trial session.",
     );
     expect(createCalls).toHaveLength(0);
   });
@@ -204,7 +204,7 @@ describe("/api/sessions POST vercel project linking", () => {
 
     expect(response.status).toBe(403);
     expect(body.error).toBe(
-      "GitHub-backed sessions are disabled in the hosted demo. Deploy your own copy to unlock repository support, or start a new chat without a repository.",
+      "GitHub-backed sessions are disabled for this session. Start a new chat without a repository.",
     );
     expect(createCalls).toHaveLength(0);
   });

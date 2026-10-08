@@ -15,7 +15,6 @@ const content = `# Entry Agents
 - [Pricing](${SITE_URL}/pricing): Credit-based plans for Entry Agents.
 - [Models](${SITE_URL}/model): Supported model prices and context windows.
 - [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from Entry Agents' own harness.
-- [Deploy your own](${SITE_URL}/deploy-your-own): Deploy a copy of the Entry Agents platform to Vercel.
 
 ## Product capabilities
 
@@ -34,3 +33,4 @@ export function GET() {
     },
   });
 }
+

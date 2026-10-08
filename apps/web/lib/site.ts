@@ -7,7 +7,7 @@
  * survived in three places after entry-agents.dev became the production
  * domain.
  *
- * `NEXT_PUBLIC_SITE_URL` wins so a self-hosted or forked deployment can
+ * `NEXT_PUBLIC_SITE_URL` wins so a configured deployment can
  * override it; otherwise Vercel's own production-domain variable is used,
  * and the literal is only the last-resort fallback (mirrors the metadata
  * fallback in app/layout.tsx).

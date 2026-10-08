@@ -68,6 +68,11 @@ function shellEscape(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function benchmarkGraderMachineName(runId: string): string {
+  const suffix = runId.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  return `entry-benchmark-${suffix}`.slice(0, 63).replace(/-+$/, "");
+}
+
 async function gradeSolutionInSandbox(
   solutionCode: string,
   task: HumanEvalTask,
@@ -245,7 +250,7 @@ export async function runHumanEvalTask(
     graderSandbox = await connectSandbox(
       {
         type: "boxd",
-        machineName: `entry-benchmark-${benchmarkRunId.slice(0, 20)}`,
+        machineName: benchmarkGraderMachineName(benchmarkRunId),
       },
       {
         image: "python:3.12-slim",

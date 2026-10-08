@@ -281,6 +281,7 @@ const gatewayModelsResponseSchema = z.object({
         name: z.string().optional(),
         description: z.string().nullish(),
         modelType: z.string().nullish(),
+        capabilities: z.array(z.string()).optional(),
         context_window: z.number().finite().positive().optional(),
         cost: z
           .object({
@@ -394,6 +395,12 @@ async function fetchGatewayModelsUncached(): Promise<GatewayModel[]> {
     ...model,
     modelType: model.modelType ?? "language",
     name: model.name ?? model.id,
+    // Workspace access is provided by Entry's agent runtime for every
+    // language model. Preserve gateway-advertised capabilities and make
+    // this capability explicit for plugins and model-aware clients.
+    capabilities: Array.from(
+      new Set([...(model.capabilities ?? []), "workspace"]),
+    ),
   }));
 }
 

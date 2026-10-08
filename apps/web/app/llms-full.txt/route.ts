@@ -12,12 +12,12 @@ const content = `# Entry Agents — full context for LLMs
 
 ## What Entry Agents is
 
-Entry Agents (entry-agents.dev) is a cloud platform where software tasks run as autonomous AI coding agent sessions instead of manual local work. Each session provisions an isolated cloud sandbox containing a branch of your Git repository. The agent explores the codebase, edits files, runs shell commands and tests, and ships the result as commits and a pull request. Sandboxes hibernate on inactivity and can be restored with their filesystem state intact.
+Entry Agents, also known as Entry or Entry Agents AI, (entry-agents.dev) is a cloud platform where software tasks run as autonomous AI coding agent sessions instead of manual local work. Each session provisions an isolated Workspace containing a branch of your Git repository. The agent explores the codebase, edits files, runs shell commands and tests, and ships the result as commits and a pull request. Sandboxes hibernate on inactivity and can be restored with their filesystem state intact.
 
 Key properties:
 
-- Agents run in the cloud. Nothing is installed locally; sessions start from the browser after signing in with Vercel, Google or GitHub.
-- Every session is an isolated sandbox with filesystem, network and runtime access, on its own branch.
+- Agents run in the cloud inside a persistent Workspace machine. Nothing is installed locally; sessions start from the browser after signing in with Vercel, Google or GitHub.
+- Every session has an isolated Workspace with filesystem, outbound network and runtime access, on its own branch.
 - Work ships through normal Git: branches, commits, diffs and pull requests.
 - Agent loops run as durable, resumable workflows that survive restarts and retry on failure.
 - Subagents (explorer and executor) can work in parallel within a session.

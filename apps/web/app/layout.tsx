@@ -74,7 +74,18 @@ export const metadata: Metadata = {
     template: "%s | Entry Agents",
   },
   description:
-    "Entry Agents is a cloud platform for AI coding agents. Each agent gets an isolated sandbox with filesystem, network and runtime access, and works autonomously until the job is done — no local setup.",
+    "Entry Agents, also known as Entry, is a cloud platform for autonomous AI coding agents. Each agent gets a private Workspace with filesystem, outbound network and runtime access, then ships real code through Git.",
+  keywords: [
+    "Entry",
+    "Entry Agents",
+    "Entry AI",
+    "AI coding agent",
+    "autonomous coding agent",
+    "cloud coding agent",
+    "GitHub coding agent",
+    "AI software engineer",
+    "repository automation",
+  ],
   applicationName: "Entry Agents",
   icons: {
     icon: faviconPath,
@@ -112,6 +123,7 @@ const structuredData = {
     {
       "@type": "Organization",
       name: "Entry Agents",
+      alternateName: ["Entry", "Entry AI", "Entry Agents AI"],
       url: SITE_URL,
       logo: `${SITE_URL}/entry-logo.jpg`,
     },
@@ -123,6 +135,7 @@ const structuredData = {
     {
       "@type": "SoftwareApplication",
       name: "Entry Agents",
+      alternateName: ["Entry", "Entry AI", "Entry Agents AI"],
       applicationCategory: "DeveloperApplication",
       applicationSubCategory: "AI coding agent platform",
       operatingSystem: "Web",

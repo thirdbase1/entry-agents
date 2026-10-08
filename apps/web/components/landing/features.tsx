@@ -79,7 +79,7 @@ export function LandingFeatures() {
             bullets={[
               "File ops, search, shell, and task delegation built in",
               "Explorer and executor subagents for parallel work",
-              "Multi-model support with AI Gateway",
+              "Multi-model support through Entry's model gateway",
             ]}
             window={<FeatureAgent />}
           />
@@ -87,7 +87,7 @@ export function LandingFeatures() {
           <Spotlight
             tone="ash"
             title="Cloud sandboxes, not local machines."
-            description="Every session runs in an isolated cloud sandbox with its own branch — Boat or Vercel, whichever is selected for the session. Work is committed and pushed automatically — nothing is lost when the sandbox expires."
+            description="Every session runs in its own isolated Workspace with a repository branch, filesystem, network and runtime access. Work is committed and pushed through Git, so your code stays safe even when a machine hibernates."
             bullets={[
               "Ephemeral environments with full git integration",
               "Auto-hibernate on inactivity, instant restore",

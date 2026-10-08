@@ -97,6 +97,8 @@ export interface GatewayAvailableModel {
   name: string;
   description?: string | null;
   modelType?: string | null;
+  /** Capabilities advertised to plugins and model-aware clients. */
+  capabilities?: string[];
 }
 
 export interface AvailableModelCostTier {

@@ -14,13 +14,13 @@ const items: readonly BentoItem[] = [
   },
   {
     id: "002",
-    title: "AI Gateway",
-    body: "Route requests across providers with built-in fallbacks, rate limiting, and observability.",
+    title: "Entry model gateway",
+    body: "Route requests across supported models with fallbacks, rate limiting, and usage observability.",
   },
   {
     id: "003",
-    title: "Sandbox",
-    body: "Secure, isolated environments for every session. Full filesystem, network, and runtime access.",
+    title: "Workspace",
+    body: "A private machine for every session with filesystem, outbound network, and runtime access.",
   },
   {
     id: "004",
@@ -81,8 +81,8 @@ export function LandingBento() {
           </div>
           <div className="md:pl-10">
             <p className="max-w-md text-balance text-base leading-relaxed text-(--l-fg-2)">
-              Built on production-grade primitives from the Vercel ecosystem. No
-              synthetic demos &mdash; real infrastructure for real agents.
+              Built for real software work: an AI model gateway, private Workspaces,
+              and durable workflows for agents that ship code.
             </p>
             <div className="mt-6">
               <Link

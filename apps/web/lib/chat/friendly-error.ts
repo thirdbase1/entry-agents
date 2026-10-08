@@ -95,7 +95,7 @@ const CATEGORY_MESSAGES: Record<ChatErrorCategory, string> = {
   no_output:
     "The model connected but returned an empty response. Send the message again, or switch to a different model if it repeats.",
   workspace:
-    "Your workspace (sandbox) isn't reachable, so the agent has no shell or file tools for this turn. It normally comes back on its own within a minute -- resend, or open the sandbox panel and start it manually.",
+    "The sandbox workspace could not be initialized. Entry is switching to a writable workspace path and retrying the session. Resend this message in a moment.",
   unknown:
     "Something went wrong while generating a response. Please try again -- if this keeps happening, try switching models.",
 };
@@ -178,6 +178,13 @@ export function classifyChatError(error: unknown): ChatErrorCategory {
       "sandbox.resume",
       "boAt_configuration",
       "boat_api_key is not set",
+      "failed to initialize workspace",
+      "failed to prepare workspace",
+      "root-owned",
+      "unprivileged user",
+      "not writable",
+      "mkdir -p '/workspace",
+      '"/workspace"',
     ])
   ) {
     return "workspace";
@@ -307,7 +314,11 @@ export function toFriendlyChatErrorText(
   // reads as blame for something the user did not choose, and the window
   // refills on its own -- the right next step is to wait or raise the
   // plan, which the message already says.
-  if (isRepeatFailure && category !== "aborted" && category !== "usage_window") {
+  if (
+    isRepeatFailure &&
+    category !== "aborted" &&
+    category !== "usage_window"
+  ) {
     return `${base}${REPEAT_FAILURE_SUFFIX}`;
   }
 
@@ -353,7 +364,9 @@ function extractSafeChatError(error: unknown): string | null {
     if (text) {
       const index = text.indexOf(SAFE_CHAT_ERROR_PREFIX);
       if (index !== -1) {
-        const payload = text.slice(index + SAFE_CHAT_ERROR_PREFIX.length).trim();
+        const payload = text
+          .slice(index + SAFE_CHAT_ERROR_PREFIX.length)
+          .trim();
         if (payload.length > 0) {
           return payload;
         }

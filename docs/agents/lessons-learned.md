@@ -2997,3 +2997,25 @@ change to just model and show all model price" (commit 6fdc801).
 - Concurrent editor/lifecycle startup races are resolved by looking up the existing machine when boxd reports that the deterministic name is already taken.
 - The built-in code editor uses port 8888, while 8000 remains available for application servers. The default exposed port set includes both.
 - Required editor runtime configuration is `POSTGRES_URL`, Better Auth settings, `GATEWAY_BASE_URL`, `GATEWAY_API_KEY`, and `BOXD_API_KEY` or `BOXD_TOKEN`. `PARALLEL_API_KEY` enables web search but is not required for editing or shell work.
+
+## 2026-10-08: benchmark grading must run in a Python sandbox, and sandbox names must be normalized
+
+The benchmark models were generating solutions successfully, but every task
+failed on Vercel with `spawn python3 ENOENT` because Vercel workers do not
+ship with Python. HumanEval is a Python benchmark, so grading cannot happen
+in the workflow worker. The grader now uploads the candidate and test to a
+short-lived boxd worker using `python:3.12-slim`, executes the real test suite
+there, and stops the worker afterward. Model generation remains on the normal
+Entry harness.
+
+The first remote-grader deployment exposed a second workflow-only failure:
+the Vercel workflow run id contains uppercase and underscore characters, but
+boxd machine names accept only lowercase letters, digits, and hyphens. The
+benchmark worker name is now normalized and capped before provisioning. A
+production smoke run after that fix recorded its first task as passed; the
+remaining tasks continue durably in the workflow.
+
+The benchmark result status is intentionally separate from model availability:
+`passed=false` with an `error_message` means infrastructure or grader failure,
+not a model-generated wrong answer. Keep those cases visible and never report
+an infrastructure error as a model score.

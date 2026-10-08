@@ -72,7 +72,7 @@ describe("summarizeBenchmarkResultRows", () => {
   test("sums cost across all rows for a model, treating null as zero", () => {
     const rows: BenchmarkResultRow[] = [
       row({ modelId: "a", costMicros: 50_000 }),
-      row({ modelId: "a", costCents: null }),
+      row({ modelId: "a", costMicros: null, costCents: null }),
       row({ modelId: "a", costMicros: 30_000 }),
     ];
 

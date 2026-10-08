@@ -10,7 +10,10 @@ import {
   type UIMessageChunk,
 } from "ai";
 import type { SandboxState } from "@open-agents/sandbox";
-import { reportUndefined, withoutUndefined } from "@/app/workflows/serialization";
+import {
+  reportUndefined,
+  withoutUndefined,
+} from "@/app/workflows/serialization";
 import type { PlanUsageWindows } from "@/lib/billing/plans";
 import {
   createMcpToolSet,
@@ -23,8 +26,10 @@ import {
 import { FatalError, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
-import { settleStepCost } from "@/lib/billing/usage-accrual";
-import type { UsageAccrualState } from "@/lib/billing/usage-accrual";
+import {
+  heartbeatUserBillingTurn,
+  recordBillableUsage,
+} from "@/lib/billing/credit-ledger";
 import { addLanguageModelUsage } from "./usage-utils";
 import { estimateStepCost } from "./gateway-metadata";
 import {
@@ -2498,10 +2503,7 @@ export async function runAgentWorkflow(options: Options) {
       // its own errors too, so a transient DB blip costs one checkpoint,
       // not the turn.
       if (pendingAssistantResponse) {
-        await persistAssistantMessage(
-          options.chatId,
-          pendingAssistantResponse,
-        );
+        await persistAssistantMessage(options.chatId, pendingAssistantResponse);
       }
       // See stripDanglingToolCalls's own comment above -- guards against
       // AI_MissingToolResultsError poisoning every subsequent step of
@@ -2883,6 +2885,14 @@ const runAgentStep = async (
 
   const abortController = new AbortController();
   const stopMonitor = startStopMonitor(workflowRunId, abortController, userId);
+  // Workflow steps can spend minutes inside a model/tool call. Keep the
+  // per-user billing lease alive so a legitimate long turn cannot be stolen,
+  // while a crashed process still becomes reclaimable after the lease expires.
+  const billingHeartbeat = setInterval(() => {
+    void heartbeatUserBillingTurn(userId, workflowRunId).catch((error) => {
+      console.error("[workflow] billing lease heartbeat failed:", error);
+    });
+  }, 30_000);
 
   // Real-time per-step billing: debited immediately after each model
   // step finishes (see the messageMetadata "finish-step" handler below)
@@ -2942,11 +2952,8 @@ const runAgentStep = async (
   // the assignment below) crosses MAX_TURN_SPEND_CENTS, regardless of
   // how much account balance remains.
   let turnSpendCapped = false;
-  // Per-turn sub-cent accrual state, threaded through every step so
-  // fractional cost is never dropped between the ledger's integer
-  // cents. Declared outside the try below because the finish-step
-  // handler (and the flush in `finally`) both live past that scope.
-  const usageAccrual: UsageAccrualState = { carryCents: 0 };
+  // Billing persistence promises are flushed before this durable step
+  // returns. The database owns sub-cent carry and idempotency.
   const pendingDebits: Promise<void>[] = [];
   // Hoisted above the try/catch/finally on purpose -- `let` inside the
   // try block would be out of scope in the `finally` below, where it
@@ -3439,75 +3446,57 @@ const runAgentStep = async (
                 lastStepCost = stepCost;
                 totalMessageCost = (totalMessageCost ?? 0) + stepCost;
 
-                // Sub-cent accrual: the ledger only holds whole cents,
-                // but a step's real cost usually isn't one -- rounding
-                // here is what made every sub-cent step (cheap model,
-                // short answer) bill literally nothing. The accumulator
-                // carries the remainder forward so the whole cent only
-                // reaches the ledger once it has truly accrued.
-                const stepCostCents = settleStepCost(usageAccrual, stepCost);
-                if (stepCostCents > 0) {
-                  // Fire the ledger write now (queued, flushed before this
-                  // step function returns) -- see the pendingDebits comment
-                  // above for why this can't simply be awaited right here.
-                  pendingDebits.push(
-                    (async () => {
-                      const { debitUsage } =
-                        await import("@/lib/billing/credit-ledger");
-                      try {
-                        await debitUsage(userId, stepCostCents, {
-                          modelId,
-                          description: `Usage: ${modelId}`,
-                        });
-                      } catch (error) {
-                        console.error(
-                          "[workflow] Failed to debit credit ledger in real time:",
-                          error,
-                        );
-                      }
-                    })(),
-                  );
+                // Persist the exact step cost under a stable workflow/step
+                // reference. The DB owns sub-cent carry and idempotency, not
+                // this process, so durable replay cannot miss or double-charge.
+                const stepCostCents = Math.max(1, Math.ceil(stepCost * 100));
+                pendingDebits.push(
+                  recordBillableUsage(userId, stepCost, {
+                    billingReference: `${workflowRunId}:main-step:${stepNumber}`,
+                    modelId,
+                    description: `Usage: ${modelId}`,
+                  }).then(() => undefined),
+                );
 
-                  if (enforceCreditBlock) {
-                    remainingBalanceCents -= stepCostCents;
-                    if (remainingBalanceCents <= 0 && !creditExhausted) {
-                      creditExhausted = true;
-                      // Stop the model mid-turn the instant the balance is
-                      // spent -- the outer step loop (runAgentWorkflow) also
-                      // checks `creditExhausted` on the returned result so it
-                      // never starts another (now-unaffordable) step.
-                      abortController.abort();
-                    }
-                  }
-
-                  // Entry-plan rolling usage windows: a SEPARATE in-memory
-                  // counter, decremented for windowed users regardless of
-                  // admin (owner request 2026-09-15) -- admins are exempt
-                  // from the balance block above but NOT from windows.
-                  // Aborting here marks windowExhausted so the client says
-                  // "window refills continuously", never "top up".
-                  if (remainingWindowBudgetCents !== null && !windowExhausted) {
-                    remainingWindowBudgetCents -= stepCostCents;
-                    if (remainingWindowBudgetCents <= 0) {
-                      windowExhausted = true;
-                      abortController.abort();
-                    }
-                  }
-
-                  // Per-turn cost circuit-breaker: independent of the
-                  // account-balance check above, never let one turn spend
-                  // past MAX_TURN_SPEND_CENTS. totalMessageCost already
-                  // accumulates across every step of this turn (see its
-                  // declaration above), including steps from earlier calls
-                  // to runAgentStep for this same message.
-                  if (
-                    !turnSpendCapped &&
-                    Math.round((totalMessageCost ?? 0) * 100) >=
-                      MAX_TURN_SPEND_CENTS
-                  ) {
-                    turnSpendCapped = true;
+                if (enforceCreditBlock) {
+                  remainingBalanceCents -= stepCostCents;
+                  if (remainingBalanceCents <= 0 && !creditExhausted) {
+                    creditExhausted = true;
+                    // Stop the model mid-turn the instant the balance is
+                    // spent -- the outer step loop (runAgentWorkflow) also
+                    // checks `creditExhausted` on the returned result so it
+                    // never starts another (now-unaffordable) step.
                     abortController.abort();
                   }
+                }
+
+                // Entry-plan rolling usage windows: a SEPARATE in-memory
+                // counter, decremented for windowed users regardless of
+                // admin (owner request 2026-09-15) -- admins are exempt
+                // from the balance block above but NOT from windows.
+                // Aborting here marks windowExhausted so the client says
+                // "window refills continuously", never "top up".
+                if (remainingWindowBudgetCents !== null && !windowExhausted) {
+                  remainingWindowBudgetCents -= stepCostCents;
+                  if (remainingWindowBudgetCents <= 0) {
+                    windowExhausted = true;
+                    abortController.abort();
+                  }
+                }
+
+                // Per-turn cost circuit-breaker: independent of the
+                // account-balance check above, never let one turn spend
+                // past MAX_TURN_SPEND_CENTS. totalMessageCost already
+                // accumulates across every step of this turn (see its
+                // declaration above), including steps from earlier calls
+                // to runAgentStep for this same message.
+                if (
+                  !turnSpendCapped &&
+                  Math.round((totalMessageCost ?? 0) * 100) >=
+                    MAX_TURN_SPEND_CENTS
+                ) {
+                  turnSpendCapped = true;
+                  abortController.abort();
                 }
               }
               stepFinishReasons = [
@@ -3793,17 +3782,18 @@ const runAgentStep = async (
 
     throw errorWithStepTiming;
   } finally {
-    // Flush queued real-time ledger debits before this step function
-    // returns/checkpoints, regardless of which branch above ran --
-    // otherwise a workflow suspend right after this call could lose an
-    // in-flight (unawaited) debitUsage write.
-    await Promise.all(pendingDebits);
-    // Close any MCP server connections opened for this step -- see the
-    // resolution block above. Safe to call even if mcpToolSet is
-    // undefined (no servers were configured this step).
-    await mcpToolSet?.close();
-    stopMonitor.stop();
-    await stopMonitor.done;
+    clearInterval(billingHeartbeat);
+    try {
+      // Billing failures must fail the durable step so Workflow retries the
+      // same stable reference. Swallowing this error would lose provider
+      // usage permanently after a transient database outage.
+      await Promise.all(pendingDebits);
+    } finally {
+      // Always release process-local resources even when billing retries.
+      await mcpToolSet?.close();
+      stopMonitor.stop();
+      await stopMonitor.done;
+    }
   }
 };
 
@@ -3845,9 +3835,8 @@ function startStopMonitor(
         // full 15-minute staleness window -- reported as "you already
         // have another chat generating" while nothing was running, which
         // is exactly what the owner hit on 2026-09-26.
-        const { releaseUserBillingTurn } = await import(
-          "@/lib/billing/credit-ledger"
-        );
+        const { releaseUserBillingTurn } =
+          await import("@/lib/billing/credit-ledger");
         await releaseUserBillingTurn(userId, runId).catch(() => {});
         return;
       }

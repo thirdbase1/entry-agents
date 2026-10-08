@@ -26,11 +26,10 @@ import {
   type WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
 import { recordUsage } from "@/lib/db/usage";
-import { releaseUserBillingTurn } from "@/lib/billing/credit-ledger";
 import {
-  settleStepCost,
-  type UsageAccrualState,
-} from "@/lib/billing/usage-accrual";
+  recordBillableUsage,
+  releaseUserBillingTurn,
+} from "@/lib/billing/credit-ledger";
 
 const cachedInputTokensFor = (usage: LanguageModelUsage) =>
   usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
@@ -247,7 +246,10 @@ export async function persistFinalAssistantMessage(
     const { setChatRunStatus } = await import("@/lib/db/sessions");
     await setChatRunStatus(chatId, "completed");
   } catch (error) {
-    console.error("[workflow] Failed to persist final assistant message:", error);
+    console.error(
+      "[workflow] Failed to persist final assistant message:",
+      error,
+    );
   }
 }
 
@@ -506,26 +508,24 @@ export async function recordWorkflowUsage(
     // disabling a model must never stop that model's already-happening
     // usage from being priced and debited. Also saves the per-turn
     // kill-switch DB query.
-    const { fetchModelCostCatalog } =
-      await import("@/lib/models-with-context");
-    const { debitUsage } = await import("@/lib/billing/credit-ledger");
+    // debiting it again here would double-charge, so that call was
+    // removed on 2026-08-17. recordUsage below is unrelated to the
+    // credit ledger (it's the separate usage_events analytics table) and
+    // still runs for both main and subagent usage as before.
+    // PRICING FIX 2026-09-15: was fetchAvailableLanguageModels() (the
+    // admin-filtered picker catalog). Per the 2026-08-17 pricing lesson,
+    // billing/cost lookup must use the UNFILTERED catalog -- an admin
+    // disabling a model must never stop that model's already-happening
+    // usage from being priced and debited. Also saves the per-turn
+    // kill-switch DB query.
+    const { fetchModelCostCatalog } = await import("@/lib/models-with-context");
     const { estimateModelUsageCost } = await import("@/lib/models");
-    // Subagent-only ledger accumulator (main-turn usage is debited
-    // in real time inside runAgentStep -- see the comment above).
-    // Deliberately local to this turn: the pending remainder is
-    // sub-cent by construction, so never carrying it across turns
-    // can only ever leave at most one cent uncharged per turn,
-    // which is the safe direction to err for the user.
-    const subagentAccrual: UsageAccrualState = { carryCents: 0 };
-    const billingCatalog = await fetchModelCostCatalog().catch(
-      (error) => {
-        console.error(
-          "[workflow] Failed to fetch pricing catalog for billing debit:",
-          error,
-        );
-        return [];
-      },
-    );
+    // Pricing is required for billing. If the catalog is temporarily
+    // unavailable, fail this durable step so the workflow retries instead
+    // of silently recording unbilled model usage.
+    const billingCatalog = await fetchModelCostCatalog();
+
+    const billingRunId = workflowRun?.workflowRunId ?? responseMessage.id;
 
     const debitForModelUsage = async (
       billedModelId: string,
@@ -541,17 +541,14 @@ export async function recordWorkflowUsage(
         return;
       }
       try {
-        // Same sub-cent accrual as the real-time main-model debit in
-        // chat.ts: a cheap subagent's total usage is routinely under a
-        // cent, and rounding it here billed those turns nothing at all.
-        // The accumulator is per-turn so the remainder carries across
-        // every subagent step instead of being discarded.
-        await debitUsage(userId, settleStepCost(subagentAccrual, costUsd), {
+        await recordBillableUsage(userId, costUsd, {
+          billingReference: `${billingRunId}:subagent:${billedModelId}`,
           modelId: billedModelId,
           description: `Usage: ${billedModelId}`,
         });
       } catch (error) {
         console.error("[workflow] Failed to debit credit ledger:", error);
+        throw error;
       }
     };
 
@@ -646,6 +643,7 @@ export async function recordWorkflowUsage(
     }
   } catch (error) {
     console.error("[workflow] Failed to record usage:", error);
+    throw error;
   }
 }
 

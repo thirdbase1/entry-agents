@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
-import { creditTransactions, users } from "@/lib/db/schema";
+import { billingUsageEvents, creditTransactions, users } from "@/lib/db/schema";
 import {
   getPlanDefinition,
   type PlanId,
@@ -94,7 +94,10 @@ export async function expireGrantPoolOnPlanEnd(
       description: "Subscription ended - unused plan credit expired",
     });
 
-    return { expiredCents: expired, balanceAfterCents: updated.creditBalanceCents };
+    return {
+      expiredCents: expired,
+      balanceAfterCents: updated.creditBalanceCents,
+    };
   });
 }
 
@@ -122,17 +125,13 @@ export async function enforcePlanExpiry(
   if (opts.isAdmin) {
     return state;
   }
-  const { shouldAutoRevertToFree, PLAN_EXPIRY_GRACE_MS } = await import(
-    "@/lib/billing/plans"
-  );
+  const { shouldAutoRevertToFree, PLAN_EXPIRY_GRACE_MS } =
+    await import("@/lib/billing/plans");
   if (!shouldAutoRevertToFree(state.plan, state.billingCycleAnchor)) {
     return state;
   }
   const previousPlan = state.plan;
-  await db
-    .update(users)
-    .set({ plan: "free" })
-    .where(eq(users.id, userId));
+  await db.update(users).set({ plan: "free" }).where(eq(users.id, userId));
   // Subscription credit expires with the plan (owner 2026-09-15);
   // paid top-ups survive.
   const pool = await expireGrantPoolOnPlanEnd(userId);
@@ -189,8 +188,7 @@ async function applyLedgerEntry(
       .update(users)
       .set({
         creditBalanceCents: sql`${users.creditBalanceCents} + ${amountCents}`,
-        planGrantBalanceCents:
-          sql`${users.planGrantBalanceCents} - ${grantPoolConsumed}`,
+        planGrantBalanceCents: sql`${users.planGrantBalanceCents} - ${grantPoolConsumed}`,
       })
       .where(eq(users.id, userId))
       .returning({ creditBalanceCents: users.creditBalanceCents });
@@ -243,7 +241,7 @@ async function applyLedgerEntry(
 // or orphaned workflow run that never reached its cleanup/finally) and
 // can be stolen by a new turn. Generous relative to a normal turn's
 // length so it never fires on a merely-slow-but-alive turn.
-const BILLING_TURN_LOCK_STALE_MS = 15 * 60 * 1000;
+const BILLING_TURN_LOCK_STALE_MS = 30 * 60 * 1000;
 
 /**
  * Sums usage_debit rows in the trailing 5h / 7d / 30d windows in ONE
@@ -324,6 +322,21 @@ export async function claimUserBillingTurn(
  * the current holder -- so a slow/stale release from an already-aborted
  * run can never clobber a newer run's active lock.
  */
+/** Refreshes the active billing lease during long model/tool steps. */
+export async function heartbeatUserBillingTurn(
+  userId: string,
+  workflowRunId: string,
+): Promise<boolean> {
+  const [updated] = await db
+    .update(users)
+    .set({ activeBillingRunClaimedAt: new Date() })
+    .where(
+      and(eq(users.id, userId), eq(users.activeBillingRunId, workflowRunId)),
+    )
+    .returning({ id: users.id });
+  return Boolean(updated);
+}
+
 export async function releaseUserBillingTurn(
   userId: string,
   workflowRunId: string,
@@ -378,6 +391,107 @@ export async function debitAccountAdmin(
   return applyLedgerEntry(userId, -cappedAmountCents, "admin_adjustment", opts);
 }
 
+/**
+ * Persists and settles one model-usage event exactly once.
+ *
+ * `reference` must be stable across Workflow SDK retries/replays. The event
+ * row is inserted in the same transaction as the persistent sub-cent carry,
+ * balance update, and credit ledger row. A replay therefore returns the
+ * already-applied result instead of charging twice, while a crash before the
+ * transaction commits leaves the whole operation safe to retry.
+ */
+export async function recordBillableUsage(
+  userId: string,
+  costUsd: number,
+  opts: LedgerEntryOptions & { billingReference: string },
+): Promise<{ balanceCents: number; chargedCents: number; duplicate: boolean }> {
+  if (!Number.isFinite(costUsd) || costUsd <= 0) {
+    return {
+      balanceCents:
+        (await getUserBillingState(userId))?.creditBalanceCents ?? 0,
+      chargedCents: 0,
+      duplicate: false,
+    };
+  }
+
+  const costMicros = Math.max(1, Math.round(costUsd * 1_000_000));
+  return db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(billingUsageEvents)
+      .values({
+        id: nanoid(),
+        userId,
+        reference: opts.billingReference,
+        costMicros,
+        modelId: opts.modelId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [billingUsageEvents.userId, billingUsageEvents.reference],
+      })
+      .returning({ id: billingUsageEvents.id });
+
+    if (!inserted) {
+      const [existing] = await tx
+        .select({ balance: users.creditBalanceCents })
+        .from(users)
+        .where(eq(users.id, userId));
+      return {
+        balanceCents: existing?.balance ?? 0,
+        chargedCents: 0,
+        duplicate: true,
+      };
+    }
+
+    const [current] = await tx
+      .select({
+        balance: users.creditBalanceCents,
+        grantPool: users.planGrantBalanceCents,
+        accruedMicros: users.billingAccruedMicros,
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (!current)
+      throw new Error(`recordBillableUsage: user ${userId} not found`);
+
+    const totalMicros = current.accruedMicros + costMicros;
+    const chargedCents = Math.floor(totalMicros / 10_000);
+    const remainderMicros = totalMicros % 10_000;
+    const grantConsumed = Math.min(chargedCents, current.grantPool);
+    const nextBalance = current.balance - chargedCents;
+
+    const [updated] = await tx
+      .update(users)
+      .set({
+        billingAccruedMicros: remainderMicros,
+        creditBalanceCents: nextBalance,
+        planGrantBalanceCents: current.grantPool - grantConsumed,
+      })
+      .where(eq(users.id, userId))
+      .returning({ creditBalanceCents: users.creditBalanceCents });
+    if (!updated)
+      throw new Error(`recordBillableUsage: user ${userId} disappeared`);
+
+    if (chargedCents > 0) {
+      await tx.insert(creditTransactions).values({
+        id: nanoid(),
+        userId,
+        type: "usage_debit",
+        amountCents: -chargedCents,
+        balanceAfterCents: updated.creditBalanceCents,
+        description: opts.description ?? "Model usage",
+        modelId: opts.modelId ?? null,
+        billingReference: opts.billingReference,
+      });
+    }
+
+    return {
+      balanceCents: updated.creditBalanceCents,
+      chargedCents,
+      duplicate: false,
+    };
+  });
+}
+
 /** Debits usage cost from a user's balance. Never blocks/throws on insufficient balance -- the balance is simply allowed to go negative; enforcement (hard-block for free, soft-cutoff for paid) happens at turn-start, not here. */
 export async function debitUsage(
   userId: string,
@@ -404,8 +518,7 @@ export async function grantSubscriptionRenewal(
         plan: planId,
         billingCycleAnchor: new Date(),
         creditBalanceCents: sql`${users.creditBalanceCents} + ${plan.creditGrantCents}`,
-        planGrantBalanceCents:
-          sql`${users.planGrantBalanceCents} + ${plan.creditGrantCents}`,
+        planGrantBalanceCents: sql`${users.planGrantBalanceCents} + ${plan.creditGrantCents}`,
       })
       .where(eq(users.id, userId))
       .returning({ creditBalanceCents: users.creditBalanceCents });

@@ -10,7 +10,7 @@ function row(overrides: Partial<BenchmarkResultRow>): BenchmarkResultRow {
     benchmark: "humaneval",
     passed: true,
     latencyMs: 1000,
-    costCents: 1,
+    costMicros: 10_000,
     ...overrides,
   };
 }
@@ -71,28 +71,31 @@ describe("summarizeBenchmarkResultRows", () => {
 
   test("sums cost across all rows for a model, treating null as zero", () => {
     const rows: BenchmarkResultRow[] = [
-      row({ modelId: "a", costCents: 5 }),
+      row({ modelId: "a", costMicros: 50_000 }),
       row({ modelId: "a", costCents: null }),
-      row({ modelId: "a", costCents: 3 }),
+      row({ modelId: "a", costMicros: 30_000 }),
     ];
 
     const summary = summarizeBenchmarkResultRows(rows);
-    expect(summary[0].totalCostCents).toBe(8);
+    expect(summary[0].totalCostMicros).toBe(80_000);
+    expect(summary[0].costKnown).toBe(false);
   });
 
   test("keeps models fully separate from each other", () => {
     const rows: BenchmarkResultRow[] = [
-      row({ modelId: "a", costCents: 10, latencyMs: 500 }),
-      row({ modelId: "b", costCents: 20, latencyMs: 1500 }),
+      row({ modelId: "a", costMicros: 100_000, latencyMs: 500 }),
+      row({ modelId: "b", costMicros: 200_000, latencyMs: 1500 }),
     ];
 
     const summary = summarizeBenchmarkResultRows(rows);
     const a = summary.find((m) => m.modelId === "a");
     const b = summary.find((m) => m.modelId === "b");
 
-    expect(a?.totalCostCents).toBe(10);
+    expect(a?.totalCostMicros).toBe(100_000);
     expect(a?.avgLatencyMs).toBe(500);
-    expect(b?.totalCostCents).toBe(20);
+    expect(b?.totalCostMicros).toBe(200_000);
+    expect(a?.costKnown).toBe(true);
+    expect(b?.costKnown).toBe(true);
     expect(b?.avgLatencyMs).toBe(1500);
   });
 });

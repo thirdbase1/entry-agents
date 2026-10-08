@@ -34,7 +34,8 @@ function mergeWithPlaceholders(
         },
         avgLatencyMs: null,
         errorCount: 0,
-        totalCostCents: 0,
+        totalCostMicros: 0,
+        costKnown: false,
       },
   );
 }

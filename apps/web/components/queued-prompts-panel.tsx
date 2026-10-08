@@ -179,7 +179,7 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
           Queued · {prompts.length}
         </span>
         <span className="text-[10px] text-muted-foreground/40">
-          drag, edit, or reorder before they send
+          edit, reorder, or remove before sending
         </span>
       </div>
       <div className="max-h-40 space-y-1 overflow-y-auto border-t border-border/40 px-3 py-2">
@@ -272,7 +272,7 @@ export function QueuedPromptsPanel<T extends QueuedPrompt>({
                 <button
                   type="button"
                   onClick={() => startEditing(prompt)}
-                  className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  className="min-w-0 flex-1 line-clamp-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                   title="Click to edit"
                 >
                   {prompt.displayText.trim() || "(attachment only)"}

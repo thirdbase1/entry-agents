@@ -132,6 +132,12 @@ export function useSessionChatRuntime({
               : {}),
           };
         },
+        // A fresh page has already hydrated persisted assistant checkpoints.
+        // Starting resumable streams at index 0 replays the entire workflow
+        // into the client and can make completed tool/model output appear a
+        // second time. The Workflow transport supports a negative index and
+        // uses the stream tail header to resume only the recent live tail.
+        initialStartIndex: -64,
         prepareReconnectToStreamRequest: ({ id }) => ({
           api: `/api/chat/${id}/stream`,
         }),

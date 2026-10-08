@@ -1,71 +1,36 @@
 import "server-only";
 
+import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
-import { billingWebhookEvents } from "@/lib/db/schema";
 import {
-  applyTopup,
-  grantSubscriptionRenewal,
-  setBillingCustomerCode,
-  findUserIdByBillingCustomerCode,
-} from "@/lib/billing/credit-ledger";
+  billingWebhookEvents,
+  creditTransactions,
+  users,
+} from "@/lib/db/schema";
 import {
+  getPlanDefinition,
   isPlanId,
-  PLAN_CATALOG,
   resolvePlanForProductId,
 } from "@/lib/billing/plans";
+import { findUserIdByBillingCustomerCode } from "@/lib/billing/credit-ledger";
 
 export interface ChargeOutcome {
-  /** Our own reference (topup_ or sub_ prefixed), carried on the checkout session. */
   reference: string;
-  /** Bachs customer record id (cust_...), or null before identity exists. */
   customerId: string | null;
   metadataUserId: string | null;
   metadataKind: string | null;
   metadataPlanId: string | null;
   metadataUsdAmountCents: number | null;
-  /** Bachs product id (prod_...) -- used to resolve the plan when metadata is absent. */
   productId: string | null;
-  /**
-   * Credit amount when metadataUsdAmountCents is missing. Callers must
-   * pass null (not a raw provider amount) whenever the amount is not
-   * priced in USD -- the old Paystack path fed NGN kobo into this field
-   * and would have credited ~1650x too much.
-   */
   fallbackAmountCents: number | null;
 }
 
-/**
- * Shared successful-charge handler used by both the Bachs webhook
- * (app/api/billing/webhook/route.ts, the source of truth) and the checkout
- * callback (app/billing/callback/page.tsx, for instant user-facing feedback
- * instead of waiting on the async webhook).
- *
- * Idempotent via billing_webhook_events' unique eventKey -- whichever of the
- * two fires first wins and the other is a no-op. Claim BEFORE doing any work
- * so a concurrent verify + webhook cannot double-credit.
- */
+/** Credits a successful charge atomically with its idempotency marker. */
 export async function processChargeSuccess(
   outcome: ChargeOutcome,
 ): Promise<{ credited: boolean; alreadyProcessed: boolean }> {
   const eventKey = `collection.succeeded:${outcome.reference}`;
-
-  try {
-    await db.insert(billingWebhookEvents).values({
-      id: nanoid(),
-      eventKey,
-      eventType: "collection.succeeded",
-      payload: outcome as unknown as Record<string, unknown>,
-    });
-  } catch {
-    // Unique constraint violation -- already processed by the other path.
-    return { credited: false, alreadyProcessed: true };
-  }
-
-  if (!outcome.customerId && !outcome.metadataUserId) {
-    return { credited: false, alreadyProcessed: false };
-  }
-
   const userId =
     outcome.metadataUserId ??
     (outcome.customerId
@@ -73,46 +38,92 @@ export async function processChargeSuccess(
       : null);
 
   if (!userId) {
-    console.warn(
-      "[billing] collection.succeeded: no matching user for customer",
-      outcome.customerId,
-    );
+    console.warn("[billing] collection.succeeded: no matching user", {
+      customerId: outcome.customerId,
+      reference: outcome.reference,
+    });
     return { credited: false, alreadyProcessed: false };
   }
 
-  if (outcome.customerId) {
-    await setBillingCustomerCode(userId, outcome.customerId);
-  }
-
-  if (outcome.metadataKind === "topup") {
-    const usdAmountCents =
-      outcome.metadataUsdAmountCents ?? outcome.fallbackAmountCents;
-    if (usdAmountCents === null) {
-      // Refuse rather than guess: an unpriced top-up must not silently
-      // credit zero (or an amount we cannot justify in USD cents).
-      console.error(
-        "[billing] top-up with no resolvable USD amount",
-        { reference: outcome.reference },
-      );
-      return { credited: false, alreadyProcessed: false };
-    }
-    await applyTopup(userId, usdAmountCents, outcome.reference);
-    return { credited: true, alreadyProcessed: false };
-  }
-
+  const isTopup = outcome.metadataKind === "topup";
+  const topupCents =
+    outcome.metadataUsdAmountCents ?? outcome.fallbackAmountCents;
   const planId =
     outcome.metadataPlanId && isPlanId(outcome.metadataPlanId)
       ? outcome.metadataPlanId
       : resolvePlanForProductId(outcome.productId);
 
-  if (!planId) {
-    console.warn("[billing] collection.succeeded with unresolved planId", {
-      reference: outcome.reference,
-      productId: outcome.productId,
-    });
-    return { credited: false, alreadyProcessed: false };
+  if (isTopup && (topupCents == null || topupCents <= 0)) {
+    throw new Error(`Unpriced top-up charge ${outcome.reference}`);
+  }
+  if (!isTopup && !planId) {
+    throw new Error(`Unresolved subscription plan for ${outcome.reference}`);
   }
 
-  await grantSubscriptionRenewal(userId, planId, outcome.reference);
-  return { credited: true, alreadyProcessed: false };
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ id: billingWebhookEvents.id })
+      .from(billingWebhookEvents)
+      .where(eq(billingWebhookEvents.eventKey, eventKey))
+      .limit(1);
+    if (existing) {
+      return { credited: false, alreadyProcessed: true };
+    }
+
+    if (isTopup) {
+      const [updated] = await tx
+        .update(users)
+        .set({
+          billingCustomerCode: outcome.customerId ?? undefined,
+          creditBalanceCents: sql`${users.creditBalanceCents} + ${topupCents}`,
+        })
+        .where(eq(users.id, userId))
+        .returning({ creditBalanceCents: users.creditBalanceCents });
+      if (!updated) throw new Error(`User ${userId} not found for top-up`);
+
+      await tx.insert(creditTransactions).values({
+        id: nanoid(),
+        userId,
+        type: "topup",
+        amountCents: topupCents!,
+        balanceAfterCents: updated.creditBalanceCents,
+        description: "Wallet top-up",
+        billingReference: outcome.reference,
+      });
+    } else {
+      const plan = getPlanDefinition(planId!);
+      const [updated] = await tx
+        .update(users)
+        .set({
+          billingCustomerCode: outcome.customerId ?? undefined,
+          plan: planId!,
+          billingCycleAnchor: new Date(),
+          creditBalanceCents: sql`${users.creditBalanceCents} + ${plan.creditGrantCents}`,
+          planGrantBalanceCents: sql`${users.planGrantBalanceCents} + ${plan.creditGrantCents}`,
+        })
+        .where(eq(users.id, userId))
+        .returning({ creditBalanceCents: users.creditBalanceCents });
+      if (!updated)
+        throw new Error(`User ${userId} not found for subscription`);
+
+      await tx.insert(creditTransactions).values({
+        id: nanoid(),
+        userId,
+        type: "subscription_grant",
+        amountCents: plan.creditGrantCents,
+        balanceAfterCents: updated.creditBalanceCents,
+        description: `${plan.name} plan renewal`,
+        billingReference: outcome.reference,
+      });
+    }
+
+    await tx.insert(billingWebhookEvents).values({
+      id: nanoid(),
+      eventKey,
+      eventType: "collection.succeeded",
+      payload: outcome as unknown as Record<string, unknown>,
+    });
+
+    return { credited: true, alreadyProcessed: false };
+  });
 }

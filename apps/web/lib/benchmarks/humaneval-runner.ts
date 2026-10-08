@@ -155,6 +155,10 @@ export async function runHumanEvalTask(
             workingDirectory: rootDir,
           },
           model: modelId,
+          // Benchmarks have no interactive approval surface. Without this,
+          // the agent can emit approval-required write/bash calls and every
+          // task is graded as "solution.py was never created" (0/20).
+          permissionMode: "fullAccess",
         },
       });
 

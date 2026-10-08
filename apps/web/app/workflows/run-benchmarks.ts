@@ -46,11 +46,10 @@ const PREFERRED_BENCHMARK_MODEL_IDS = [
   "gemini-3.5-flash",
 ] as const;
 
-
 interface TaskStepResult {
   passed: boolean;
   latencyMs: number;
-  costCents?: number;
+  costMicros?: number;
   errorMessage?: string;
 }
 
@@ -119,7 +118,7 @@ async function runTaskStep(
     await import("@/lib/benchmarks/humaneval-runner");
   const result = await runHumanEvalTask(modelId, task);
 
-  let costCents: number | undefined;
+  let costMicros: number | undefined;
   if (result.usage?.inputTokens != null && result.usage.outputTokens != null) {
     const dollarCost = estimateModelUsageCost(
       {
@@ -131,13 +130,16 @@ async function runTaskStep(
       },
       cost,
     );
-    costCents = dollarCost != null ? Math.round(dollarCost * 100) : undefined;
+    // Keep six decimal places of USD so small benchmark tasks do not round
+    // down to zero before the model subtotal is aggregated.
+    costMicros =
+      dollarCost != null ? Math.round(dollarCost * 1_000_000) : undefined;
   }
 
   return {
     passed: result.passed,
     latencyMs: result.latencyMs,
-    ...(costCents != null ? { costCents } : {}),
+    ...(costMicros != null ? { costMicros } : {}),
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   };
 }
@@ -157,7 +159,7 @@ async function recordResultStep(
     taskId,
     passed: result.passed,
     latencyMs: result.latencyMs,
-    ...(result.costCents != null ? { costCents: result.costCents } : {}),
+    ...(result.costMicros != null ? { costMicros: result.costMicros } : {}),
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   });
 }
@@ -253,5 +255,10 @@ export async function runBenchmarkSuiteWorkflow(
       : undefined,
   );
 
-  return { runId, status, modelIds: selectedModelIds, taskCount: taskIds.length };
+  return {
+    runId,
+    status,
+    modelIds: selectedModelIds,
+    taskCount: taskIds.length,
+  };
 }

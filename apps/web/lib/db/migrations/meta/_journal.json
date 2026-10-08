@@ -477,6 +477,27 @@
       "when": 1791422040000,
       "tag": "0066_workspace_default",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1791422050000,
+      "tag": "0067_benchmark_cost_micros",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1791422060000,
+      "tag": "0068_persistent_usage_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1791422070000,
+      "tag": "0069_benchmark_result_idempotency",
+      "breakpoints": true
     }
   ]
 }

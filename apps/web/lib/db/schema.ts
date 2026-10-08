@@ -67,6 +67,9 @@ export const users = pgTable("users", {
   // BILLING_TURN_LOCK_STALE_MS -- see claimUserBillingTurn in
   // credit-ledger.ts. Never left permanently stuck.
   activeBillingRunClaimedAt: timestamp("active_billing_run_claimed_at"),
+  // Persistent sub-cent usage carry. Billing never relies on workflow
+  // process memory, so crashes and durable replays cannot lose fractions.
+  billingAccruedMicros: integer("billing_accrued_micros").notNull().default(0),
 });
 
 // oauth provider accounts
@@ -566,29 +569,31 @@ export const usageEvents = pgTable("usage_events", {
 // production; these rows make every firing admin-visible (when it fired,
 // on which chat/model, and how many tokens it actually saved). Written
 // from chat.ts's compaction sink (see packages/agent compaction-telemetry).
-export const compactionEvents = pgTable("compaction_events", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  chatId: text("chat_id"),
-  sessionId: text("session_id"),
-  modelId: text("model_id"),
-  preCompactTokens: integer("pre_compact_tokens").notNull(),
-  postCompactTokens: integer("post_compact_tokens").notNull(),
-  contextWindowTokens: integer("context_window_tokens").notNull(),
-  threshold: real("threshold").notNull(),
-  compactedToolCalls: integer("compacted_tool_calls").notNull().default(0),
-  compactedAnonymousToolResults: integer(
-    "compacted_anonymous_tool_results",
-  )
-    .notNull()
-    .default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => [
-  index("compaction_events_created_at_idx").on(t.createdAt),
-  index("compaction_events_chat_id_idx").on(t.chatId),
-]);
+export const compactionEvents = pgTable(
+  "compaction_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: text("chat_id"),
+    sessionId: text("session_id"),
+    modelId: text("model_id"),
+    preCompactTokens: integer("pre_compact_tokens").notNull(),
+    postCompactTokens: integer("post_compact_tokens").notNull(),
+    contextWindowTokens: integer("context_window_tokens").notNull(),
+    threshold: real("threshold").notNull(),
+    compactedToolCalls: integer("compacted_tool_calls").notNull().default(0),
+    compactedAnonymousToolResults: integer("compacted_anonymous_tool_results")
+      .notNull()
+      .default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("compaction_events_created_at_idx").on(t.createdAt),
+    index("compaction_events_chat_id_idx").on(t.chatId),
+  ],
+);
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
@@ -677,6 +682,30 @@ export const creditTransactions = pgTable(
 // where we want to claim a business action rather than a delivery. The
 // unique index below IS the idempotency mechanism -- both the webhook and
 // the callback verify path race on it, first writer wins.
+// Persistent idempotency ledger for model usage. Each durable workflow
+// step gets one stable reference. The unique key makes replay/retry safe,
+// while billingAccruedMicros on users carries sub-cent cost across steps.
+export const billingUsageEvents = pgTable(
+  "billing_usage_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reference: text("reference").notNull(),
+    costMicros: integer("cost_micros").notNull(),
+    modelId: text("model_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("billing_usage_events_user_reference_idx").on(
+      table.userId,
+      table.reference,
+    ),
+    index("billing_usage_events_user_id_idx").on(table.userId),
+  ],
+);
+
 export const billingWebhookEvents = pgTable(
   "billing_webhook_events",
   {
@@ -745,6 +774,8 @@ export const benchmarkResults = pgTable(
     taskId: text("task_id").notNull(),
     passed: boolean("passed").notNull(),
     latencyMs: integer("latency_ms"),
+    // Precise USD cost in millionths. Keep costCents for historical rows.
+    costMicros: integer("cost_micros"),
     costCents: integer("cost_cents"),
     errorMessage: text("error_message"),
     transcriptUrl: text("transcript_url"),
@@ -754,6 +785,12 @@ export const benchmarkResults = pgTable(
     index("benchmark_results_run_id_idx").on(table.runId),
     index("benchmark_results_model_id_idx").on(table.modelId),
     index("benchmark_results_benchmark_idx").on(table.benchmark),
+    uniqueIndex("benchmark_results_run_model_benchmark_task_idx").on(
+      table.runId,
+      table.modelId,
+      table.benchmark,
+      table.taskId,
+    ),
   ],
 );
 

@@ -35,22 +35,43 @@ export async function recordBenchmarkResult(data: {
   taskId: string;
   passed: boolean;
   latencyMs?: number;
+  costMicros?: number;
+  /** Legacy precision retained for imports and historical rows. */
   costCents?: number;
   errorMessage?: string;
   transcriptUrl?: string;
 }): Promise<void> {
-  await db.insert(benchmarkResults).values({
-    id: nanoid(),
-    runId: data.runId,
-    modelId: data.modelId,
-    benchmark: data.benchmark,
-    taskId: data.taskId,
-    passed: data.passed,
-    latencyMs: data.latencyMs ?? null,
-    costCents: data.costCents ?? null,
-    errorMessage: data.errorMessage ?? null,
-    transcriptUrl: data.transcriptUrl ?? null,
-  });
+  await db
+    .insert(benchmarkResults)
+    .values({
+      id: nanoid(),
+      runId: data.runId,
+      modelId: data.modelId,
+      benchmark: data.benchmark,
+      taskId: data.taskId,
+      passed: data.passed,
+      latencyMs: data.latencyMs ?? null,
+      costMicros: data.costMicros ?? null,
+      costCents: data.costCents ?? null,
+      errorMessage: data.errorMessage ?? null,
+      transcriptUrl: data.transcriptUrl ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [
+        benchmarkResults.runId,
+        benchmarkResults.modelId,
+        benchmarkResults.benchmark,
+        benchmarkResults.taskId,
+      ],
+      set: {
+        passed: data.passed,
+        latencyMs: data.latencyMs ?? null,
+        costMicros: data.costMicros ?? null,
+        costCents: data.costCents ?? null,
+        errorMessage: data.errorMessage ?? null,
+        transcriptUrl: data.transcriptUrl ?? null,
+      },
+    });
 }
 
 export async function completeBenchmarkRun(
@@ -69,7 +90,9 @@ export type ModelBenchmarkSummary = {
   results: Record<BenchmarkName, { passed: number; total: number } | undefined>;
   avgLatencyMs: number | null;
   errorCount: number;
-  totalCostCents: number;
+  totalCostMicros: number;
+  /** False when one or more recorded tasks had no usable pricing data. */
+  costKnown: boolean;
 };
 
 export type LatestBenchmarkSummary = {
@@ -84,7 +107,8 @@ export type BenchmarkResultRow = {
   benchmark: BenchmarkName;
   passed: boolean;
   latencyMs: number | null;
-  costCents: number | null;
+  costMicros?: number | null;
+  costCents?: number | null;
   errorMessage?: string | null;
 };
 
@@ -110,7 +134,8 @@ export function summarizeBenchmarkResultRows(
         },
         avgLatencyMs: null,
         errorCount: 0,
-        totalCostCents: 0,
+        totalCostMicros: 0,
+        costKnown: true,
       };
       byModel.set(row.modelId, entry);
     }
@@ -123,7 +148,12 @@ export function summarizeBenchmarkResultRows(
     if (row.passed) bucket.passed += 1;
     if (row.errorMessage) entry.errorCount += 1;
     entry.results[row.benchmark] = bucket;
-    entry.totalCostCents += row.costCents ?? 0;
+    // New rows keep sub-cent precision. Historical rows fall back to cents.
+    if (row.costMicros == null && row.costCents == null) {
+      entry.costKnown = false;
+    }
+    entry.totalCostMicros +=
+      row.costMicros ?? (row.costCents != null ? row.costCents * 10_000 : 0);
   }
 
   // second pass for avg latency per model

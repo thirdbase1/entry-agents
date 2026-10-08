@@ -732,10 +732,10 @@ function _SandboxHeaderBadge({
   // Creating/restoring/transition state.
   if (isCreating || isRestoring || isReconnecting || isHibernating) {
     const transitionLabel = isHibernating
-      ? "Hibernating sandbox..."
+      ? "Putting Workspace to sleep..."
       : isReconnecting
-        ? "Reconnecting sandbox..."
-        : "Creating sandbox...";
+        ? "Waking Workspace..."
+        : "Starting Workspace...";
 
     return (
       <Tooltip>
@@ -745,7 +745,7 @@ function _SandboxHeaderBadge({
           </div>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={8}>
-          {isRestoring ? "Restoring sandbox..." : transitionLabel}
+          {isRestoring ? "Restoring Workspace..." : transitionLabel}
         </TooltipContent>
       </Tooltip>
     );
@@ -761,7 +761,7 @@ function _SandboxHeaderBadge({
           </div>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={8}>
-          Sandbox inactive
+          Workspace inactive
         </TooltipContent>
       </Tooltip>
     );
@@ -2145,13 +2145,15 @@ export function SessionChatContent({
     fetch(`/api/chat/${chatInfo.id}/queue`)
       .then((res) => (res.ok ? res.json() : null))
       .then(
-        (data: {
-          queued?: Array<{
-            id: string;
-            text: string;
-            payload: ComposerMessagePayload;
-          }>;
-        } | null) => {
+        (
+          data: {
+            queued?: Array<{
+              id: string;
+              text: string;
+              payload: ComposerMessagePayload;
+            }>;
+          } | null,
+        ) => {
           if (cancelled || !data?.queued?.length) return;
           setQueuedMessages(
             data.queued.map((item) => ({
@@ -2217,7 +2219,7 @@ export function SessionChatContent({
   async function submitBuiltMessage(built: {
     payload: ComposerMessagePayload;
     displayText: string;
-  }) {
+  }): Promise<boolean> {
     const { payload: messagePayload, displayText: messageText } = built;
 
     const isFirstChatInSession = initialIsOnlyChatInSession;
@@ -2273,12 +2275,14 @@ export function SessionChatContent({
 
     try {
       await sendMessageWithPendingState(messagePayload);
+      return true;
     } catch (err) {
       if (pendingOptimisticTitleChatIdRef.current) {
         void clearChatTitle(pendingOptimisticTitleChatIdRef.current);
         pendingOptimisticTitleChatIdRef.current = null;
       }
       console.error("Failed to send message:", err);
+      return false;
     }
   }
 
@@ -2357,7 +2361,8 @@ export function SessionChatContent({
         } else {
           nextPayload = { ...payload, text: nextText };
         }
-        const partCount = "parts" in nextPayload ? (nextPayload.parts?.length ?? 0) : 1;
+        const partCount =
+          "parts" in nextPayload ? (nextPayload.parts?.length ?? 0) : 1;
         if (nextText.trim().length === 0 && partCount === 0) continue;
         next.push({ ...item, displayText: nextText, payload: nextPayload });
       }
@@ -2371,6 +2376,8 @@ export function SessionChatContent({
     persistQueuedMessages(nextOrder);
   }
 
+  const drainingQueueIdRef = useRef<string | null>(null);
+
   // Drain the queue one message at a time once the current turn settles.
   // hasPendingResponse flips true synchronously inside submitBuiltMessage
   // (via sendMessageWithPendingState) before this effect can re-run, so
@@ -2383,22 +2390,31 @@ export function SessionChatContent({
       return;
     }
 
-    const [next, ...rest] = queuedMessages;
-    // Delete from the server BEFORE sending, and only submit on success.
-    // Sending first would risk the classic double-send: the message goes
-    // out, the delete fails, and a later reload resurrects it from the row
-    // and sends it again. If the delete fails we leave it queued and the
-    // drain retries on the next state change or reload.
-    void fetch(
-      `/api/chat/${chatInfo.id}/queue?id=${encodeURIComponent(next.id)}`,
-      { method: "DELETE" },
-    )
-      .then((res) => {
-        if (!res.ok) return;
-        setQueuedMessages(rest);
-        void submitBuiltMessage(next);
+    const [next] = queuedMessages;
+    // Send first, then acknowledge the durable queue row. Deleting first
+    // made a transient /api/chat failure permanently lose the user's prompt.
+    // The local drain guard prevents the effect from starting the same item
+    // twice while the send and acknowledgement are in flight.
+    const drainId = next.id;
+    if (drainingQueueIdRef.current === drainId) return;
+    drainingQueueIdRef.current = drainId;
+    void submitBuiltMessage(next)
+      .then(async (sent) => {
+        if (!sent) return;
+        const response = await fetch(
+          `/api/chat/${chatInfo.id}/queue?id=${encodeURIComponent(next.id)}`,
+          { method: "DELETE" },
+        );
+        if (response.ok) {
+          setQueuedMessages((current) =>
+            current.filter((item) => item.id !== next.id),
+          );
+        }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        drainingQueueIdRef.current = null;
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- submitBuiltMessage/buildComposerMessagePayload close over the latest render's state; only the gating signals and queue contents should retrigger this drain.
   }, [isChatInFlight, hasPendingResponse, queuedMessages]);
 

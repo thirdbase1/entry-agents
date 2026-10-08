@@ -9,8 +9,12 @@ import {
 
 function formatPassRate(
   bucket: { passed: number; total: number } | undefined,
+  errorCount: number,
 ): string {
   if (!bucket || bucket.total === 0) return "—";
+  if (bucket.passed === 0 && errorCount === bucket.total) {
+    return `Error · 0/${bucket.total}`;
+  }
   return `${bucket.passed}/${bucket.total}`;
 }
 
@@ -27,9 +31,11 @@ function formatLatency(ms: number | null): string {
   return `${Math.round(ms)}ms`;
 }
 
-function formatCost(cents: number): string {
-  if (cents === 0) return "Free";
-  return `$${(cents / 100).toFixed(3)}`;
+function formatCost(micros: number, known: boolean): string {
+  if (!known) return "Unavailable";
+  if (micros === 0) return "Free";
+  if (micros < 1_000) return "<$0.001";
+  return `$${(micros / 1_000_000).toFixed(3)}`;
 }
 
 export function BenchmarkTable({
@@ -86,7 +92,7 @@ export function BenchmarkTable({
                       : "text-sm font-medium text-(--l-fg) sm:text-base"
                 }
               >
-                {formatPassRate(model.results.humaneval)}
+                {formatPassRate(model.results.humaneval, model.errorCount)}
               </div>
             </div>
 
@@ -99,7 +105,7 @@ export function BenchmarkTable({
             </div>
 
             <div className="hidden text-right text-sm text-(--l-fg-2) sm:block">
-              {formatCost(model.totalCostCents)}
+              {formatCost(model.totalCostMicros, model.costKnown)}
             </div>
           </div>
         );

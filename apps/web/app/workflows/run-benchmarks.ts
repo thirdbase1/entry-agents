@@ -94,6 +94,7 @@ function selectDefaultBenchmarkModels(availableModelIds: string[]): string[] {
  * every task before it (already-recorded results stay in the DB).
  */
 async function runTaskStep(
+  runId: string,
   modelId: string,
   taskId: string,
   cost: AvailableModelCost | undefined,
@@ -116,7 +117,7 @@ async function runTaskStep(
   // the restricted workflow bundle entirely.
   const { runHumanEvalTask } =
     await import("@/lib/benchmarks/humaneval-runner");
-  const result = await runHumanEvalTask(modelId, task);
+  const result = await runHumanEvalTask(modelId, task, runId);
 
   let costMicros: number | undefined;
   if (result.usage?.inputTokens != null && result.usage.outputTokens != null) {
@@ -230,6 +231,7 @@ export async function runBenchmarkSuiteWorkflow(
       }
       try {
         const result = await runTaskStep(
+          runId,
           modelId,
           taskId,
           costByModelId[modelId],

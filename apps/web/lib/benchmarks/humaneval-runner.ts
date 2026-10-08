@@ -1,5 +1,9 @@
 import { openAgent } from "@open-agents/agent";
-import { connectLocal } from "@open-agents/sandbox";
+import {
+  connectLocal,
+  connectSandbox,
+  type Sandbox,
+} from "@open-agents/sandbox";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -60,15 +64,72 @@ function buildTaskPrompt(task: HumanEvalTask): string {
  * fresh `python3` subprocess -- deliberately NOT executed through the
  * agent's own bash tool, so a model can't ever grade its own work.
  */
+function shellEscape(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function gradeSolutionInSandbox(
+  solutionCode: string,
+  task: HumanEvalTask,
+  sandbox: Sandbox,
+): Promise<{ passed: boolean; errorMessage?: string }> {
+  const candidatePath = "/tmp/entry-benchmark-solution.py";
+  const testPath = "/tmp/entry-benchmark-test.py";
+  await sandbox.writeFile(candidatePath, solutionCode, "utf-8");
+  await sandbox.writeFile(testPath, task.test, "utf-8");
+  const graderScript = [
+    "import sys, traceback",
+    "candidate_ns = {}",
+    "try:",
+    "    with open(sys.argv[1], 'r', encoding='utf-8') as f: candidate_code = f.read()",
+    "    exec(compile(candidate_code, 'solution.py', 'exec'), candidate_ns)",
+    "except Exception:",
+    "    print('CANDIDATE_IMPORT_ERROR')",
+    "    traceback.print_exc()",
+    "    sys.exit(1)",
+    `entry_point = candidate_ns.get(${JSON.stringify(task.entry_point)})`,
+    "if entry_point is None:",
+    "    print('ENTRY_POINT_MISSING')",
+    "    sys.exit(1)",
+    "test_ns = dict(candidate_ns)",
+    "try:",
+    "    with open(sys.argv[2], 'r', encoding='utf-8') as f: test_code = f.read()",
+    "    exec(compile(test_code, 'test.py', 'exec'), test_ns)",
+    "    test_ns['check'](entry_point)",
+    "except Exception:",
+    "    print('TEST_FAILED')",
+    "    traceback.print_exc()",
+    "    sys.exit(1)",
+    "print('PASSED')",
+  ].join("\n");
+  const result = await sandbox.exec(
+    `python3 -c ${shellEscape(graderScript)} ${shellEscape(candidatePath)} ${shellEscape(testPath)}`,
+    sandbox.workingDirectory,
+    PYTHON_GRADE_TIMEOUT_MS,
+  );
+  if (result.success && result.stdout.includes("PASSED")) {
+    return { passed: true };
+  }
+  return {
+    passed: false,
+    errorMessage: `${result.stdout}\n${result.stderr}`.slice(0, 2000),
+  };
+}
+
 export async function gradeSolution(
   solutionPath: string,
   task: HumanEvalTask,
+  graderSandbox?: Sandbox,
 ): Promise<{ passed: boolean; errorMessage?: string }> {
   let candidateCode: string;
   try {
     candidateCode = await fs.readFile(solutionPath, "utf-8");
   } catch {
     return { passed: false, errorMessage: "solution.py was never created" };
+  }
+
+  if (graderSandbox) {
+    return gradeSolutionInSandbox(candidateCode, task, graderSandbox);
   }
 
   const graderScript = [
@@ -131,6 +192,7 @@ export async function gradeSolution(
 export async function runHumanEvalTask(
   modelId: string,
   task: HumanEvalTask,
+  benchmarkRunId = "local",
 ): Promise<HumanEvalTaskResult> {
   const rootDir = await fs.mkdtemp(
     path.join(os.tmpdir(), `benchmark-${task.task_id.replace("/", "-")}-`),
@@ -142,6 +204,7 @@ export async function runHumanEvalTask(
   ];
   let totalUsage: LanguageModelUsage | undefined;
   let errorMessage: string | undefined;
+  let graderSandbox: Sandbox | undefined;
 
   try {
     await connectLocal({ rootDir });
@@ -179,11 +242,26 @@ export async function runHumanEvalTask(
 
   let passed = false;
   if (!errorMessage) {
-    const grade = await gradeSolution(path.join(rootDir, "solution.py"), task);
+    graderSandbox = await connectSandbox(
+      {
+        type: "boxd",
+        machineName: `entry-benchmark-${benchmarkRunId.slice(0, 20)}`,
+      },
+      {
+        image: "python:3.12-slim",
+        skipGitWorkspaceBootstrap: true,
+      },
+    );
+    const grade = await gradeSolution(
+      path.join(rootDir, "solution.py"),
+      task,
+      graderSandbox,
+    );
     passed = grade.passed;
     errorMessage = grade.errorMessage;
   }
 
+  await graderSandbox?.stop().catch(() => {});
   await fs.rm(rootDir, { recursive: true, force: true }).catch(() => {});
 
   return {

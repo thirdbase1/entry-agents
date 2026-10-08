@@ -123,7 +123,7 @@ export async function connectBoxd(
     try {
       machine = await client.machines.create({
         name,
-        image: "ubuntu:24.04",
+        image: options?.image ?? "ubuntu:24.04",
         // Use the default network so workspace commands have outbound internet
         // access for GitHub, package registries, web fetch, and model tooling.
         // The machine is still private to the workspace and has no public proxy.

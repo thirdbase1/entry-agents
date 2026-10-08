@@ -44,13 +44,16 @@ function totalProgress(summary: BenchmarkLiveSummary): {
   done: number;
   total: number;
 } {
-  const tasksPerModel = 20; // fixed HumanEval subset size (HUMANEVAL_SUITE_VERSION)
-  const total = summary.modelIds.length * tasksPerModel;
   const done = summary.models.reduce(
-    (sum, m) => sum + (m.results.humaneval?.total ?? 0),
+    (sum, model) =>
+      sum +
+      Object.values(model.results).reduce(
+        (inner, bucket) => inner + (bucket?.total ?? 0),
+        0,
+      ),
     0,
   );
-  return { done, total };
+  return { done, total: done };
 }
 
 /**
@@ -119,12 +122,12 @@ export function BenchmarkLive({
       <BenchmarkTable models={mergeWithPlaceholders(summary)} />
 
       <p className="mt-8 text-sm text-(--l-fg-3)">
-        HumanEval subset ({summary.suiteVersion}), 20 fixed tasks from the
-        canonical OpenAI HumanEval dataset.{" "}
+        Entry Agent benchmark tracks: SWE-bench Verified, Terminal-Bench 2.0,
+        LiveCodeBench, and Aider Polyglot.{" "}
         {isRunning
           ? "This run is in progress -- numbers update automatically as tasks complete."
           : `Last run completed ${(summary.finishedAt ?? summary.startedAt).slice(0, 10)}.`}{" "}
-        Cost shown is model-token usage from Entry Gateway for this subset.
+        Cost shown is model-token usage from Entry Gateway for the recorded run.
         Entry Agents does not add a separate sandbox or Workspace charge.
       </p>
     </div>

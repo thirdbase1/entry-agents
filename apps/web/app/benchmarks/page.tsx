@@ -3,6 +3,7 @@ import { getLatestBenchmarkRunSummary } from "@/lib/db/benchmarks";
 import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { BenchmarkLive, type BenchmarkLiveSummary } from "./benchmark-live";
+import { BenchmarkOverview } from "./benchmark-overview";
 
 export const metadata: Metadata = {
   title: "AI Coding Agent Benchmarks",
@@ -53,14 +54,15 @@ export default async function BenchmarksPage() {
                 Benchmarks.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Real results from Entry Agents&apos; coding-agent harness, using the same
-                system prompt, Workspace tools, and Entry Gateway-routed models
-                available to production chats. No cherry-picked transcripts: every task is graded by an
-                independent script, not the model itself.
+                A transparent coding-agent leaderboard across real
+                software-engineering, terminal, competitive-coding, and
+                repository-editing tasks. Every Entry score runs through the
+                same agent harness and is graded by independent tests.
               </p>
             </div>
 
-            <div className="mt-12 md:mt-16">
+            <div className="mt-12 md:mt-16 space-y-8">
+              <BenchmarkOverview />
               <BenchmarkLive initialSummary={initialSummary} />
             </div>
           </div>

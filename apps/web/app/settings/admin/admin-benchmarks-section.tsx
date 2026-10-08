@@ -27,7 +27,7 @@ import {
 import type { BenchmarkRunWithProgress } from "@/lib/db/benchmarks";
 import { cn } from "@/lib/utils";
 
-const TASKS_PER_MODEL = 20; // fixed HumanEval subset size
+const TASKS_PER_MODEL = 20; // historical run progress only
 
 function statusBadge(status: BenchmarkRunWithProgress["status"]) {
   if (status === "running") {
@@ -179,9 +179,9 @@ export function AdminBenchmarksSection() {
         <CardHeader>
           <CardTitle>Run benchmarks</CardTitle>
           <CardDescription>
-            Runs the real 20-task HumanEval subset through the actual agent
-            harness for each selected model. Each run spends real metered API
-            cost -- pick models deliberately.
+            The legacy single-benchmark runner is paused. New runs will use the
+            multi-track coding-agent suite: SWE-bench Verified, Terminal-Bench,
+            LiveCodeBench, and Aider Polyglot.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -225,13 +225,13 @@ export function AdminBenchmarksSection() {
           )}
 
           <div className="flex items-center gap-3">
-            <Button onClick={handleStart} disabled={starting || anyRunning}>
+            <Button onClick={handleStart} disabled>
               {starting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Play className="size-4" />
               )}
-              Start run ({selected.size} selected)
+              Modern suite runner coming online
             </Button>
             {anyRunning ? (
               <span className="text-xs text-muted-foreground">

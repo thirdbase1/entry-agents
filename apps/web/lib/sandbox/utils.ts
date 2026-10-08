@@ -102,11 +102,14 @@ export function isSandboxActive(
   if (!state) return false;
 
   const expiresAt = getSandboxExpiresAt(state);
-  if (expiresAt === undefined) {
-    return false;
-  }
-
-  if (Date.now() >= expiresAt - SANDBOX_EXPIRES_BUFFER_MS) {
+  // boxd machines do not expose a hard expiry timestamp. Their machineId
+  // remains the durable runtime handle, so absence of expiresAt must not make
+  // every connected boxd workspace appear paused to the UI and lifecycle
+  // kickers.
+  if (
+    expiresAt !== undefined &&
+    Date.now() >= expiresAt - SANDBOX_EXPIRES_BUFFER_MS
+  ) {
     return false;
   }
 
@@ -131,7 +134,14 @@ export function hasRuntimeSandboxState(state: unknown): boolean {
 
   const expiresAt = getSandboxExpiresAt(state);
   if (expiresAt === undefined) {
-    return false;
+    // boxd has no session expiration field. A stable machine id is enough to
+    // reconnect and wake the machine on demand.
+    return (
+      typeof state === "object" &&
+      state !== null &&
+      (state as { type?: unknown }).type === "boxd" &&
+      hasResumableSandboxState(state)
+    );
   }
 
   return hasResumableSandboxState(state);
@@ -218,8 +228,12 @@ export function clearSandboxState(
     const boxd = state as { machineId?: unknown; machineName?: unknown };
     return {
       type: state.type,
-      ...(hasNonEmptyString(boxd.machineId) ? { machineId: boxd.machineId } : {}),
-      ...(hasNonEmptyString(boxd.machineName) ? { machineName: boxd.machineName } : {}),
+      ...(hasNonEmptyString(boxd.machineId)
+        ? { machineId: boxd.machineId }
+        : {}),
+      ...(hasNonEmptyString(boxd.machineName)
+        ? { machineName: boxd.machineName }
+        : {}),
       ...sourcePatch,
     } as SandboxState;
   }

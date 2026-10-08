@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AccountsSection, AccountsSectionSkeleton } from "../accounts-section";
 import { VercelSection, VercelSectionSkeleton } from "../vercel-section";
+import { ProviderConnectionsSection } from "../provider-connections-section";
 
 export const metadata: Metadata = {
   title: "Connections",
@@ -15,6 +16,7 @@ export default function ConnectionsPage() {
       <Suspense fallback={<VercelSectionSkeleton />}>
         <VercelSection />
       </Suspense>
+      <ProviderConnectionsSection />
       <Suspense fallback={<AccountsSectionSkeleton />}>
         <AccountsSection />
       </Suspense>

@@ -29,7 +29,7 @@ const scenes: readonly Scene[] = [
     name: "sandbox",
     data: [
       { tone: "muted", text: "> refactor the api to use edge runtime" },
-      { tone: "dim", text: "sandbox: vercel (feat/edge-api)" },
+      { tone: "dim", text: "workspace: entry (feat/edge-api)" },
       { tone: "plain", text: "" },
       { tone: "ok", text: "reading app/api/chat/route.ts" },
       { tone: "ok", text: "reading app/api/chat/[chatId]/stream/route.ts" },

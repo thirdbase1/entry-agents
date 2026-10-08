@@ -68,6 +68,7 @@ export type ModelBenchmarkSummary = {
   modelId: string;
   results: Record<BenchmarkName, { passed: number; total: number } | undefined>;
   avgLatencyMs: number | null;
+  errorCount: number;
   totalCostCents: number;
 };
 
@@ -84,6 +85,7 @@ export type BenchmarkResultRow = {
   passed: boolean;
   latencyMs: number | null;
   costCents: number | null;
+  errorMessage?: string | null;
 };
 
 /**
@@ -107,6 +109,7 @@ export function summarizeBenchmarkResultRows(
           entry_tasks: undefined,
         },
         avgLatencyMs: null,
+        errorCount: 0,
         totalCostCents: 0,
       };
       byModel.set(row.modelId, entry);
@@ -118,6 +121,7 @@ export function summarizeBenchmarkResultRows(
     };
     bucket.total += 1;
     if (row.passed) bucket.passed += 1;
+    if (row.errorMessage) entry.errorCount += 1;
     entry.results[row.benchmark] = bucket;
     entry.totalCostCents += row.costCents ?? 0;
   }

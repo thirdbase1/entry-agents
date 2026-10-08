@@ -62,22 +62,12 @@ export function LandingFooter() {
               >
                 AI SDK
               </a>
-              <a
-                href="https://vercel.com/ai-gateway"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
-              >
-                AI Gateway
-              </a>
-              <a
-                href="https://vercel.com/sandbox"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
-              >
-                Sandbox
-              </a>
+              <span className="font-sans text-sm text-(--l-fg-2)">
+                Entry Gateway
+              </span>
+              <span className="font-sans text-sm text-(--l-fg-2)">
+                Workspace
+              </span>
               <a
                 href="https://useworkflow.dev/"
                 target="_blank"

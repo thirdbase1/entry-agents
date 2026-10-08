@@ -13,32 +13,32 @@ const faqs: readonly { question: string; answer: string }[] = [
   {
     question: "What is Entry Agents?",
     answer:
-      "Entry Agents is a cloud platform for AI coding agents. You give an agent a task and a Git repository, it works autonomously in an isolated cloud sandbox with filesystem, network and runtime access, then commits and pushes the result. No local setup is required.",
+      "Entry Agents is a cloud platform for autonomous AI agents that can build software, investigate problems, create files, run commands, research the web, and work with or without a connected GitHub repository. Every session runs in a private Workspace with filesystem, outbound network and runtime access.",
   },
   {
     question: "How does an Entry Agents session work?",
     answer:
-      "Each session provisions an isolated cloud sandbox with its own branch of your repository. The agent explores the codebase, edits files, runs tests and shell commands, then commits and opens a pull request. Sessions hibernate on inactivity and can be restored with their filesystem state intact.",
+      "Each session provisions a private Workspace. Start from a blank workspace, attach a GitHub repository, or ask the agent to create something from scratch. The agent can explore files, run commands, build software, test it, and optionally commit or push the result through Git.",
   },
   {
     question: "Which AI models does Entry Agents support?",
     answer:
-      "Entry Agents routes through an AI model gateway that supports many providers and models, from Claude and GPT to DeepSeek and Qwen, with per-token pay-as-you-go pricing. You can pick a default model and switch it per session.",
+      "Entry Agents routes through Entry Gateway that supports many providers and models, from Claude and GPT to DeepSeek and Qwen, with per-token pay-as-you-go pricing. You can pick a default model and switch it per session.",
   },
   {
     question: "Do I need to install anything to use Entry Agents?",
     answer:
-      "No. Entry Agents runs entirely in the cloud: the agent, the sandbox and the Git integration all live on the platform. Sign in with Vercel, Google or GitHub, point the agent at a repository, and start a session from the browser.",
+      "No. Entry Agents runs entirely in the cloud. Sign in with Vercel, Google or GitHub and start from a blank Workspace, a connected repository, an uploaded file, or a plain-language idea.",
   },
   {
     question: "How does Entry Agents keep my code safe?",
     answer:
-      "Every session runs in an isolated sandbox that no other session can reach, and your accounts connect through standard OAuth with encryption. Agents only see the repository you give them, and sandbox filesystems are discarded when they expire.",
+      "Every session runs in a private Workspace that no other session can reach. Accounts connect through standard OAuth with encryption. If you connect a repository, the agent only receives the repository and access you authorize; blank Workspace work remains separate.",
   },
   {
     question: "What does Entry Agents cost?",
     answer:
-      "Usage is credit-based with no markup: $1 of credit is $1 of model and sandbox usage, and subscriptions include bonus credits. You pay per token and per minute of sandbox time, so costs scale with what you actually run.",
+      "Usage is credit-based for model usage. Entry Agents does not charge a separate sandbox or Workspace fee. Subscriptions include bonus credits, and your balance is used for the model tokens consumed by your agent.",
   },
 ];
 

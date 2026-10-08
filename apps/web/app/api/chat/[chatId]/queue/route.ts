@@ -52,6 +52,15 @@ function normalize(value: unknown): QueuedPrompt[] {
   );
 }
 
+
+function parseQueuedList(value: unknown): QueuedPrompt[] | null {
+  if (!Array.isArray(value) || value.length > MAX_QUEUED_PROMPTS) return null;
+  const normalized = normalize(value);
+  if (normalized.length !== value.length) return null;
+  if (normalized.some((item) => item.text.length > MAX_TEXT_LENGTH)) return null;
+  return normalized;
+}
+
 async function readQueue(chatId: string): Promise<QueuedPrompt[]> {
   const rows = await db
     .select({ queuedPrompts: chats.queuedPrompts })
@@ -153,6 +162,24 @@ export async function POST(req: Request, context: RouteContext) {
     : [...queued, prompt];
 
   return Response.json({ queued: await writeQueue(auth.chatId, next) });
+}
+
+export async function PUT(req: Request, context: RouteContext) {
+  const auth = await authorize(context);
+  if (!auth.ok) return auth.response;
+
+  const body = (await req.json().catch(() => ({}))) as { queued?: unknown };
+  const queued = parseQueuedList(body.queued);
+  if (!queued) {
+    return Response.json(
+      { error: "queued must be a valid list of at most 20 messages" },
+      { status: 400 },
+    );
+  }
+
+  // Full-list writes make edits and drag reordering durable across reloads
+  // and devices instead of leaving the server row with stale ordering.
+  return Response.json({ queued: await writeQueue(auth.chatId, queued) });
 }
 
 export async function DELETE(req: Request, context: RouteContext) {

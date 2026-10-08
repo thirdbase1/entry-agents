@@ -33,6 +33,7 @@ function mergeWithPlaceholders(
           entry_tasks: undefined,
         },
         avgLatencyMs: null,
+        errorCount: 0,
         totalCostCents: 0,
       },
   );
@@ -122,8 +123,8 @@ export function BenchmarkLive({
         {isRunning
           ? "This run is in progress -- numbers update automatically as tasks complete."
           : `Last run completed ${(summary.finishedAt ?? summary.startedAt).slice(0, 10)}.`}{" "}
-        Cost shown is the real gateway-metered spend for running this subset,
-        not a per-token rate.
+        Cost shown is model-token usage from Entry Gateway for this subset.
+        Entry Agents does not add a separate sandbox or Workspace charge.
       </p>
     </div>
   );

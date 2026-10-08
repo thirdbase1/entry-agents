@@ -81,7 +81,7 @@ export function LandingBento() {
           </div>
           <div className="md:pl-10">
             <p className="max-w-md text-balance text-base leading-relaxed text-(--l-fg-2)">
-              Built for real software work: an AI model gateway, private Workspaces,
+              Built for real software work: Entry Gateway, private Workspaces,
               and durable workflows for agents that ship code.
             </p>
             <div className="mt-6">

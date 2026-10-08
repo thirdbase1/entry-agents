@@ -8,11 +8,11 @@ import { SITE_URL } from "@/lib/site";
  */
 const content = `# Entry Agents — full context for LLMs
 
-> Entry Agents is a cloud platform for AI coding agents. You give an agent a task and a Git repository; it works autonomously in an isolated cloud sandbox with filesystem, network and runtime access, then commits and pushes the result. No local setup is required.
+> Entry Agents is a cloud platform for autonomous AI agents. An agent can build software, research, edit files, run commands, and test results in a private Workspace, with or without a connected GitHub repository. Git commits and pull requests are optional outputs, not prerequisites.
 
 ## What Entry Agents is
 
-Entry Agents, also known as Entry or Entry Agents AI, (entry-agents.dev) is a cloud platform where software tasks run as autonomous AI coding agent sessions instead of manual local work. Each session provisions an isolated Workspace containing a branch of your Git repository. The agent explores the codebase, edits files, runs shell commands and tests, and ships the result as commits and a pull request. Sandboxes hibernate on inactivity and can be restored with their filesystem state intact.
+Entry Agents, also known as Entry or Entry Agents AI, (entry-agents.dev) is a cloud platform for autonomous software-building agents. Each session provisions a private Workspace that can begin empty, contain uploaded files, or connect to a GitHub repository. The agent can explore, research, edit, run shell commands, build applications, test results, and optionally ship commits or pull requests. Sandboxes hibernate on inactivity and can be restored with their filesystem state intact.
 
 Key properties:
 
@@ -24,24 +24,24 @@ Key properties:
 
 ## How a session works
 
-1. Sign in and create a session for a connected Git repository.
-2. The platform provisions an isolated cloud sandbox and checks out a session branch.
-3. You describe the task in chat; the agent plans, explores the repository, edits files and runs commands in the sandbox.
-4. As it works, the agent commits to the session branch.
-5. When the task is done, the result can be pushed and opened as a pull request.
+1. Sign in and create a session from a blank Workspace, uploaded files, or a connected GitHub repository.
+2. The platform provisions a private Workspace with filesystem, outbound network, and runtime access.
+3. You describe the task in chat; the agent plans, researches, edits files, builds software, and runs commands.
+4. If a repository is connected, the agent can commit to its session branch.
+5. When the task is done, Git push and pull requests are available as optional delivery paths.
 6. Sandboxes auto-hibernate when inactive and can be resumed; expired sandbox filesystems are discarded, while committed work persists in Git.
 
 ## Models
 
-Entry Agents routes requests through an AI model gateway with support for many providers and models, including Anthropic (Claude), OpenAI (GPT), DeepSeek, Qwen, Zhipu, StepFun and Xiaomi MiMo, with fallbacks, rate limiting and observability. A default model can be chosen per account and switched per session. Current per-token prices and context windows are listed at ${SITE_URL}/model.
+Entry Agents routes requests through Entry Gateway with support for many providers and models, including Anthropic (Claude), OpenAI (GPT), DeepSeek, Qwen, Zhipu, StepFun and Xiaomi MiMo, with fallbacks, rate limiting and observability. A default model can be chosen per account and switched per session. Current per-token prices and context windows are listed at ${SITE_URL}/model.
 
 ## Pricing
 
-Usage is credit-based with no markup: $1 of credit buys $1 of model and sandbox usage. Subscriptions include bonus credits. Billing is per token for models and per minute for sandbox time, so cost scales with actual usage rather than seats. Details at ${SITE_URL}/pricing. Nigerian debit and credit cards, bank transfer and mobile money are accepted.
+Usage is credit-based for model usage. Entry Agents does not charge a separate sandbox or Workspace fee. Subscriptions include bonus credits, and credits are consumed by the model tokens used by your agent. Details at ${SITE_URL}/pricing. Nigerian debit and credit cards, bank transfer and mobile money are accepted.
 
 ## Benchmarks
 
-Benchmarks on the site are real runs from Entry Agents' own agent harness, using the same system prompt, tools and gateway-routed models as production sessions, on fixed tasks from the canonical OpenAI HumanEval dataset. Cost figures are the real gateway-metered spend for running the subset, not per-token list prices. Results at ${SITE_URL}/benchmarks.
+Benchmarks on the site are real runs from Entry Agents' own agent harness, using the same system prompt, tools and Entry Gateway-routed models as production sessions, on fixed tasks from the canonical OpenAI HumanEval dataset. Cost figures are the real gateway-metered spend for running the subset, not per-token list prices. Results at ${SITE_URL}/benchmarks.
 
 ## Security and isolation
 

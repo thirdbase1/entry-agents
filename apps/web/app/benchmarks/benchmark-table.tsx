@@ -45,9 +45,10 @@ export function BenchmarkTable({
 
   return (
     <div className="overflow-hidden border border-(--l-border)">
-      <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-x-4 border-b border-(--l-border) bg-(--l-fg-6) px-4 py-3 text-xs font-medium uppercase tracking-wide text-(--l-fg-3) sm:px-6">
+      <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-x-4 border-b border-(--l-border) bg-(--l-fg-6) px-4 py-3 text-xs font-medium uppercase tracking-wide text-(--l-fg-3) sm:px-6">
         <div>Model</div>
         <div className="text-right">HumanEval</div>
+        <div className="hidden text-right sm:block">Errors</div>
         <div className="hidden text-right sm:block">Avg latency</div>
         <div className="hidden text-right sm:block">Cost (subset)</div>
       </div>
@@ -58,7 +59,7 @@ export function BenchmarkTable({
         return (
           <div
             key={model.modelId}
-            className="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-x-4 border-b border-(--l-border) px-4 py-4 last:border-b-0 sm:px-6"
+            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center gap-x-4 border-b border-(--l-border) px-4 py-4 last:border-b-0 sm:px-6"
           >
             <div className="flex min-w-0 items-center gap-3">
               <ProviderIcon
@@ -87,6 +88,10 @@ export function BenchmarkTable({
               >
                 {formatPassRate(model.results.humaneval)}
               </div>
+            </div>
+
+            <div className="hidden text-right text-sm text-(--l-fg-2) sm:block">
+              {model.errorCount > 0 ? model.errorCount : "—"}
             </div>
 
             <div className="hidden text-right text-sm text-(--l-fg-2) sm:block">

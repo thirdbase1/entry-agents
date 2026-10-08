@@ -2319,6 +2319,20 @@ export function SessionChatContent({
   // reads live composer state (images/textAttachments), which may have
   // moved on since this item was queued. Non-text parts (images, file
   // parts, snippet attachments) are preserved untouched.
+  function persistQueuedMessages(next: QueuedComposerMessage[]) {
+    void fetch(`/api/chat/${chatInfo.id}/queue`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        queued: next.map((item) => ({
+          id: item.id,
+          text: item.displayText,
+          payload: item.payload,
+        })),
+      }),
+    }).catch(() => {});
+  }
+
   function updateQueuedMessageText(id: string, nextText: string) {
     setQueuedMessages((prev) => {
       const next: QueuedComposerMessage[] = [];
@@ -2327,55 +2341,34 @@ export function SessionChatContent({
           next.push(item);
           continue;
         }
-
         const payload = item.payload;
-        if (payload) {
-          let nextPayload: ComposerMessagePayload;
-          if ("parts" in payload) {
-            // Explicit annotation + push (rather than .filter/.unshift
-            // chained straight off payload.parts) so TS keeps the full
-            // WebAgentUIMessagePart union on this array -- letting inference
-            // narrow it via the `part.type !== "text"` filter would otherwise
-            // drop the "text" variant from the type, making the re-add below
-            // a type error.
-            const parts: WebAgentUIMessagePart[] = [];
-            for (const part of payload.parts ?? []) {
-              if (part.type !== "text") {
-                parts.push(part);
-              }
-            }
-            if (nextText.trim()) {
-              parts.unshift({ type: "text", text: nextText });
-            }
-            nextPayload = { parts };
-          } else {
-            nextPayload = { ...payload, text: nextText };
-          }
-
-          // Clearing the text of a prompt that carried nothing else leaves
-          // an item with an empty payload -- one that would send nothing when
-          // it drains and reads as a phantom row in the panel. Treat a
-          // fully-emptied edit as a delete instead. Attachment-only prompts
-          // are unaffected: they keep their non-text parts, so the item
-          // survives with an empty displayText (shown as "attachment only").
-          const partCount =
-            "parts" in nextPayload ? (nextPayload.parts?.length ?? 0) : 1;
-          if (nextText.trim().length === 0 && partCount === 0) {
-            continue;
-          }
-
-          next.push({ ...item, displayText: nextText, payload: nextPayload });
+        if (!payload) {
+          next.push(item);
           continue;
         }
-
-        next.push(item);
+        let nextPayload: ComposerMessagePayload;
+        if ("parts" in payload) {
+          const parts: WebAgentUIMessagePart[] = [];
+          for (const part of payload.parts ?? []) {
+            if (part.type !== "text") parts.push(part);
+          }
+          if (nextText.trim()) parts.unshift({ type: "text", text: nextText });
+          nextPayload = { parts };
+        } else {
+          nextPayload = { ...payload, text: nextText };
+        }
+        const partCount = "parts" in nextPayload ? (nextPayload.parts?.length ?? 0) : 1;
+        if (nextText.trim().length === 0 && partCount === 0) continue;
+        next.push({ ...item, displayText: nextText, payload: nextPayload });
       }
+      persistQueuedMessages(next);
       return next;
     });
   }
 
   function reorderQueuedMessages(nextOrder: QueuedComposerMessage[]) {
     setQueuedMessages(nextOrder);
+    persistQueuedMessages(nextOrder);
   }
 
   // Drain the queue one message at a time once the current turn settles.

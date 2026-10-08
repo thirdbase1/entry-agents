@@ -5,9 +5,9 @@ import { LandingNav } from "@/components/landing/nav";
 import { BenchmarkLive, type BenchmarkLiveSummary } from "./benchmark-live";
 
 export const metadata: Metadata = {
-  title: "Benchmarks",
+  title: "AI Coding Agent Benchmarks",
   description:
-    "Real HumanEval results from Entry Agents' own harness -- the same system prompt, tools, and gateway-routed models real chats use.",
+    "Real AI coding agent benchmark results from Entry Agents, using the same tools and Entry Gateway-routed models as production chats.",
   alternates: {
     canonical: "/benchmarks",
   },
@@ -53,9 +53,9 @@ export default async function BenchmarksPage() {
                 Benchmarks.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Real results from Entry&apos;s own agent harness -- the same
-                system prompt, tools, and gateway-routed models every real chat
-                uses. No cherry-picked transcripts: every task is graded by an
+                Real results from Entry Agents&apos; coding-agent harness, using the same
+                system prompt, Workspace tools, and Entry Gateway-routed models
+                available to production chats. No cherry-picked transcripts: every task is graded by an
                 independent script, not the model itself.
               </p>
             </div>

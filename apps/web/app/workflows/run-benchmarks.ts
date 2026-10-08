@@ -6,7 +6,7 @@ import {
 } from "@/lib/db/benchmarks";
 import type { AvailableModelCost } from "@/lib/models";
 import { estimateModelUsageCost } from "@/lib/models";
-import { fetchModelCostCatalog } from "@/lib/models-with-context";
+import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 // Node-free -- safe to import statically even though this whole file's
 // top-level workflow function body runs in the Workflow SDK's restricted
 // bundle. `runHumanEvalTask` (which touches fs/child_process/sandbox) is
@@ -37,16 +37,15 @@ import {
  * every default/scheduled run with zero useful signal. Verified this
  * exact list against a live GET /v1/debug/routes dump before committing.
  */
-const DEFAULT_BENCHMARK_MODEL_IDS = [
-  "gpt-5.6-luna",
-  "gpt-5.6-terra",
-  "gpt-5.6-sol",
+const PREFERRED_BENCHMARK_MODEL_IDS = [
+  "step-5-preview",
+  "qwen3.8-flash:free",
+  "mimo-v2.6-flash:free",
+  "qwen3.8-max-free",
   "deepseek-v4-flash",
   "gemini-3.5-flash",
-  "ling-3.0-flash-free",
-  "qwen3.7-max",
-  "qwen3.8-max-free",
-];
+] as const;
+
 
 interface TaskStepResult {
   passed: boolean;
@@ -68,16 +67,25 @@ async function createRunStep(
 }
 
 /** Returns a plain, JSON-serializable modelId -> cost map (crosses a step boundary). */
-async function loadCostCatalogStep(): Promise<
-  Record<string, AvailableModelCost | undefined>
-> {
+async function loadCostCatalogStep(): Promise<{
+  costByModelId: Record<string, AvailableModelCost | undefined>;
+  availableModelIds: string[];
+}> {
   "use step";
-  const catalog = await fetchModelCostCatalog();
-  const byId: Record<string, AvailableModelCost | undefined> = {};
+  const catalog = await fetchAvailableLanguageModelsWithContext();
+  const costByModelId: Record<string, AvailableModelCost | undefined> = {};
   for (const model of catalog) {
-    byId[model.id] = model.cost;
+    costByModelId[model.id] = model.cost;
   }
-  return byId;
+  return { costByModelId, availableModelIds: catalog.map((model) => model.id) };
+}
+
+function selectDefaultBenchmarkModels(availableModelIds: string[]): string[] {
+  const preferred = PREFERRED_BENCHMARK_MODEL_IDS.filter((id) =>
+    availableModelIds.includes(id),
+  );
+  if (preferred.length > 0) return preferred;
+  return availableModelIds.slice(0, 6);
 }
 
 /**
@@ -182,18 +190,22 @@ export interface RunBenchmarkSuiteResult {
  * in-flight task, not the whole run.
  */
 export async function runBenchmarkSuiteWorkflow(
-  modelIds: string[] = DEFAULT_BENCHMARK_MODEL_IDS,
+  modelIds?: string[],
   triggeredBy?: string,
 ): Promise<RunBenchmarkSuiteResult> {
   "use workflow";
 
-  const runId = await createRunStep(modelIds, triggeredBy);
-  const costByModelId = await loadCostCatalogStep();
+  const catalog = await loadCostCatalogStep();
+  const selectedModelIds = modelIds?.length
+    ? Array.from(new Set(modelIds))
+    : selectDefaultBenchmarkModels(catalog.availableModelIds);
+  const runId = await createRunStep(selectedModelIds, triggeredBy);
+  const costByModelId = catalog.costByModelId;
   const taskIds = loadHumanEvalSubset().map((t) => t.task_id);
 
   let hadFailure = false;
 
-  for (const modelId of modelIds) {
+  for (const modelId of selectedModelIds) {
     // costByModelId's keys ARE the live gateway catalog (populated 1:1
     // from fetchModelCostCatalog() in loadCostCatalogStep) -- checking
     // membership here, not just a truthy cost value (a real model can
@@ -241,5 +253,5 @@ export async function runBenchmarkSuiteWorkflow(
       : undefined,
   );
 
-  return { runId, status, modelIds, taskCount: taskIds.length };
+  return { runId, status, modelIds: selectedModelIds, taskCount: taskIds.length };
 }

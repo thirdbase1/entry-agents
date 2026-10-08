@@ -2,7 +2,7 @@ import { SITE_URL } from "@/lib/site";
 
 const content = `# Entry Agents (also known as Entry)
 
-> Entry Agents is a cloud platform for AI coding agents that work on repository tasks in isolated Workspace sandboxes and ship code through Git.
+> Entry Agents is a cloud platform for autonomous AI agents that build software in private Workspaces, with or without a connected GitHub repository. Git delivery is optional.
 
 ## Full context
 
@@ -18,9 +18,9 @@ const content = `# Entry Agents (also known as Entry)
 
 ## Product capabilities
 
-- AI coding agents for software tasks in Git repositories.
+- Autonomous agents for building software, researching, editing files, and running commands.
 - Workspace sandboxes with filesystem, outbound network, and runtime access.
-- Git branches, commits, and pull requests.
+- Optional Git branches, commits, and pull requests when a repository is connected.
 - Durable, resumable agent workflows.
 
 Canonical site: ${SITE_URL}

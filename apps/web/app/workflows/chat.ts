@@ -3198,7 +3198,8 @@ const runAgentStep = async (
       // sandbox. See SandboxLifecycleHooksContext + lib/sandbox/migration.ts.
       sandboxLifecycleHooks: {
         beforeCommand: async () => {
-          const { getSessionById } = await import("@/lib/db/sessions");
+          const { getSessionById, updateSession } =
+            await import("@/lib/db/sessions");
           const { hasResumableSandboxState } =
             await import("@/lib/sandbox/utils");
           const deadline = Date.now() + 180_000;
@@ -3220,6 +3221,31 @@ const runAgentStep = async (
             }
 
             if (current.lifecycleState !== "migrating") {
+              // Repair legacy boxd rows at the last safe boundary before any
+              // agent tool connects. Some older sessions were persisted as
+              // `{ type: "boxd" }` or with only machineId, so the lifecycle
+              // row could say active while the connector still had no name.
+              // Derive the deterministic name from the session id and persist
+              // it here instead of surfacing a host-resolution error.
+              let repairedSandboxState = current.sandboxState;
+              if (
+                current.sandboxState?.type === "boxd" &&
+                !(current.sandboxState as { machineName?: unknown }).machineName
+              ) {
+                const { requireSandboxProvider } =
+                  await import("@open-agents/sandbox");
+                repairedSandboxState = requireSandboxProvider(
+                  "boxd",
+                ).buildProvisionState({
+                  existing: current.sandboxState,
+                  sessionId,
+                });
+                await updateSession(sessionId, {
+                  sandboxState: repairedSandboxState,
+                  lifecycleError: null,
+                });
+              }
+
               // No (usable) workspace yet is a normal agent-first state,
               // not an error -- but it still has to fail this tool call
               // with a readable message. Two reasons, both fatal if
@@ -3232,7 +3258,7 @@ const runAgentStep = async (
               // "connecting will resume an existing workspace, not make
               // one" (see lib/sandbox/utils.ts).
               const gateState =
-                current.sandboxState ?? agentOptions.sandbox?.state;
+                repairedSandboxState ?? agentOptions.sandbox?.state;
               if (!gateState || !hasResumableSandboxState(gateState)) {
                 throw new Error(
                   "The workspace for this session is still starting up -- provisioning runs in the background. " +

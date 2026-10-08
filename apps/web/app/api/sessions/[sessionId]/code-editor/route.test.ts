@@ -300,6 +300,7 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
 
   test("POST launches code-server when the port is free", async () => {
     const { POST } = await routeModulePromise;
+    portProbeStatusCode = "200";
 
     const response = await POST(
       new Request("http://localhost/api/sessions/session-1/code-editor", {

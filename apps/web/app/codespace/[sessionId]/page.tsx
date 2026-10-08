@@ -36,6 +36,20 @@ function getErrorMessage(body: unknown, fallback: string): string {
   return body.error;
 }
 
+async function waitForEditorReady(sessionId: string, attempts = 10): Promise<CodeEditorStatusResponse | null> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetch(`/api/sessions/${sessionId}/code-editor`, {
+      cache: "no-store",
+    });
+    if (response.ok) {
+      const body = (await response.json()) as CodeEditorStatusResponse;
+      if (body.running && body.url) return body;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return null;
+}
+
 export default function CodespacePage() {
   const router = useRouter();
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -83,10 +97,15 @@ export default function CodespacePage() {
         throw new Error("Invalid code editor response");
       }
 
+      const ready = await waitForEditorReady(sessionId);
+      if (!ready?.url) {
+        throw new Error("The Workspace editor did not become ready");
+      }
+
       setState({
         status: "ready",
-        url: launchBody.url as string,
-        port: launchBody.port as number,
+        url: ready.url,
+        port: ready.port,
       });
     } catch (error) {
       setState({

@@ -6,7 +6,7 @@ import {
 import { CODE_SERVER_PORT, DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { provisionSessionSandbox } from "@/lib/sandbox/provisioning";
-import { isSandboxActive, isSandboxState } from "@/lib/sandbox/utils";
+import { isSandboxActive, isSandboxState, isSandboxUnavailableError } from "@/lib/sandbox/utils";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -42,16 +42,13 @@ async function connectCodeEditorSandbox(sessionId: string, userId: string) {
     return sessionContext;
   }
 
-  let sessionRecord = sessionContext.sessionRecord;
-  let sandboxState = sessionRecord.sandboxState;
+  const sandboxState = sessionContext.sessionRecord.sandboxState;
 
   // Opening the editor is itself a valid request to wake the Workspace. Do
   // not force the user to press a separate Resume button first. Provisioning
   // is idempotent for boxd and also repairs legacy/incomplete provider state.
   if (!isSandboxActive(sandboxState)) {
     const provisioned = await provisionSessionSandbox({ sessionId, userId });
-    sessionRecord = provisioned.session;
-    sandboxState = provisioned.sandboxState;
     return { ok: true as const, sandbox: provisioned.sandbox };
   }
 
@@ -60,14 +57,38 @@ async function connectCodeEditorSandbox(sessionId: string, userId: string) {
     return { ok: true as const, sandbox: provisioned.sandbox };
   }
 
-  const sandbox = await connectSandbox(sandboxState, {
-    ports: DEFAULT_SANDBOX_PORTS,
-  });
+  try {
+    const sandbox = await connectSandbox(sandboxState, {
+      ports: DEFAULT_SANDBOX_PORTS,
+    });
 
-  return {
-    ok: true as const,
-    sandbox,
-  };
+    return {
+      ok: true as const,
+      sandbox,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!isSandboxUnavailableError(message)) {
+      throw error;
+    }
+
+    // A stored machine or snapshot can disappear before its lifecycle row is
+    // updated. Reprovision through the normal idempotent path so the editor
+    // does not trap the user in a permanent Retry state.
+    try {
+      const provisioned = await provisionSessionSandbox({ sessionId, userId });
+      return { ok: true as const, sandbox: provisioned.sandbox };
+    } catch (recoveryError) {
+      console.error("Failed to recover Workspace for code editor:", recoveryError);
+      return {
+        ok: false as const,
+        response: Response.json(
+          { error: "Workspace is temporarily unavailable. Please retry in a moment." },
+          { status: 503 },
+        ),
+      };
+    }
+  }
 }
 
 async function getRunningCodeServerPid(
@@ -163,6 +184,19 @@ async function isPortInUse(
   return result.success && !Number.isNaN(code) && code > 0;
 }
 
+async function waitForCodeServer(
+  sandbox: ConnectedSandbox,
+  attempts = 12,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await isPortInUse(sandbox, CODE_SERVER_PORT)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
 async function findRunningCodeServerPid(
   sandbox: ConnectedSandbox,
 ): Promise<string | null> {
@@ -204,6 +238,17 @@ async function stopCodeServer(sandbox: ConnectedSandbox): Promise<boolean> {
 async function acquireCodeServerLaunchLock(
   sandbox: ConnectedSandbox,
 ): Promise<boolean> {
+  // A crashed request can leave the lock directory behind forever. Only
+  // remove locks older than 30 seconds, which is longer than a normal launch
+  // but short enough to recover automatically after a lost request.
+  await sandbox
+    .exec(
+      `find ${shellQuote(CODE_SERVER_LOCKDIR)} -maxdepth 0 -mmin +0.5 -exec rmdir {} \; 2>/dev/null || true`,
+      "/tmp",
+      3_000,
+    )
+    .catch(() => undefined);
+
   const result = await sandbox.exec(
     `mkdir ${shellQuote(CODE_SERVER_LOCKDIR)}`,
     "/tmp",
@@ -321,6 +366,9 @@ export async function POST(req: Request, context: RouteContext) {
 
       try {
         await sandbox.execDetached(launchCommand, workingDirectory);
+        if (!(await waitForCodeServer(sandbox))) {
+          throw new Error("Code editor did not become ready on its Workspace port");
+        }
       } catch (error) {
         await sandbox
           .exec(

@@ -4,8 +4,8 @@ import type { LanguageModelUsage, ModelMessage } from "ai";
 import { addLanguageModelUsage } from "@/app/workflows/usage-utils";
 import { TERMINAL_BENCH_TASK_FILES } from "./terminal-bench-smoke-task";
 
-// Keep one model task below Vercel Workflow's 300-second step ceiling.
-const MAX_STEPS = 3;
+// Admin-requested long-horizon run.
+const MAX_STEPS = 10;
 const VERIFY = `
 const { readdirSync, readFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");

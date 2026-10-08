@@ -2982,3 +2982,9 @@ change to just model and show all model price" (commit 6fdc801).
 - Production boxd machines use the smallest documented class, 1 vCPU / 4 GiB RAM. They suspend after 5 minutes idle and hibernate after 15 minutes, preserving disk state while releasing active compute.
 - Archive cleanup must destroy boxd machines, while ordinary lifecycle stop hibernates them so pause/resume preserves the workspace.
 - `BOXD_API_KEY` is a production Vercel secret and must never be committed or copied into repository files.
+
+## 2026-10-08: boxd reconnect state
+
+- Boxd uses `machineId` as its durable reconnect handle. The generic sandbox readiness helpers originally only recognized Modal's `volumeName`, so boxd sessions were reported as unavailable to workspace tools even after provisioning.
+- Provider-neutral sandbox state helpers must recognize each provider's resumable identity. Boxd has no `expiresAt` requirement because its connect path probes and wakes suspended or hibernated machines.
+- `web_fetch` intentionally runs through the session sandbox for DNS/SSRF validation and full-response persistence. Fixing sandbox reconnect is safer than bypassing that isolation with host-side fetches.

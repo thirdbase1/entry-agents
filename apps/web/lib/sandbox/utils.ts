@@ -55,6 +55,18 @@ export function getSessionSandboxName(sessionId: string): string {
 }
 
 export function getResumableSandboxName(state: unknown): string | null {
+  if (!state || typeof state !== "object") {
+    return null;
+  }
+
+  const typedState = state as { type?: unknown; machineId?: unknown };
+
+  // Boxd machines retain their workspace across suspend/hibernate, so the
+  // machine id is the durable reconnect handle.
+  if (typedState.type === "boxd" && hasNonEmptyString(typedState.machineId)) {
+    return typedState.machineId;
+  }
+
   // Modal's resumable handle is the Volume, not the sandbox: a sandbox id
   // is only ever a handle on a live container, while the volume holds the
   // workspace across container lifetimes.
@@ -171,6 +183,12 @@ export function isSandboxUnavailableError(message: string): boolean {
 }
 
 function hasRuntimeState(state: SandboxState): boolean {
+  // Boxd exposes a durable machine id but no hard expiry timestamp. Its
+  // connect() path probes the machine and wakes it when suspended/hibernated.
+  if (state.type === "boxd") {
+    return hasResumableSandboxState(state);
+  }
+
   const expiresAt = getSandboxExpiresAt(state);
   if (expiresAt === undefined) {
     return false;
@@ -191,17 +209,26 @@ export function clearSandboxState(
 ): SandboxState | null {
   if (!state) return null;
 
-  // Only Modal has durable resume state to preserve; a local sandbox
-  // has none, so it clears down to its bare discriminator.
-  const volumeName = getModalVolumeName(state);
-  if (volumeName) {
+  const source = (state as { source?: unknown }).source;
+  const sourcePatch = source ? { source } : {};
+
+  // Preserve Boxd's machine identity across a temporary unavailable/error
+  // state so the next connect can wake the same workspace.
+  if (state.type === "boxd") {
+    const boxd = state as { machineId?: unknown; machineName?: unknown };
     return {
       type: state.type,
-      volumeName,
-      ...((state as ModalSandboxState).source
-        ? { source: (state as ModalSandboxState).source }
-        : {}),
+      ...(hasNonEmptyString(boxd.machineId) ? { machineId: boxd.machineId } : {}),
+      ...(hasNonEmptyString(boxd.machineName) ? { machineName: boxd.machineName } : {}),
+      ...sourcePatch,
     } as SandboxState;
+  }
+
+  // Modal's durable resume state is its Volume. A local sandbox has none,
+  // so it clears down to its bare discriminator.
+  const volumeName = getModalVolumeName(state);
+  if (volumeName) {
+    return { type: state.type, volumeName, ...sourcePatch } as SandboxState;
   }
 
   return { type: state.type } as SandboxState;

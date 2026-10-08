@@ -92,8 +92,12 @@ function mapGoogleProfileToUser(profile: GoogleProfile): { username: string } {
   };
 }
 
-function mapGitHubProfileToUser(profile: GithubProfile): { username: string } {
+function mapGitHubProfileToUser(profile: GithubProfile): { username: string; email: string } {
   return {
+    // GitHub can hide a user's email even when the user:email scope is granted.
+    // Better Auth requires an email to create the user, so use GitHub's stable
+    // noreply identity when the public profile does not include one.
+    email: profile.email ?? `${profile.id}+${profile.login}@users.noreply.github.com`,
     username: deriveAuthUsername({
       id: profile.id,
       username: profile.login,

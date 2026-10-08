@@ -52,6 +52,7 @@ export async function runTerminalBenchTask(
       timeout: 1_800_000,
     },
   });
+  const root = sandbox.workingDirectory;
   const startedAt = Date.now();
   const transcript: ModelMessage[] = [];
   let usage: LanguageModelUsage | undefined;
@@ -59,16 +60,17 @@ export async function runTerminalBenchTask(
     for (const [relative, encoded] of Object.entries(
       TERMINAL_BENCH_TASK_FILES,
     )) {
-      const target =
-        relative === "TASK_INSTRUCTION.md"
-          ? "/app/TASK_INSTRUCTION.md"
-          : `/app/${relative}`;
+      const target = `${root}/${relative}`;
       const parent = target.slice(0, target.lastIndexOf("/"));
       await sandbox.mkdir(parent, { recursive: true });
       await sandbox.writeFileBuffer(target, Buffer.from(encoded, "base64"));
     }
-    await sandbox.writeFile("/tmp/verify-terminal-bench.js", VERIFY, "utf-8");
-    const prompt = await sandbox.readFile("/app/TASK_INSTRUCTION.md", "utf-8");
+    const verifyPath = `${root}/verify-terminal-bench.js`;
+    await sandbox.writeFile(verifyPath, VERIFY, "utf-8");
+    const prompt = await sandbox.readFile(
+      `${root}/TASK_INSTRUCTION.md`,
+      "utf-8",
+    );
     const messages: ModelMessage[] = [
       {
         role: "user",
@@ -81,7 +83,7 @@ export async function runTerminalBenchTask(
         options: {
           sandbox: {
             state: { type: "boxd", machineName: machineName(runId, modelId) },
-            workingDirectory: "/app",
+            workingDirectory: root,
           },
           model: modelId,
           permissionMode: "fullAccess",
@@ -92,11 +94,7 @@ export async function runTerminalBenchTask(
       if (result.finishReason !== "tool-calls") break;
     }
     transcript.push(...messages);
-    const verification = await sandbox.exec(
-      "bun /tmp/verify-terminal-bench.js",
-      "/app",
-      120_000,
-    );
+    const verification = await sandbox.exec(`bun ${verifyPath}`, root, 120_000);
     if (verification.exitCode !== 0)
       return {
         passed: false,

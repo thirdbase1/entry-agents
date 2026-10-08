@@ -202,10 +202,11 @@ export const SANDBOX_MIGRATION_MAX_ATTEMPTS = 5;
  * - 3000: Next.js, Express, Remix
  * - 5173: Vite, SvelteKit
  * - 4321: Astro
- * - 8000: code-server (built-in editor)
+ * - 8888: code-server (built-in editor, deliberately separate from common app ports)
+ * - 8000: legacy app compatibility
  */
-export const DEFAULT_SANDBOX_PORTS = [3000, 5173, 4321, 8000];
-export const CODE_SERVER_PORT = 8000;
+export const DEFAULT_SANDBOX_PORTS = [3000, 5173, 4321, 8000, 8888];
+export const CODE_SERVER_PORT = 8888;
 
 /** Default working directory for sandboxes, used for path display */
 export const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";

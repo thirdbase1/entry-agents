@@ -53,6 +53,7 @@ type UserRecord = {
 };
 
 export type ProvisionSessionSandboxResult = {
+  sandbox: Sandbox;
   sandboxState: SandboxState;
   workingDirectory: string;
   currentBranch?: string;
@@ -317,6 +318,7 @@ export async function provisionSessionSandbox(params: {
   });
 
   return {
+    sandbox,
     sandboxState,
     workingDirectory: sandbox.workingDirectory,
     currentBranch: sandbox.currentBranch,

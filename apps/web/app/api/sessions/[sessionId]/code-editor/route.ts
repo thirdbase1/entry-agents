@@ -1,11 +1,12 @@
 import { connectSandbox } from "@open-agents/sandbox";
 import {
   requireAuthenticatedUser,
-  requireOwnedSessionWithSandboxGuard,
+  requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
 import { CODE_SERVER_PORT, DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
 import { getServerSession } from "@/lib/session/get-server-session";
-import { isSandboxActive } from "@/lib/sandbox/utils";
+import { provisionSessionSandbox } from "@/lib/sandbox/provisioning";
+import { isSandboxActive, isSandboxState } from "@/lib/sandbox/utils";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -36,26 +37,27 @@ function shellQuote(value: string): string {
 }
 
 async function connectCodeEditorSandbox(sessionId: string, userId: string) {
-  const sessionContext = await requireOwnedSessionWithSandboxGuard({
-    userId,
-    sessionId,
-    sandboxGuard: isSandboxActive,
-    sandboxErrorMessage: "Resume the sandbox before opening the editor",
-    sandboxErrorStatus: 409,
-  });
+  const sessionContext = await requireOwnedSession({ userId, sessionId });
   if (!sessionContext.ok) {
     return sessionContext;
   }
 
-  const sandboxState = sessionContext.sessionRecord.sandboxState;
-  if (!sandboxState) {
-    return {
-      ok: false as const,
-      response: Response.json(
-        { error: "Resume the sandbox before opening the editor" },
-        { status: 409 },
-      ),
-    };
+  let sessionRecord = sessionContext.sessionRecord;
+  let sandboxState = sessionRecord.sandboxState;
+
+  // Opening the editor is itself a valid request to wake the Workspace. Do
+  // not force the user to press a separate Resume button first. Provisioning
+  // is idempotent for boxd and also repairs legacy/incomplete provider state.
+  if (!isSandboxActive(sandboxState)) {
+    const provisioned = await provisionSessionSandbox({ sessionId, userId });
+    sessionRecord = provisioned.session;
+    sandboxState = provisioned.sandboxState;
+    return { ok: true as const, sandbox: provisioned.sandbox };
+  }
+
+  if (!sandboxState || !isSandboxState(sandboxState)) {
+    const provisioned = await provisionSessionSandbox({ sessionId, userId });
+    return { ok: true as const, sandbox: provisioned.sandbox };
   }
 
   const sandbox = await connectSandbox(sandboxState, {
@@ -239,11 +241,10 @@ export async function GET(_req: Request, context: RouteContext) {
     const port = CODE_SERVER_PORT;
     const running = await isCodeServerRunning(sandbox);
 
-    return Response.json({
-      running,
-      url: running && sandbox.domain ? sandbox.domain(port) : null,
-      port,
-    } satisfies CodeEditorStatusResponse);
+    return Response.json(
+      { running, url: running && sandbox.domain ? sandbox.domain(port) : null, port } satisfies CodeEditorStatusResponse,
+      { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+    );
   } catch (error) {
     console.error("Failed to check code editor status:", error);
     return Response.json(
@@ -299,10 +300,10 @@ export async function POST(req: Request, context: RouteContext) {
     try {
       // Reuse an existing code-server process when we can positively identify it.
       if (await isCodeServerRunning(sandbox)) {
-        return Response.json({
-          url: sandbox.domain(port),
-          port,
-        } satisfies CodeEditorLaunchResponse);
+        return Response.json(
+          { url: sandbox.domain(port), port } satisfies CodeEditorLaunchResponse,
+          { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+        );
       }
 
       if (await isPortInUse(sandbox, port)) {
@@ -331,10 +332,10 @@ export async function POST(req: Request, context: RouteContext) {
         throw error;
       }
 
-      return Response.json({
-        url: sandbox.domain(port),
-        port,
-      } satisfies CodeEditorLaunchResponse);
+      return Response.json(
+        { url: sandbox.domain(port), port } satisfies CodeEditorLaunchResponse,
+        { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+      );
     } finally {
       await releaseCodeServerLaunchLock(sandbox);
     }

@@ -74,16 +74,22 @@ async function bootstrapWorkspace(
 }
 
 export async function connectBoxd(
-  state: BoxdState & { sessionId: string },
+  state: BoxdState,
   options?: ConnectOptions,
 ): Promise<Sandbox> {
   if (!isBoxdConfigured()) throw new Error("boxd is not configured: set BOXD_API_KEY or BOXD_TOKEN");
   const client = new Boxd();
-  const name = state.machineName ?? `entry-${state.sessionId}`.slice(0, 48);
-  let machine = state.machineId ? await client.machines.get(state.machineId).catch(() => null) : null;
+  const name = state.machineName;
+  if (!name || /^entry-undefined(?:-|$)/.test(name)) {
+    throw new Error("boxd workspace is missing a stable machine name; reprovision the session");
+  }
+  let machine = state.machineId
+    ? await client.machines.get(state.machineId).catch(() => null)
+    : await client.machines.get(name).catch(() => null);
 
   if (!machine) {
-    machine = await client.machines.create({
+    try {
+      machine = await client.machines.create({
       name,
       image: "ubuntu:24.04",
       // Use the default network so workspace commands have outbound internet
@@ -100,6 +106,21 @@ export async function connectBoxd(
         ssh: true,
       },
     });
+    } catch (error) {
+      // Resume is frequently triggered by both the editor and lifecycle
+      // monitor. If they race, boxd may report that the deterministic name
+      // is already taken even though the first request created the machine.
+      // Resolve the existing named machine instead of surfacing a false
+      // restore failure.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.toLowerCase().includes("already taken")) throw error;
+      machine = await client.machines.get(name).catch(() => null);
+      if (!machine) {
+        const machines = await client.machines.list();
+        machine = machines.find((candidate) => candidate.name === name) ?? null;
+      }
+      if (!machine) throw error;
+    }
     await client.machines.setAutoHibernateTimeout(machine.id, 900);
   } else if (machine.status === "stopped") {
     await client.machines.start(machine.id);

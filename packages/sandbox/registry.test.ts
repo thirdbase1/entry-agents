@@ -64,15 +64,11 @@ function stubConnect(
 
 describe("sandbox provider registry", () => {
   test("registers exactly modal (user-selectable) and local (dev-only)", () => {
-    // Vercel and Boat were removed when Modal became the only cloud
-    // provider. The registry is the single source of truth, so this test
-    // is what catches a stale provider id surviving anywhere in the app.
     const selectable = listUserSelectableSandboxProviders().map(
       (provider) => provider.id,
     );
-    // Modal leads: it is the registry default and the default provider's
-    // capabilities (volumes, no migration) are what Entry is built around.
-    expect(selectable).toEqual(["modal"]);
+    // boxd is the production default and must lead the selector.
+    expect(selectable).toEqual(["boxd", "modal"]);
     expect(selectable).not.toContain("local");
 
     expect(isKnownSandboxType("modal")).toBe(true);
@@ -86,7 +82,7 @@ describe("sandbox provider registry", () => {
 
   test("default provider is modal", () => {
     expect(DEFAULT_SANDBOX_PROVIDER).toBe("boxd");
-    expect(listUserSelectableSandboxProviders()[0]?.id).toBe("modal");
+    expect(listUserSelectableSandboxProviders()[0]?.id).toBe("boxd");
   });
 
   test("unknown provider fails safely instead of falling back", () => {
@@ -237,6 +233,19 @@ describe("provider state shape and persistence", () => {
       type: "modal",
       volumeName: "entry-workspace-abc",
     });
+  });
+
+  test("boxd provision state always has a stable non-undefined machine name", () => {
+    const provider = requireSandboxProvider("boxd");
+    const first = provider.buildProvisionState({ sessionId: "abc-123" });
+    expect(first).toMatchObject({ type: "boxd" });
+    expect((first as { machineName: string }).machineName).toMatch(/^entry-[a-f0-9]{24}$/);
+
+    const repaired = provider.buildProvisionState({
+      sessionId: "abc-123",
+      existing: { type: "boxd", machineName: "entry-undefined" },
+    });
+    expect(repaired).toMatchObject({ machineName: (first as { machineName: string }).machineName });
   });
 
   test("source is carried through for modal", () => {

@@ -167,8 +167,8 @@ export const SANDBOX_TYPES = ["modal", "local", "boxd"] as const satisfies reado
  * is what makes "which sandbox am I on" readable at a glance.
  */
 export const USER_SELECTABLE_SANDBOX_TYPES = [
-  "modal",
   "boxd",
+  "modal",
 ] as const satisfies readonly SandboxProviderId[];
 
 /**

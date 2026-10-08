@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Server-side sandbox provider registry: binds each registered provider id
  * to its `connect()` implementation and its state-shape normalisation.
@@ -99,15 +100,32 @@ const boxdProvider: SandboxProvider = {
 
   async connect(state, options) {
     if (state.type !== "boxd") throw new UnsupportedSandboxProviderError(String(state.type));
-    return connectBoxd(state as { type: "boxd" } & BoxdState & { sessionId: string }, options);
+    return connectBoxd(state as { type: "boxd" } & BoxdState, options);
   },
 
   buildProvisionState({ existing, sessionId, source }) {
     const current = existing?.type === "boxd" ? (existing as { type: "boxd" } & BoxdState) : undefined;
+    // Always persist the session-derived name. Older rows could contain
+    // `entry-undefined` because boxd's connector originally expected a
+    // sessionId that was never included in persisted provider state.
+    // Keeping the identity here makes every reconnect deterministic and
+    // prevents concurrent resume calls from racing on an invalid name.
+    // Do not put the raw session id in the public boxd hostname. The
+    // machine name is also the editor subdomain, so it must be opaque even
+    // though the machine id remains the durable reconnect handle.
+    const sessionNameHash = createHash("sha256")
+      .update(sessionId)
+      .digest("hex")
+      .slice(0, 24);
+    const stableMachineName = `entry-${sessionNameHash}`;
+    const machineName =
+      current?.machineName && !/^entry-undefined(?:-|$)/.test(current.machineName)
+        ? current.machineName
+        : stableMachineName;
     return {
       type: "boxd",
+      machineName,
       ...(current?.machineId ? { machineId: current.machineId } : {}),
-      ...(current?.machineName ? { machineName: current.machineName } : {}),
       ...(source ? { source } : {}),
     } as SandboxState;
   },

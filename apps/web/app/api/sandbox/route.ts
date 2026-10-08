@@ -201,6 +201,10 @@ export async function POST(req: Request) {
   const startTime = Date.now();
 
   let sandbox: Awaited<ReturnType<typeof connectSandbox>>;
+  const activeProviderId =
+    sessionRecord?.sandboxState?.type ??
+    body.sandboxType ??
+    DEFAULT_SANDBOX_PROVIDER;
   try {
     const ghProfile = await getGitHubUserProfile(session.user.id);
     const githubNoreplyEmail =
@@ -220,11 +224,7 @@ export async function POST(req: Request) {
     // the request's validated value, then the registry default) -- never
     // hardcoded, so an on-demand create runs on the sandbox the user
     // actually selected.
-    const provider = requireSandboxProvider(
-      sessionRecord?.sandboxState?.type ??
-        body.sandboxType ??
-        DEFAULT_SANDBOX_PROVIDER,
-    );
+    const provider = requireSandboxProvider(activeProviderId);
 
     sandbox = await connectSandbox({
       state: provider.buildProvisionState({ sessionId, source }),
@@ -298,7 +298,7 @@ export async function POST(req: Request) {
     createdAt: Date.now(),
     timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
     currentBranch: repoUrl ? branch : undefined,
-    mode: "vercel",
+    mode: activeProviderId === "boxd" ? "workspace" : activeProviderId,
     timing: { readyMs },
   });
 }

@@ -2988,3 +2988,12 @@ change to just model and show all model price" (commit 6fdc801).
 - Boxd uses `machineId` as its durable reconnect handle. The generic sandbox readiness helpers originally only recognized Modal's `volumeName`, so boxd sessions were reported as unavailable to workspace tools even after provisioning.
 - Provider-neutral sandbox state helpers must recognize each provider's resumable identity. Boxd has no `expiresAt` requirement because its connect path probes and wakes suspended or hibernated machines.
 - `web_fetch` intentionally runs through the session sandbox for DNS/SSRF validation and full-response persistence. Fixing sandbox reconnect is safer than bypassing that isolation with host-side fetches.
+
+## 2026-10-08: boxd editor resume and hostname hardening
+
+- boxd provider state must persist a stable `machineName`; the connector does not receive a session ID at connect time. Missing it produced `entry-undefined` and snapshot resume failures.
+- Editor startup now provisions or wakes the session Workspace automatically instead of requiring a separate Resume action.
+- boxd machine names are opaque SHA-256-derived identifiers rather than raw session IDs, because the machine hostname is also the editor subdomain.
+- Concurrent editor/lifecycle startup races are resolved by looking up the existing machine when boxd reports that the deterministic name is already taken.
+- The built-in code editor uses port 8888, while 8000 remains available for application servers. The default exposed port set includes both.
+- Required editor runtime configuration is `POSTGRES_URL`, Better Auth settings, `GATEWAY_BASE_URL`, `GATEWAY_API_KEY`, and `BOXD_API_KEY` or `BOXD_TOKEN`. `PARALLEL_API_KEY` enables web search but is not required for editing or shell work.

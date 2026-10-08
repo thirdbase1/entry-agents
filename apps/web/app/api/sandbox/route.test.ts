@@ -402,7 +402,7 @@ describe("/api/sandbox lifecycle kicks", () => {
       mode: string;
     };
     expect(payload.timeout).toBe(DEFAULT_SANDBOX_TIMEOUT_MS);
-    expect(payload.mode).toBe("vercel");
+    expect(payload.mode).toBe("workspace");
   });
 
   test("commented-out env sync does not run during sandbox creation", async () => {

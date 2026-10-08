@@ -7,9 +7,9 @@ const RUNNING_CODE_SERVER_PID = "9001";
 const currentSessionRecord = {
   userId: "user-1",
   sandboxState: {
-    type: "vercel" as const,
-    sandboxId: "sandbox-1",
-    expiresAt: Date.now() + 60_000,
+    type: "boxd" as const,
+    machineId: "machine-1",
+    machineName: "entry-test-machine",
   },
 };
 
@@ -59,7 +59,7 @@ const requireAuthenticatedUserMock = mock(async () => ({
   ok: true as const,
   userId: "user-1",
 }));
-const requireOwnedSessionWithSandboxGuardMock = mock(async () => ({
+const requireOwnedSessionMock = mock(async () => ({
   ok: true as const,
   sessionRecord: currentSessionRecord,
 }));
@@ -126,7 +126,7 @@ const execDetachedMock = mock(async (command: string, cwd: string) => {
 
   fileContents.set(CODE_EDITOR_PID_FILE, `${RUNNING_CODE_SERVER_PID}\n`);
   runningPids.add(RUNNING_CODE_SERVER_PID);
-  processListOutput = ` ${RUNNING_CODE_SERVER_PID} code-server --port 8000 --auth none --bind-addr 0.0.0.0:8000 /vercel/sandbox\n`;
+  processListOutput = ` ${RUNNING_CODE_SERVER_PID} code-server --port 8888 --auth none --bind-addr 0.0.0.0:8888 /vercel/sandbox\n`;
 
   return { commandId: "cmd-1" };
 });
@@ -141,7 +141,7 @@ const connectSandboxMock = mock(async () => ({
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: requireAuthenticatedUserMock,
-  requireOwnedSessionWithSandboxGuard: requireOwnedSessionWithSandboxGuardMock,
+  requireOwnedSession: requireOwnedSessionMock,
 }));
 
 mock.module("@open-agents/sandbox", () => ({
@@ -170,9 +170,8 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
     lastLaunchCommand = null;
     lastLaunchCwd = null;
     currentAuthSession = null;
-    currentSessionRecord.sandboxState.expiresAt = Date.now() + 60_000;
     requireAuthenticatedUserMock.mockClear();
-    requireOwnedSessionWithSandboxGuardMock.mockClear();
+    requireOwnedSessionMock.mockClear();
     connectSandboxMock.mockClear();
     execMock.mockClear();
     readFileMock.mockClear();
@@ -201,7 +200,7 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
     expect(body).toEqual({
       running: false,
       url: null,
-      port: 8000,
+      port: 8888,
     });
   });
 
@@ -222,7 +221,7 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
 
     expect(response.status).toBe(409);
     expect(body).toEqual({
-      error: "Port 8000 is already in use by another process",
+      error: "Port 8888 is already in use by another process",
     });
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
   });
@@ -231,7 +230,7 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
     const { POST } = await routeModulePromise;
 
     processListOutput =
-      " 9001 code-server --port 8000 --auth none --bind-addr 0.0.0.0:8000 /vercel/sandbox\n";
+      " 9001 code-server --port 8888 --auth none --bind-addr 0.0.0.0:8888 /vercel/sandbox\n";
     runningPids.add(RUNNING_CODE_SERVER_PID);
 
     const response = await POST(
@@ -244,8 +243,8 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
-      url: "https://sb-8000.vercel.run",
-      port: 8000,
+      url: "https://sb-8888.vercel.run",
+      port: 8888,
     });
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
   });
@@ -312,12 +311,12 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
-      url: "https://sb-8000.vercel.run",
-      port: 8000,
+      url: "https://sb-8888.vercel.run",
+      port: 8888,
     });
     expect(execDetachedMock).toHaveBeenCalledTimes(1);
     expect(lastLaunchCwd).toBe("/vercel/sandbox");
-    expect(lastLaunchCommand).toContain("code-server --port 8000");
+    expect(lastLaunchCommand).toContain("code-server --port 8888");
     expect(fileContents.get(CODE_EDITOR_PID_FILE)).toBe(
       `${RUNNING_CODE_SERVER_PID}\n`,
     );

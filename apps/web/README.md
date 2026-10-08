@@ -1,38 +1,21 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Entry Agents web runtime
 
-## Environment Variables
+Entry Agents is the web editor and agent workspace for entry-agents.dev. The editor can start from a blank Workspace, uploaded files, or an optional GitHub repository. The public runtime uses Entry Gateway for model routing and boxd for private Workspaces.
 
-The following environment variables are required:
+## Environment
 
-| Variable | Description |
-|----------|-------------|
-| `POSTGRES_URL` | PostgreSQL connection string. Required for builds — migrations run automatically during `next build` via `lib/db/migrate.ts`. Preview deployments use a Neon branch database; production uses the main database. |
+Required for the editor and agent runtime:
 
-## Getting Started
+| Variable | Purpose |
+|---|---|
+| `POSTGRES_URL` | Session, chat, usage, and billing data. |
+| `BETTER_AUTH_SECRET` | Session signing and encryption. |
+| `BETTER_AUTH_URL` | Canonical auth origin. |
+| `NEXT_PUBLIC_SITE_URL` | Canonical public URL and metadata. |
+| `GATEWAY_BASE_URL` | Entry Gateway base URL. |
+| `GATEWAY_API_KEY` | Entry Gateway authentication. |
+| `BOXD_API_KEY` or `BOXD_TOKEN` | boxd Workspace authentication. |
 
-First, run the development server:
+`BOXD_BASE_URL` is optional and only needed for a non-default boxd cluster. `PARALLEL_API_KEY` enables the agent web-search tool but is not needed for file editing, shell commands, or normal web fetches. Sign-in provider variables are needed for the enabled OAuth buttons. GitHub App variables are optional until a user connects a repository or uses Git delivery features. See `.env.example` for the complete inventory.
 
-```bash
-pnpm dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+There is no separate sandbox or Workspace charge in the product pricing model. Credits are used for model usage through Entry Gateway.

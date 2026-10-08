@@ -2975,3 +2975,10 @@ change to just model and show all model price" (commit 6fdc801).
 - **`cp -a` fails on a re-clone into a populated Volume.** The destination already holds byte-identical `.git` objects, and cp refuses "same file" hard enough to exit non-zero. Use `cp -a --no-clobber` — skipping what is already there is the correct merge semantic for a durable workspace.
 - **`OPEN_AGENTS_SANDBOX_DRIVE` is OFF BY DEFAULT and gates the whole design.** Without it no Volume is attached at all and the "no migration / files survive expiry" property silently does not hold — while everything typechecks and every unit test still passes. Set it (or delete the flag) whenever the persistent workspace is the intent.
 - **Cheapest legal Modal shape: 1 vCPU / 2 GiB.** Modal bills per second with no idle charge; ~$0.17/hour plus a 1 GiB Volume at ~$0.09/month. `cpu`/`memoryMiB` are reservations, so they are what you pay. Below ~0.25 cores the container schedules against itself harder than a laptop, so 1 core is the honest floor, not the API's 0.125 minimum.
+
+## 2026-10-08: boxd sandbox provider
+
+- Added boxd as a registry-backed sandbox provider rather than branching provider logic through the app workflows. The persisted discriminator is `sandbox_state.type = "boxd"`, with the boxd machine id and name carried in provider state.
+- Production boxd machines use the smallest documented class, 1 vCPU / 4 GiB RAM. They suspend after 5 minutes idle and hibernate after 15 minutes, preserving disk state while releasing active compute.
+- Archive cleanup must destroy boxd machines, while ordinary lifecycle stop hibernates them so pause/resume preserves the workspace.
+- `BOXD_API_KEY` is a production Vercel secret and must never be committed or copied into repository files.

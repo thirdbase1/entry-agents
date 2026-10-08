@@ -13,9 +13,9 @@ import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-conte
 // intentionally NOT imported here -- see runTaskStep below, which loads
 // it via a dynamic import() inside its own `"use step"` function instead.
 import {
-  HUMANEVAL_SUITE_VERSION,
-  loadHumanEvalSubset,
-} from "@/lib/benchmarks/humaneval-tasks";
+  TERMINAL_BENCH_TASK_ID,
+  TERMINAL_BENCH_TASK_VERSION,
+} from "@/lib/benchmarks/terminal-bench-smoke-task";
 
 /**
  * Default set of models benchmarked when no explicit list is given.
@@ -59,7 +59,7 @@ async function createRunStep(
 ): Promise<string> {
   "use step";
   return createBenchmarkRun({
-    suiteVersion: HUMANEVAL_SUITE_VERSION,
+    suiteVersion: TERMINAL_BENCH_TASK_VERSION,
     modelIds,
     ...(triggeredBy ? { triggeredBy } : {}),
   });
@@ -100,24 +100,15 @@ async function runTaskStep(
   cost: AvailableModelCost | undefined,
 ): Promise<TaskStepResult> {
   "use step";
-  const task = loadHumanEvalSubset().find((t) => t.task_id === taskId);
-  if (!task) {
-    return {
-      passed: false,
-      latencyMs: 0,
-      errorMessage: `Unknown task ${taskId}`,
-    };
-  }
-
-  // Dynamic import: humaneval-runner.ts touches Node-only modules
+  // Dynamic import keeps sandbox and agent modules out of the restricted workflow bundle.
   // (fs/child_process/os/path + @open-agents/sandbox's connectLocal),
   // which the Workflow SDK bundler forbids anywhere reachable via a
   // static import from a `"use workflow"` file. Deferring the import to
   // runtime, inside this `"use step"` function, keeps that code out of
   // the restricted workflow bundle entirely.
-  const { runHumanEvalTask } =
-    await import("@/lib/benchmarks/humaneval-runner");
-  const result = await runHumanEvalTask(modelId, task, runId);
+  const { runTerminalBenchTask } =
+    await import("@/lib/benchmarks/terminal-bench-runner");
+  const result = await runTerminalBenchTask(modelId, runId);
 
   let costMicros: number | undefined;
   if (result.usage?.inputTokens != null && result.usage.outputTokens != null) {
@@ -182,7 +173,7 @@ export interface RunBenchmarkSuiteResult {
 }
 
 /**
- * Durable Vercel Workflow that runs the full HumanEval benchmark suite
+ * Durable Vercel Workflow that runs the modern Terminal-Bench smoke track
  * across a set of models. Routed through the Workflow SDK (same
  * durable-step pattern as the real chat turn pipeline and
  * archive-sandbox-stop) because a full run -- real, multi-step agent
@@ -204,7 +195,7 @@ export async function runBenchmarkSuiteWorkflow(
     : selectDefaultBenchmarkModels(catalog.availableModelIds);
   const runId = await createRunStep(selectedModelIds, triggeredBy);
   const costByModelId = catalog.costByModelId;
-  const taskIds = loadHumanEvalSubset().map((t) => t.task_id);
+  const taskIds = [TERMINAL_BENCH_TASK_ID];
 
   let hadFailure = false;
 
@@ -222,7 +213,7 @@ export async function runBenchmarkSuiteWorkflow(
     for (const taskId of taskIds) {
       if (!isKnownModel) {
         hadFailure = true;
-        await recordResultStep(runId, modelId, "humaneval", taskId, {
+        await recordResultStep(runId, modelId, "terminal_bench", taskId, {
           passed: false,
           latencyMs: 0,
           errorMessage: `Unknown model id "${modelId}" -- not present in the live gateway catalog (GET /v1/models). Check for a typo or a stale/legacy id.`,
@@ -236,10 +227,16 @@ export async function runBenchmarkSuiteWorkflow(
           taskId,
           costByModelId[modelId],
         );
-        await recordResultStep(runId, modelId, "humaneval", taskId, result);
+        await recordResultStep(
+          runId,
+          modelId,
+          "terminal_bench",
+          taskId,
+          result,
+        );
       } catch (error) {
         hadFailure = true;
-        await recordResultStep(runId, modelId, "humaneval", taskId, {
+        await recordResultStep(runId, modelId, "terminal_bench", taskId, {
           passed: false,
           latencyMs: 0,
           errorMessage: error instanceof Error ? error.message : String(error),

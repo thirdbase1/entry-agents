@@ -27,7 +27,7 @@ import {
 import type { BenchmarkRunWithProgress } from "@/lib/db/benchmarks";
 import { cn } from "@/lib/utils";
 
-const TASKS_PER_MODEL = 20; // historical run progress only
+const TASKS_PER_MODEL = 1; // one task per modern benchmark track run
 
 function statusBadge(status: BenchmarkRunWithProgress["status"]) {
   if (status === "running") {
@@ -179,9 +179,9 @@ export function AdminBenchmarksSection() {
         <CardHeader>
           <CardTitle>Run benchmarks</CardTitle>
           <CardDescription>
-            The legacy single-benchmark runner is paused. New runs will use the
-            multi-track coding-agent suite: SWE-bench Verified, Terminal-Bench,
-            LiveCodeBench, and Aider Polyglot.
+            Runs the current Terminal-Bench track through the real agent
+            harness. The remaining supported tracks will appear as their runners
+            are enabled.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -225,13 +225,13 @@ export function AdminBenchmarksSection() {
           )}
 
           <div className="flex items-center gap-3">
-            <Button onClick={handleStart} disabled>
+            <Button onClick={handleStart} disabled={starting || anyRunning}>
               {starting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Play className="size-4" />
               )}
-              Modern suite runner coming online
+              Start Terminal-Bench run ({selected.size} selected)
             </Button>
             {anyRunning ? (
               <span className="text-xs text-muted-foreground">

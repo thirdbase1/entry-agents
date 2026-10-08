@@ -769,7 +769,14 @@ export const benchmarkResults = pgTable(
       .references(() => benchmarkRuns.id, { onDelete: "cascade" }),
     modelId: text("model_id").notNull(),
     benchmark: text("benchmark", {
-      enum: ["humaneval", "swebench_verified", "entry_tasks"],
+      enum: [
+        "humaneval",
+        "swebench_verified",
+        "terminal_bench",
+        "livecodebench",
+        "aider_polyglot",
+        "entry_tasks",
+      ],
     }).notNull(),
     taskId: text("task_id").notNull(),
     passed: boolean("passed").notNull(),

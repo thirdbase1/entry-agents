@@ -3,7 +3,13 @@ import { nanoid } from "nanoid";
 import { db } from "./client";
 import { benchmarkResults, benchmarkRuns } from "./schema";
 
-export type BenchmarkName = "humaneval" | "swebench_verified" | "entry_tasks";
+export type BenchmarkName =
+  | "humaneval"
+  | "swebench_verified"
+  | "terminal_bench"
+  | "livecodebench"
+  | "aider_polyglot"
+  | "entry_tasks";
 
 /**
  * Creates a new "running" benchmark run row. Only ever called from the
@@ -130,6 +136,9 @@ export function summarizeBenchmarkResultRows(
         results: {
           humaneval: undefined,
           swebench_verified: undefined,
+          terminal_bench: undefined,
+          livecodebench: undefined,
+          aider_polyglot: undefined,
           entry_tasks: undefined,
         },
         avgLatencyMs: null,

@@ -5,7 +5,7 @@ import { runBenchmarkSuiteWorkflow } from "@/app/workflows/run-benchmarks";
 export const dynamic = "force-dynamic";
 
 /**
- * Kicks off a full HumanEval benchmark run as a durable Vercel Workflow
+ * Kicks off a modern Terminal-Bench benchmark run as a durable Vercel Workflow
  * (see app/workflows/run-benchmarks.ts for why this can't be a plain
  * synchronous request -- real multi-model, multi-task agent runs take
  * far longer than one serverless request's timeout).

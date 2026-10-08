@@ -30,6 +30,9 @@ function mergeWithPlaceholders(
         results: {
           humaneval: undefined,
           swebench_verified: undefined,
+          terminal_bench: undefined,
+          livecodebench: undefined,
+          aider_polyglot: undefined,
           entry_tasks: undefined,
         },
         avgLatencyMs: null,

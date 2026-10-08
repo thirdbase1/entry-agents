@@ -53,7 +53,7 @@ Benchmarks on the site are real runs from Entry Agents' own agent harness, using
 ## Public pages
 
 - [Entry Agents](${SITE_URL}/): Product overview and sign-in.
-- [AI coding agent](${SITE_URL}/ai-coding-agent): How the platform works on repository tasks.
+- [AI coding agent](${SITE_URL}/ai-coding-agent): How the platform builds software with or without a repository.
 - [Pricing](${SITE_URL}/pricing): Credit-based plans.
 - [Models](${SITE_URL}/model): Supported models, prices and context windows.
 - [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from the real harness.

@@ -4,9 +4,9 @@ import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { SITE_URL } from "@/lib/site";
 
-const title = "AI coding agent for repository tasks";
+const title = "AI Coding Agent for Building Software";
 const description =
-  "Entry Agents is an AI coding agent that works on repository tasks in isolated cloud sandboxes, then commits and pushes the result through Git.";
+  "Entry Agents is an affordable autonomous AI coding agent for building apps, scripts, websites, and software projects in a private Workspace, with or without a GitHub repository.";
 
 export const metadata: Metadata = {
   title,
@@ -16,11 +16,11 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: "/ai-coding-agent",
-    title: "Entry Agents — AI coding agent for repository tasks",
+    title: "Entry Agents — AI coding agent for building software",
     description,
   },
   twitter: {
-    title: "Entry Agents — AI coding agent for repository tasks",
+    title: "Entry Agents — AI coding agent for building software",
     description,
   },
 };
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  name: "Entry Agents — AI coding agent for repository tasks",
+  name: "Entry Agents — AI coding agent for building software",
   description,
   url: `${SITE_URL}/ai-coding-agent`,
   about: {
@@ -53,13 +53,14 @@ export default function AiCodingAgentPage() {
           Entry Agents
         </p>
         <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tighter sm:text-5xl md:text-6xl">
-          An AI coding agent for repository tasks.
+          An AI coding agent for building software.
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-(--l-fg-2)">
-          Entry Agents works on software tasks inside an isolated cloud sandbox.
-          Give it a repository and an objective; it can inspect code, use the
-          shell, make changes, and commit work through Git without requiring a
-          local development environment.
+          Entry Agents works on software tasks inside a private cloud Workspace.
+          Give it a plain-language idea, files, or a repository. It can
+          research, write code, use the shell, build apps, run tests, and
+          optionally deliver the result through Git, without requiring a local
+          development environment.
         </p>
 
         <section className="mt-20 grid gap-10 border-t border-(--l-border) pt-12 md:grid-cols-3">
@@ -68,9 +69,9 @@ export default function AiCodingAgentPage() {
               Work in an isolated sandbox
             </h2>
             <p className="mt-3 leading-relaxed text-(--l-fg-2)">
-              Each session has filesystem, network, and runtime access in its
-              own cloud sandbox. The agent can explore a codebase and run the
-              tools needed to complete a task.
+              Each session has filesystem, outbound network, and runtime access in its
+              own private Workspace. The agent can start from nothing, inspect
+              files, research the web, and run the tools needed to complete a task.
             </p>
           </article>
           <article>
@@ -78,9 +79,9 @@ export default function AiCodingAgentPage() {
               Keep work in Git
             </h2>
             <p className="mt-3 leading-relaxed text-(--l-fg-2)">
-              Sessions use branches and can commit and push completed work, so
-              changes stay connected to the repository workflow your team
-              already uses.
+              Sessions can use branches and commit or push completed work when a
+              repository is connected. Git delivery is useful, but never
+              required to build and download a result.
             </p>
           </article>
           <article>

@@ -80,6 +80,8 @@ export const metadata: Metadata = {
     "Entry Agents",
     "Entry AI",
     "AI coding agent",
+    "cheap AI coding agent",
+    "affordable AI agent",
     "autonomous coding agent",
     "cloud coding agent",
     "GitHub coding agent",
@@ -141,7 +143,7 @@ const structuredData = {
       operatingSystem: "Web",
       url: SITE_URL,
       featureList: [
-        "AI coding agents for repository tasks",
+        "Autonomous AI agents for building software with or without a repository",
         "Isolated cloud sandboxes",
         "Git branches, commits, and pull requests",
         "Durable multi-step agent workflows",

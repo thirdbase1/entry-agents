@@ -470,6 +470,13 @@
       "when": 1790360020000,
       "tag": "0065_boxd_default_sandbox",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1791422040000,
+      "tag": "0066_workspace_default",
+      "breakpoints": true
     }
   ]
 }

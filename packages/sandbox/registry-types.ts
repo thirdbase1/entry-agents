@@ -138,8 +138,8 @@ export const SANDBOX_PROVIDER_METADATA: Record<
 > = {
   boxd: {
     id: "boxd",
-    displayName: "boxd",
-    description: "Hardware-isolated persistent Linux machine",
+    displayName: "Workspace",
+    description: "Your persistent, hardware-isolated Linux workspace",
     capabilities: BOXD_CAPABILITIES,
   },
   modal: {
@@ -162,7 +162,7 @@ export const SANDBOX_TYPES = ["modal", "local", "boxd"] as const satisfies reado
 /**
  * Providers a user may pick in the UI. `local` is dev/test only.
  *
- * Ordered so the registry default (`modal`) leads: this list drives the
+ * Ordered so the workspace default (`boxd`) leads: this list drives the
  * selector and settings dropdown, and showing the default provider first
  * is what makes "which sandbox am I on" readable at a glance.
  */

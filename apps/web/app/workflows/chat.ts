@@ -3228,9 +3228,16 @@ const runAgentStep = async (
               // Derive the deterministic name from the session id and persist
               // it here instead of surfacing a host-resolution error.
               let repairedSandboxState = current.sandboxState;
+              const currentMachineName =
+                current.sandboxState?.type === "boxd"
+                  ? (current.sandboxState as { machineName?: unknown })
+                      .machineName
+                  : undefined;
               if (
                 current.sandboxState?.type === "boxd" &&
-                !(current.sandboxState as { machineName?: unknown }).machineName
+                (typeof currentMachineName !== "string" ||
+                  !currentMachineName ||
+                  /^entry-undefined(?:-|$)/.test(currentMachineName))
               ) {
                 const { requireSandboxProvider } =
                   await import("@open-agents/sandbox");

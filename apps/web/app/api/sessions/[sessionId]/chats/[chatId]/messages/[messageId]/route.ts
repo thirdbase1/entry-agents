@@ -7,10 +7,6 @@ import {
   deleteChatMessageAndFollowing,
   updateChatActiveStreamId,
 } from "@/lib/db/sessions";
-import {
-  isManagedTemplateTrialUser,
-  MANAGED_TEMPLATE_TRIAL_DELETE_MESSAGE_ERROR,
-} from "@/lib/managed-template-trial";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 type RouteContext = {
@@ -33,13 +29,6 @@ export async function DELETE(req: Request, context: RouteContext) {
   });
   if (!chatContext.ok) {
     return chatContext.response;
-  }
-
-  if (isManagedTemplateTrialUser(session, req.url)) {
-    return Response.json(
-      { error: MANAGED_TEMPLATE_TRIAL_DELETE_MESSAGE_ERROR },
-      { status: 403 },
-    );
   }
 
   const { chat } = chatContext;

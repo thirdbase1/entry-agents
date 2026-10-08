@@ -47,7 +47,6 @@ export function GetStartedFlow() {
     hasGitHubAccount,
     hasGitHubInstallations,
   } = useSession();
-  const isTrialUser = session?.isManagedTemplateTrialUser ?? false;
   const isGitHubReconnect = searchParams.get("step") === "github";
   const redirectPath = sanitizeInternalRedirect(
     searchParams.get("next"),
@@ -178,7 +177,7 @@ export function GetStartedFlow() {
                             hasGitHubAccount={hasGitHubAccount}
                             hasGitHubInstallations={hasGitHubInstallations}
                             forceReconnect={isGitHubReconnect}
-                            connectionDisabled={isTrialUser}
+                            connectionDisabled={false}
                             redirectPath={redirectPath}
                             onComplete={() => {
                               markComplete(2);

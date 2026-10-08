@@ -175,12 +175,6 @@ function useGitHubReturnToast() {
           description: "Contact the administrator.",
         });
         break;
-      case "trial_blocked":
-        toast.error("GitHub connections are disabled", {
-          description:
-            "You can start chats without connecting GitHub.",
-        });
-        break;
       case "invalid_state":
         toast.error("Callback expired", {
           description: "Please start the installation again.",
@@ -425,7 +419,6 @@ function ConnectionStatusButton({
 
 export function AccountsSection() {
   const { hasGitHubAccount, hasGitHub, loading, session } = useSession();
-  const isTrialUser = session?.isManagedTemplateTrialUser ?? false;
   const { mutate } = useSWRConfig();
   const [unlinking, setUnlinking] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
@@ -500,7 +493,7 @@ export function AccountsSection() {
       {/* Body */}
       <div className="space-y-4 p-4">
         {!hasGitHub ? (
-          <NotConnectedState connectionDisabled={isTrialUser} />
+          <NotConnectedState connectionDisabled={false} />
         ) : (connectionLoading || connectionStatusLoading || !connectionData) &&
           !connectionError ? (
           <ConnectionLoadingSkeleton />
@@ -509,7 +502,7 @@ export function AccountsSection() {
             reconnectReason={reason}
             onDisconnect={() => setDisconnectOpen(true)}
             unlinking={unlinking}
-            connectionDisabled={isTrialUser}
+            connectionDisabled={false}
           />
         ) : connectionError && !connectionData ? (
           <ConnectionErrorState onRetry={handleRefresh} />
@@ -520,10 +513,10 @@ export function AccountsSection() {
             reconnectReason={reason}
             onDisconnect={() => setDisconnectOpen(true)}
             unlinking={unlinking}
-            connectionDisabled={isTrialUser}
+            connectionDisabled={false}
           />
         ) : (
-          <NotConnectedState connectionDisabled={isTrialUser} />
+          <NotConnectedState connectionDisabled={false} />
         )}
       </div>
 

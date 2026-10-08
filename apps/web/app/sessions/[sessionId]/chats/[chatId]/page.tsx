@@ -17,10 +17,6 @@ import {
   filterModelsForSession,
   sanitizeSelectedModelIdForSession,
 } from "@/lib/model-access";
-import {
-  isManagedTemplateTrialUser,
-  MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR,
-} from "@/lib/managed-template-trial";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
@@ -197,12 +193,7 @@ export default async function SessionChatPage({
   const lastUserMessageSentAt = lastUserMessage
     ? lastUserMessage.createdAt.toISOString()
     : null;
-  const codeEditorDisabledReason = isManagedTemplateTrialUser(
-    session,
-    requestHost,
-  )
-    ? MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR
-    : null;
+  const codeEditorDisabledReason = null;
   const filteredModels = filterModelsForSession(
     initialModels,
     session,

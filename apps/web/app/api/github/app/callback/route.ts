@@ -5,7 +5,6 @@ import {
   syncUserInstallationsWithRetry,
 } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -48,11 +47,6 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const redirectUrl = new URL(redirectTo, req.url);
-
-  if (isManagedTemplateTrialUser(session, req.url)) {
-    redirectUrl.searchParams.set("github", "trial_blocked");
-    return redirectAndClearCookies(redirectUrl);
-  }
 
   const requestUrl = new URL(req.url);
   const installationId = parseInstallationId(

@@ -1,92 +1,36 @@
 import type { UserPreferencesData } from "@/lib/db/user-preferences";
-import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
-import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import type { Session } from "@/lib/session/types";
-
-// kimi-k3 is our priciest premium model ($15/MTok output) -- same role
-// Claude Opus played before the Vercel AI Gateway -> entry-gateway swap.
-const RESTRICTED_MODEL_PREFIXES = ["kimi-k3"];
-
-export const MANAGED_TEMPLATE_TRIAL_MODEL_ACCESS_ERROR =
-  "Kimi K3 is disabled for this account.";
 
 type SessionLike = Pick<Session, "authProvider" | "user"> | null | undefined;
 
-function hasManagedTemplateModelRestrictions(
-  session: SessionLike,
-  url: string | URL,
-): boolean {
-  return isManagedTemplateTrialUser(session, url);
-}
-
 export function isRestrictedModelIdForSession(
-  modelId: string,
-  session: SessionLike,
-  url: string | URL,
+  _modelId: string,
+  _session: SessionLike,
+  _url: string | URL,
 ): boolean {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return false;
-  }
-
-  return RESTRICTED_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix));
+  return false;
 }
 
 export function filterModelsForSession<T extends { id: string }>(
   models: T[],
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): T[] {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return models;
-  }
-
-  return models.filter(
-    (model) =>
-      !RESTRICTED_MODEL_PREFIXES.some((prefix) => model.id.startsWith(prefix)),
-  );
+  return models;
 }
 
 export function sanitizeSelectedModelIdForSession(
   modelId: string | null | undefined,
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): string | null | undefined {
-  if (!modelId || !hasManagedTemplateModelRestrictions(session, url)) {
-    return modelId;
-  }
-
-  if (RESTRICTED_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix))) {
-    return APP_DEFAULT_MODEL_ID;
-  }
-
   return modelId;
 }
 
 export function sanitizeUserPreferencesForSession(
   preferences: UserPreferencesData,
-  session: SessionLike,
-  url: string | URL,
+  _session: SessionLike,
+  _url: string | URL,
 ): UserPreferencesData {
-  if (!hasManagedTemplateModelRestrictions(session, url)) {
-    return preferences;
-  }
-
-  return {
-    ...preferences,
-    defaultModelId:
-      sanitizeSelectedModelIdForSession(
-        preferences.defaultModelId,
-        session,
-        url,
-      ) ?? APP_DEFAULT_MODEL_ID,
-    defaultSubagentModelId:
-      sanitizeSelectedModelIdForSession(
-        preferences.defaultSubagentModelId,
-        session,
-        url,
-      ) ?? null,
-    enabledModelIds: preferences.enabledModelIds.filter(
-      (modelId) => !isRestrictedModelIdForSession(modelId, session, url),
-    ),
-  };
+  return preferences;
 }

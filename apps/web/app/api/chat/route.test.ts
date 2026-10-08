@@ -367,7 +367,7 @@ describe("/api/chat route", () => {
             },
           ],
         }),
-        "https://open-agents.dev/api/chat",
+        "https://entry-agents.dev/api/chat",
       ),
     );
     const body = (await response.json()) as { error: string };
@@ -405,7 +405,7 @@ describe("/api/chat route", () => {
             },
           ],
         }),
-        "https://open-agents.dev/api/chat",
+        "https://entry-agents.dev/api/chat",
       ),
     );
 

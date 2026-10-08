@@ -317,7 +317,7 @@ export function sharedProvider(
   const { config, providerOptionsOverrides, appName, appUrl } = options;
 
   const attributionHeaders = {
-    "http-referer": appUrl ?? "https://open-agents.dev",
+    "http-referer": appUrl ?? "https://entry-agents.dev",
     "x-title": appName ?? "Entry Agent",
   };
 

@@ -27,7 +27,7 @@ const vercelSession = {
   },
 };
 
-const requestUrl = "https://open-agents.dev/api/test";
+const requestUrl = "https://entry-agents.dev/api/test";
 
 const basePreferences: UserPreferencesData = {
   defaultModelId: "kimi-k3",

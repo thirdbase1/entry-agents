@@ -290,7 +290,7 @@ describe("gateway attribution headers", () => {
           baseURL: "https://entry-gateway.test/v1",
           apiKey: "test-gateway-key",
           headers: {
-            "http-referer": "https://open-agents.dev",
+            "http-referer": "https://entry-agents.dev",
             "x-title": "Entry Agent",
           },
         },
@@ -341,7 +341,7 @@ describe("gateway attribution headers", () => {
         baseURL: "https://custom.api",
         apiKey: "sk-test",
         headers: {
-          "http-referer": "https://open-agents.dev",
+          "http-referer": "https://entry-agents.dev",
           "x-title": "Entry Agent",
         },
       },

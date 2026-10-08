@@ -1,5 +1,6 @@
 import type { LocalState } from "./local/state.ts";
 import type { ModalState } from "./modal/state.ts";
+import type { BoxdState } from "./boxd/state.ts";
 
 /**
  * Unified sandbox state type. Use the `type` discriminator to determine
@@ -17,5 +18,6 @@ import type { ModalState } from "./modal/state.ts";
  * real user sessions. See local/state.ts.
  */
 export type SandboxState =
+  | ({ type: "boxd" } & BoxdState)
   | ({ type: "modal" } & ModalState)
   | ({ type: "local" } & LocalState);

@@ -85,7 +85,7 @@ describe("sandbox provider registry", () => {
   });
 
   test("default provider is modal", () => {
-    expect(DEFAULT_SANDBOX_PROVIDER).toBe("modal");
+    expect(DEFAULT_SANDBOX_PROVIDER).toBe("boxd");
     expect(listUserSelectableSandboxProviders()[0]?.id).toBe("modal");
   });
 

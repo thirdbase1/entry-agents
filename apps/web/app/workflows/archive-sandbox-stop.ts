@@ -41,7 +41,11 @@ async function finalizeArchivedSandboxStep(
 
   try {
     const sandbox = await connectSandbox(session.sandboxState);
-    await sandbox.stop();
+    if (sandbox.destroy) {
+      await sandbox.destroy();
+    } else {
+      await sandbox.stop();
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!isSandboxNotFoundError(message)) {

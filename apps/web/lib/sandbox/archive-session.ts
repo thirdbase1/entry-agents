@@ -159,7 +159,11 @@ export async function finalizeArchivedSessionSandboxInline(
     }
 
     const sandbox = await connectSandbox(archivedSession.sandboxState);
-    await sandbox.stop();
+    if (sandbox.destroy) {
+      await sandbox.destroy();
+    } else {
+      await sandbox.stop();
+    }
 
     // A Modal Volume is a BILLED resource that survives the sandbox, so
     // archiving must reclaim it. Deleting the volume after the sandbox is

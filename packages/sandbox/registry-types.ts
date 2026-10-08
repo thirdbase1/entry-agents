@@ -13,7 +13,7 @@
  * below. Nothing in the agent, the workflows or the UI needs to change.
  */
 
-export type SandboxProviderId = "modal" | "local";
+export type SandboxProviderId = "modal" | "local" | "boxd";
 
 /**
  * What a sandbox provider can actually do.
@@ -105,6 +105,20 @@ export const MODAL_CAPABILITIES: SandboxCapabilities = {
 };
 
 /** Local directory + child_process. The desktop execution layer. */
+
+export const BOXD_CAPABILITIES: SandboxCapabilities = {
+  persistentResume: true,
+  drives: false,
+  snapshots: true,
+  execDetached: false,
+  killCommand: false,
+  publicPorts: true,
+  credentialBrokering: true,
+  timeoutExtension: false,
+  workspaceMigration: false,
+  maxTimeoutMs: null,
+};
+
 export const LOCAL_CAPABILITIES: SandboxCapabilities = {
   persistentResume: true,
   drives: false,
@@ -122,6 +136,12 @@ export const SANDBOX_PROVIDER_METADATA: Record<
   SandboxProviderId,
   SandboxProviderMetadata
 > = {
+  boxd: {
+    id: "boxd",
+    displayName: "boxd",
+    description: "Hardware-isolated persistent Linux machine",
+    capabilities: BOXD_CAPABILITIES,
+  },
   modal: {
     id: "modal",
     displayName: "Modal",
@@ -137,7 +157,7 @@ export const SANDBOX_PROVIDER_METADATA: Record<
 };
 
 /** Every id the factory can dispatch to. */
-export const SANDBOX_TYPES = ["modal", "local"] as const satisfies readonly SandboxProviderId[];
+export const SANDBOX_TYPES = ["modal", "local", "boxd"] as const satisfies readonly SandboxProviderId[];
 
 /**
  * Providers a user may pick in the UI. `local` is dev/test only.
@@ -148,6 +168,7 @@ export const SANDBOX_TYPES = ["modal", "local"] as const satisfies readonly Sand
  */
 export const USER_SELECTABLE_SANDBOX_TYPES = [
   "modal",
+  "boxd",
 ] as const satisfies readonly SandboxProviderId[];
 
 /**
@@ -185,7 +206,7 @@ export function isSelectableInContext(
 }
 
 /** Provider used when a session has no explicit choice. */
-export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "modal";
+export const DEFAULT_SANDBOX_PROVIDER: SandboxProviderId = "boxd";
 
 export function isKnownSandboxType(value: unknown): value is SandboxProviderId {
   return (

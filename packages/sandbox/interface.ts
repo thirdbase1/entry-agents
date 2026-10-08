@@ -211,6 +211,9 @@ export interface Sandbox {
    */
   stop(): Promise<void>;
 
+  /** Permanently destroy the provider resource during session archival. */
+  destroy?(): Promise<void>;
+
   /**
    * Extend the sandbox timeout by the specified duration.
    */

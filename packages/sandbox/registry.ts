@@ -22,6 +22,9 @@ import {
   type SandboxProviderId,
 } from "./registry-types.ts";
 import { connectModal } from "./modal/connect.ts";
+import { connectBoxd } from "./boxd/connect.ts";
+import { isBoxdConfigured } from "./boxd/config.ts";
+import type { BoxdState } from "./boxd/state.ts";
 import { isModalConfigured } from "./modal/client.ts";
 import type { ModalState } from "./modal/state.ts";
 import { connectLocal } from "./local/sandbox.ts";
@@ -87,6 +90,30 @@ function carryForward(
   }
   return carried;
 }
+
+const boxdProvider: SandboxProvider = {
+  id: "boxd",
+  displayName: SANDBOX_PROVIDER_METADATA.boxd.displayName,
+  description: SANDBOX_PROVIDER_METADATA.boxd.description,
+  capabilities: SANDBOX_PROVIDER_METADATA.boxd.capabilities,
+
+  async connect(state, options) {
+    if (state.type !== "boxd") throw new UnsupportedSandboxProviderError(String(state.type));
+    return connectBoxd(state as { type: "boxd" } & BoxdState & { sessionId: string }, options);
+  },
+
+  buildProvisionState({ existing, sessionId, source }) {
+    const current = existing?.type === "boxd" ? (existing as { type: "boxd" } & BoxdState) : undefined;
+    return {
+      type: "boxd",
+      ...(current?.machineId ? { machineId: current.machineId } : {}),
+      ...(current?.machineName ? { machineName: current.machineName } : {}),
+      ...(source ? { source } : {}),
+    } as SandboxState;
+  },
+
+  isAvailable: () => isBoxdConfigured(),
+};
 
 const modalProvider: SandboxProvider = {
   id: "modal",
@@ -164,6 +191,7 @@ const localProvider: SandboxProvider = {
 };
 
 export const SANDBOX_PROVIDERS: Record<SandboxProviderId, SandboxProvider> = {
+  boxd: boxdProvider,
   modal: modalProvider,
   local: localProvider,
 };

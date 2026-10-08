@@ -93,23 +93,50 @@ function selectDefaultBenchmarkModels(availableModelIds: string[]): string[] {
  * workflow run is interrupted, only the in-flight task is redone, not
  * every task before it (already-recorded results stay in the DB).
  */
-async function runTaskStep(
-  runId: string,
+interface BenchmarkTurnStepResult {
+  transcript: import("ai").ModelMessage[];
+  usage?: import("ai").LanguageModelUsage;
+  done: boolean;
+  errorMessage?: string;
+}
+
+async function runBenchmarkTurnStep(
   modelId: string,
-  taskId: string,
+  runId: string,
+  messages: import("ai").ModelMessage[],
+  firstTurn: boolean,
+  previousUsage?: import("ai").LanguageModelUsage,
+): Promise<BenchmarkTurnStepResult> {
+  "use step";
+  const { runTerminalBenchTurn } =
+    await import("@/lib/benchmarks/terminal-bench-runner");
+  return runTerminalBenchTurn(
+    modelId,
+    runId,
+    messages,
+    firstTurn,
+    previousUsage,
+  );
+}
+
+async function verifyBenchmarkTaskStep(
+  modelId: string,
+  runId: string,
+  usage: import("ai").LanguageModelUsage | undefined,
+  transcript: import("ai").ModelMessage[],
+  startedAt: number,
   cost: AvailableModelCost | undefined,
 ): Promise<TaskStepResult> {
   "use step";
-  // Dynamic import keeps sandbox and agent modules out of the restricted workflow bundle.
-  // (fs/child_process/os/path + @open-agents/sandbox's connectLocal),
-  // which the Workflow SDK bundler forbids anywhere reachable via a
-  // static import from a `"use workflow"` file. Deferring the import to
-  // runtime, inside this `"use step"` function, keeps that code out of
-  // the restricted workflow bundle entirely.
-  const { runTerminalBenchTask } =
+  const { verifyTerminalBenchTask } =
     await import("@/lib/benchmarks/terminal-bench-runner");
-  const result = await runTerminalBenchTask(modelId, runId);
-
+  const result = await verifyTerminalBenchTask(
+    modelId,
+    runId,
+    usage,
+    transcript,
+    startedAt,
+  );
   let costMicros: number | undefined;
   if (result.usage?.inputTokens != null && result.usage.outputTokens != null) {
     const dollarCost = estimateModelUsageCost(
@@ -122,12 +149,9 @@ async function runTaskStep(
       },
       cost,
     );
-    // Keep six decimal places of USD so small benchmark tasks do not round
-    // down to zero before the model subtotal is aggregated.
     costMicros =
       dollarCost != null ? Math.round(dollarCost * 1_000_000) : undefined;
   }
-
   return {
     passed: result.passed,
     latencyMs: result.latencyMs,
@@ -221,12 +245,40 @@ export async function runBenchmarkSuiteWorkflow(
         continue;
       }
       try {
-        const result = await runTaskStep(
-          runId,
-          modelId,
-          taskId,
-          costByModelId[modelId],
-        );
+        const startedAt = Date.now();
+        let transcript: import("ai").ModelMessage[] = [];
+        let usage: import("ai").LanguageModelUsage | undefined;
+        let done = false;
+        let turnError: string | undefined;
+        for (let turn = 0; turn < 10 && !done; turn++) {
+          const next = await runBenchmarkTurnStep(
+            modelId,
+            runId,
+            transcript,
+            turn === 0,
+            usage,
+          );
+          transcript = next.transcript;
+          usage = next.usage;
+          done = next.done;
+          turnError = next.errorMessage;
+          if (turnError) break;
+        }
+        const result = turnError
+          ? {
+              passed: false,
+              latencyMs: Date.now() - startedAt,
+              errorMessage: turnError,
+            }
+          : await verifyBenchmarkTaskStep(
+              modelId,
+              runId,
+              usage,
+              transcript,
+              startedAt,
+              costByModelId[modelId],
+            );
+        if (!result.passed) hadFailure = true;
         await recordResultStep(
           runId,
           modelId,

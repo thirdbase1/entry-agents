@@ -17,7 +17,6 @@ const INDEXABLE_PATHS = [
   "/",
   "/pricing",
   "/model",
-  "/benchmarks",
   "/ai-coding-agent",
 ] as const;
 
@@ -33,4 +32,3 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: index === 0 ? 1 : 0.7,
   }));
 }
-

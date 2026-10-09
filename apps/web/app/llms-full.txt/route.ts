@@ -39,9 +39,7 @@ Entry Agents routes requests through Entry Gateway with support for many provide
 
 Usage is credit-based for model usage. Entry Agents does not charge a separate sandbox or Workspace fee. Subscriptions include bonus credits, and credits are consumed by the model tokens used by your agent. Details at ${SITE_URL}/pricing. Nigerian debit and credit cards, bank transfer and mobile money are accepted.
 
-## Benchmarks
 
-Benchmarks on the site are real runs from Entry Agents' own agent harness, using the same system prompt, tools and Entry Gateway-routed models as production sessions, on fixed tasks from the canonical OpenAI HumanEval dataset. Cost figures are the real gateway-metered spend for running the subset, not per-token list prices. Results at ${SITE_URL}/benchmarks.
 
 ## Security and isolation
 
@@ -56,7 +54,6 @@ Benchmarks on the site are real runs from Entry Agents' own agent harness, using
 - [AI coding agent](${SITE_URL}/ai-coding-agent): How the platform builds software with or without a repository.
 - [Pricing](${SITE_URL}/pricing): Credit-based plans.
 - [Models](${SITE_URL}/model): Supported models, prices and context windows.
-- [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from the real harness.
 - [Sign in](${SITE_URL}/login): Sign in with Vercel, Google or GitHub.
 
 
@@ -71,4 +68,3 @@ export function GET() {
     },
   });
 }
-

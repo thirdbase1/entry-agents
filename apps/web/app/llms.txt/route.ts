@@ -6,7 +6,6 @@ const content = `# Entry Agents (also known as Entry)
 
 ## Full context
 
-- [llms-full.txt](${SITE_URL}/llms-full.txt): Extended product context for LLMs — how sessions work, models, pricing, benchmarks, security.
 
 ## Public pages
 
@@ -14,7 +13,6 @@ const content = `# Entry Agents (also known as Entry)
 - [AI coding agent](${SITE_URL}/ai-coding-agent): How Entry Agents builds software with or without a repository.
 - [Pricing](${SITE_URL}/pricing): Credit-based plans for Entry Agents.
 - [Models](${SITE_URL}/model): Supported model prices and context windows.
-- [Benchmarks](${SITE_URL}/benchmarks): HumanEval results from Entry Agents' own harness.
 
 ## Product capabilities
 
@@ -33,4 +31,3 @@ export function GET() {
     },
   });
 }
-

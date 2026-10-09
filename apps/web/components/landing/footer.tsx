@@ -41,7 +41,7 @@ export function LandingFooter() {
                 Model
               </Link>
               <Link
-                href="/benchmarks"
+                href="/"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
                 Benchmarks

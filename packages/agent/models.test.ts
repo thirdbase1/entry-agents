@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realAiModule from "ai";
 import type { ProviderOptionsByProvider } from "./models";
 
 const createGatewayCalls: Array<Record<string, unknown>> = [];
@@ -13,6 +14,12 @@ mock.module("ai", () => {
   const gateway = (modelId: string) => ({ modelId });
 
   return {
+    // Spread the real module first so exports this mock does not override
+    // stay available. bun's mock.module is global for the whole `bun test`
+    // process, so a partial mock here replaces "ai" for every file loaded
+    // afterwards -- this one broke system-prompt.test.ts and the
+    // desktop-spike tests, whose import chains need { tool } from "ai".
+    ...realAiModule,
     createGateway: (settings?: Record<string, unknown>) => {
       createGatewayCalls.push(settings ?? {});
       return gateway;

@@ -2,10 +2,12 @@ import { describe, expect, mock, test } from "bun:test";
 import { mkdtemp, stat, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import * as realAiModule from "ai";
 
 const sandboxRegistry = new Map<string, Record<string, unknown>>();
 
 mock.module("ai", () => ({
+  ...realAiModule,
   tool: <T extends Record<string, unknown>>(definition: T) => definition,
 }));
 

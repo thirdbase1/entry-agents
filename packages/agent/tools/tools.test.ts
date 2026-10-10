@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import * as realAiModule from "ai";
 import type { ToolNeedsApprovalFunction } from "./utils";
 import { wrapExternalFileContent } from "./content-boundary";
 
@@ -21,6 +22,11 @@ mock.module("ai", () => {
   const gateway = (modelId: string) => ({ modelId });
 
   return {
+    // Spread the real module first so exports this mock does not override
+    // stay available: bun's mock.module is global for the whole `bun test`
+    // process, so a partial mock here would replace "ai" for every file
+    // loaded afterwards.
+    ...realAiModule,
     tool: <T extends Record<string, unknown>>(definition: T) => definition,
     gateway,
     stepCountIs: (count: number) => ({ count }),

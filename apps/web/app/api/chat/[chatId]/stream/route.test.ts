@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import * as realAiModule from "ai";
 
 // ── Mutable state ──────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ globalThis.fetch = (async () =>
   })) as unknown as typeof fetch;
 
 mock.module("ai", () => ({
+  ...realAiModule,
   createUIMessageStreamResponse: ({
     stream,
     headers,

@@ -55,7 +55,8 @@ const IMAGE_MEDIA_TYPES: Record<string, string> = {
 /** Extension lookup only — the file's magic bytes decide binary-vs-text. */
 function imageMediaTypeForPath(path: string): string | undefined {
   const match = /\.([a-z0-9]+)$/i.exec(path);
-  return match ? IMAGE_MEDIA_TYPES[match[1].toLowerCase()] : undefined;
+  const extension = match?.[1];
+  return extension ? IMAGE_MEDIA_TYPES[extension.toLowerCase()] : undefined;
 }
 
 /** 4 MB of raw bytes ~= 5.3 MB once base64-encoded into the tool result. */

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import * as realAiModule from "ai";
 import type { WebAgentUIMessage } from "@/app/types";
 
 let upsertResult: { status: "inserted" | "updated" | "conflict" } = {
@@ -8,6 +9,7 @@ let upsertResult: { status: "inserted" | "updated" | "conflict" } = {
 const upsertSpy = mock(() => Promise.resolve(upsertResult));
 
 mock.module("ai", () => ({
+  ...realAiModule,
   isToolUIPart: (part: { type: string }) =>
     part.type.startsWith("tool-") || part.type === "dynamic-tool",
 }));

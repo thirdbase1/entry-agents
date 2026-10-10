@@ -11,8 +11,12 @@ import * as postgres from "postgres";
 
 const POSTGRES_URL = process.env.POSTGRES_URL ?? "";
 if (!POSTGRES_URL) {
-  console.error("POSTGRES_URL is required (local dev DB only, never commit)");
-  process.exit(1);
+  // No local dev DB in this environment (CI, fresh sandbox): skip the
+  // suite below. The previous process.exit(1) killed the whole `bun test`
+  // process, which failed every other test file in the run as well.
+  console.log(
+    "SKIP: POSTGRES_URL not set — shared-db needs a local dev DB (never committed).",
+  );
 }
 
 type DbModule = typeof import("../../web/lib/db/sessions.ts");
@@ -24,6 +28,7 @@ let sessionId: string;
 let chatId: string;
 
 beforeAll(async () => {
+  if (!POSTGRES_URL) return; // environment without the dev DB — suite skipped
   process.env.POSTGRES_URL = POSTGRES_URL;
   sqlClient = postgres.default(POSTGRES_URL, { max: 5 });
   schema = await import("../../web/lib/db/schema.ts");
@@ -47,6 +52,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (!sqlClient) return; // nothing was set up — suite skipped
   // Cleanup — leave the shared dev DB as we found it. users has ON DELETE
   // CASCADE to sessions (and sessions → chats → chat_messages), so one
   // delete removes this identity's whole tree.
@@ -57,7 +63,8 @@ afterAll(async () => {
   sqlClient.end();
 });
 
-describe("Phase 6 Step 14: desktop ↔ web shared DB", () => {
+const sharedDbDescribe = POSTGRES_URL ? describe : describe.skip;
+sharedDbDescribe("Phase 6 Step 14: desktop ↔ web shared DB", () => {
   test("desktop creates chat+messages → web reads identical → web appends → desktop reads", async () => {
     chatId = "p6-chat-" + nanoid(8);
 

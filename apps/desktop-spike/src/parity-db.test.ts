@@ -26,8 +26,12 @@ import * as postgres from "postgres";
 
 const POSTGRES_URL = process.env.POSTGRES_URL;
 if (!POSTGRES_URL) {
-  console.error("POSTGRES_URL is required (local dev DB only, never commit)");
-  process.exit(1);
+  // No local dev DB in this environment (CI, fresh sandbox): skip the
+  // suite below. The previous process.exit(1) killed the whole `bun test`
+  // process, which failed every other test file in the run as well.
+  console.log(
+    "SKIP: POSTGRES_URL not set — parity-db needs a local dev DB (never committed).",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +52,7 @@ let chatCId: string; // Desktop→Web message flow
 let chatDId: string; // Web→Desktop message flow
 
 beforeAll(async () => {
+  if (!POSTGRES_URL) return; // environment without the dev DB — suite skipped
   process.env.POSTGRES_URL = POSTGRES_URL;
   sqlClient = postgres.default(POSTGRES_URL, { max: 5 });
   schema = await import("../../web/lib/db/schema.ts");
@@ -88,13 +93,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (!sqlClient) return; // nothing was set up — suite skipped
   // Remove ONLY this test identity's rows (FK cascade handles children).
   await sqlClient`DELETE FROM users WHERE id = ${userId}`;
   await sqlClient.end();
 });
 
 // ===========================================================================
-describe("Phase 4: real-DB cross-surface parity", () => {
+const parityDescribe = POSTGRES_URL ? describe : describe.skip;
+parityDescribe("Phase 4: real-DB cross-surface parity", () => {
   test("TEST 0 — both surfaces resolve the same users.id (identity)", async () => {
     // Web-side resolution: github account 42 → users.id
     const webRow = await sqlClient`

@@ -44,7 +44,7 @@ export function LandingFooter() {
                 href="/"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                Benchmarks
+                Overview
               </Link>
             </div>
           </div>

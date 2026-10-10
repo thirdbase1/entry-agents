@@ -18,11 +18,13 @@ export const metadata: Metadata = {
   title: "Sign in",
   description:
     "Sign in to Entry Agents with Vercel, Google, or GitHub to start shipping with an autonomous coding agent.",
-  robots: {
-    // Thin utility page: follow links but keep it out of the index so
-    // brand queries resolve to the homepage instead.
-    index: false,
-    follow: true,
+  alternates: {
+    // Indexable on purpose: "entry agents login" is a real query, and an
+    // indexed sign-in page is also what Google needs before it can offer
+    // one as a sitelink under the brand result. The canonical collapses
+    // the ?next= variants (same page, only the post-login target differs)
+    // onto this one URL.
+    canonical: "/login",
   },
 };
 

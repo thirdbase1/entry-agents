@@ -39,8 +39,6 @@ Entry Agents routes requests through Entry Gateway with support for many provide
 
 Usage is credit-based for model usage. Entry Agents does not charge a separate sandbox or Workspace fee. Subscriptions include bonus credits, and credits are consumed by the model tokens used by your agent. Details at ${SITE_URL}/pricing. Nigerian debit and credit cards, bank transfer and mobile money are accepted.
 
-
-
 ## Security and isolation
 
 - Each session runs in a sandbox no other session can reach.
@@ -56,7 +54,12 @@ Usage is credit-based for model usage. Entry Agents does not charge a separate s
 - [Models](${SITE_URL}/model): Supported models, prices and context windows.
 - [Sign in](${SITE_URL}/login): Sign in with Vercel, Google or GitHub.
 
+## References
 
+- [llms.txt standard](https://llmstxt.org/): the convention this file and ${SITE_URL}/llms.txt follow.
+- [Schema.org](https://schema.org/): the vocabulary used by this site's structured data.
+- [Model prices and context windows](${SITE_URL}/model): per-token pricing for every model the gateway supports.
+- [Pricing](${SITE_URL}/pricing): credit-based plans and subscription details.
 
 Canonical site: ${SITE_URL}
 `;

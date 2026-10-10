@@ -7,6 +7,9 @@ import { GetStartedFlow } from "./get-started-flow";
 export const metadata: Metadata = {
   title: "Get Started",
   description: "Set up your Entry Agents workspace.",
+  // Auth-gated onboarding: anonymous visitors are redirected to "/", and
+  // the flow itself is per-account, so there is no indexable content here.
+  robots: { index: false, follow: true },
 };
 
 interface GetStartedPageProps {

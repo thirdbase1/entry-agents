@@ -6,6 +6,17 @@ const content = `# Entry Agents (also known as Entry)
 
 ## Full context
 
+Entry Agents, also known as Entry, is a cloud platform for autonomous software-building agents. A session provisions a private cloud Workspace with filesystem, outbound network and runtime access; the agent researches, edits files, runs shell commands, builds applications and tests results. Sessions start blank, from uploaded files, or from a connected GitHub repository, and delivery through Git (branches, commits, pull requests) is optional.
+
+Key facts:
+
+- Every session runs in an isolated sandbox no other session can reach; sandboxes hibernate when inactive and restore with filesystem state intact.
+- Two built-in subagents, explorer (read-only research) and executor (implementation), can work in parallel within a session.
+- Agent loops run as durable, resumable workflows that survive restarts and retry on failure.
+- Model usage is credit-based: $1 of credit is $1 of usage, with no separate sandbox or Workspace fee, and free models cost nothing to run. Per-token prices and context windows for every supported model are published at ${SITE_URL}/model.
+- Sign-in uses Vercel, Google or GitHub OAuth; expired sandbox filesystems are discarded, while committed work persists in Git.
+
+The extended version of this file, covering the full session lifecycle, model routing and pricing semantics, is at ${SITE_URL}/llms-full.txt.
 
 ## Public pages
 

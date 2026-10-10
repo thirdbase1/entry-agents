@@ -19,7 +19,18 @@ import { SITE_URL } from "@/lib/site";
  */
 const MARKETING_RULES = {
   allow: "/",
-  disallow: ["/api/", "/admin/", "/settings/", "/sessions/", "/_next/"],
+  disallow: [
+    "/api/",
+    "/admin/",
+    "/settings/",
+    "/sessions/",
+    // Remaining auth-gated surfaces: billing (its public catalog lives at
+    // /pricing), the codespace session view, and the desktop approve flow.
+    "/billing/",
+    "/codespace/",
+    "/desktop/",
+    "/_next/",
+  ],
 };
 
 const AI_CRAWLERS = [

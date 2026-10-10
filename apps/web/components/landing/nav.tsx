@@ -43,6 +43,26 @@ export function LandingNav({
         >
           <Logo className="h-[17px]" />
 
+          {/* Key product pages, linked from every marketing page. Google
+              builds sitelinks (the sub-links under a brand result) from
+              the pages a site links to most prominently, so the nav is
+              where these belong -- the footer alone was the only signal.
+              Hidden below md: the footer carries them on small screens. */}
+          <div className="hidden items-center gap-6 text-sm text-(--l-fg-2) md:flex">
+            <Link
+              href="/ai-coding-agent"
+              className="transition-colors hover:text-(--l-fg)"
+            >
+              AI coding agent
+            </Link>
+            <Link href="/pricing" className="transition-colors hover:text-(--l-fg)">
+              Pricing
+            </Link>
+            <Link href="/model" className="transition-colors hover:text-(--l-fg)">
+              Model
+            </Link>
+          </div>
+
           {showSignIn && (
             <div className="flex items-center gap-2">
               {!loading && isAuthenticated ? (

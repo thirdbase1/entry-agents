@@ -116,6 +116,7 @@ async function startGitHubReconnect(reason: GitHubConnectionReason | null) {
   await authClient.linkSocial({
     provider: "github",
     callbackURL: GITHUB_OAUTH_CALLBACK,
+    errorCallbackURL: GITHUB_OAUTH_CALLBACK,
   });
 }
 
@@ -576,6 +577,7 @@ function NotConnectedState({
           await authClient.linkSocial({
             provider: "github",
             callbackURL: GITHUB_OAUTH_CALLBACK,
+            errorCallbackURL: GITHUB_OAUTH_CALLBACK,
           });
         }}
       >

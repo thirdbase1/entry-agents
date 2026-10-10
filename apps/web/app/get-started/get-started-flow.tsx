@@ -391,6 +391,7 @@ function GitHubConnectStep({
           await authClient.linkSocial({
             provider: "github",
             callbackURL: githubPostLinkCallback,
+            errorCallbackURL: githubPostLinkCallback,
           });
         }}
         className="gap-2 border-zinc-700 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"

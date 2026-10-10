@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import * as realAiModule from "ai";
 
 // ── spy state ──────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ let syncPreservingChangesCalls = 0;
 mock.module("server-only", () => ({}));
 
 mock.module("ai", () => ({
+  ...realAiModule,
   generateText: async () => generateTextResult,
 }));
 

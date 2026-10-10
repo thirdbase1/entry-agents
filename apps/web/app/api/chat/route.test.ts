@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import * as realAiModule from "ai";
 
 mock.module("server-only", () => ({}));
 
@@ -93,6 +94,7 @@ mock.module("next/server", () => ({
 }));
 
 mock.module("ai", () => ({
+  ...realAiModule,
   createUIMessageStreamResponse: ({
     stream,
     headers,

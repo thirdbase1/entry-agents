@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realAiModule from "ai";
 
 mock.module("ai", () => ({
+  ...realAiModule,
   tool: <T extends Record<string, unknown>>(definition: T) => definition,
 }));
 
